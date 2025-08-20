@@ -4,7 +4,7 @@
 const precision = 1000000;
 
 /**
- * Subtracts all params and delivers reesult
+ * Subtracts all params and delivers result
  */
 export const subtract = (...numbers: Array<string | number>) =>
   numbers.map((num) => Number(num) * precision).reduce((a, b) => a - b) /
