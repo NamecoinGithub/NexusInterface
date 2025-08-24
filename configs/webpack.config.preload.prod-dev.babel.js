@@ -20,10 +20,6 @@ export default merge(basePreloadConfig, prodConfig, {
       ...rendererBabelConfig(),
       {
         test: /\.js$/,
-        exclude: {
-          and: [/node_modules/],
-          not: [/s\/react\//],
-        },
         use: {
           loader: 'babel-loader',
           options: {
