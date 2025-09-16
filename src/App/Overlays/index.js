@@ -3,6 +3,7 @@ import { useAtomValue } from 'jotai';
 import { openModal } from 'lib/ui';
 import { settingsAtom } from 'lib/settings';
 import { walletClosingAtom, walletLockedAtom } from 'lib/wallet';
+import { coreConnectedAtom } from 'lib/coreInfo';
 
 import ClosingScreen from './ClosingScreen';
 import LockScreen from './LockScreen';
@@ -19,12 +20,13 @@ export default function Overlays({ children }) {
     useAtomValue(settingsAtom);
   const closing = useAtomValue(walletClosingAtom);
   const locked = useAtomValue(walletLockedAtom);
+  const coreConnected = useAtomValue(coreConnectedAtom);
 
   if (closing) {
     return <ClosingScreen />;
   }
 
-  if (locked) {
+  if (locked && coreConnected) {
     return (
       <Wallet>
         <LockScreen />

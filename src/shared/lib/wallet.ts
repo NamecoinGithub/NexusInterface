@@ -10,7 +10,8 @@ import {
 
 import { store, subscribe } from 'lib/store';
 import { stopCore } from 'lib/core';
-import { logOut } from 'lib/session';
+import { coreConnectedAtom } from 'lib/coreInfo';
+import { logOut, loggedInAtom } from 'lib/session';
 import { settingsAtom } from 'lib/settings';
 
 let _navigate: NavigateFunction | null = null;
@@ -28,6 +29,9 @@ export function NavigateExporter() {
 
 export const walletClosingAtom = atom(false);
 export const walletLockedAtom = atom(false);
+export const loggedOutWhileConnectedAtom = atom(
+  (get) => get(coreConnectedAtom) && !get(loggedInAtom)
+);
 
 export const closeWallet = async (beforeExit?: () => void) => {
   const { manualDaemon, manualDaemonLogOutOnClose } = store.get(settingsAtom);
@@ -68,6 +72,13 @@ export function prepareWallet() {
       window.addEventListener('beforeunload', preventReload);
     } else {
       window.removeEventListener('beforeunload', preventReload);
+    }
+  });
+
+  subscribe(loggedOutWhileConnectedAtom, (loggedOutWhileConnected) => {
+    // Stop locking the wallet when user is logged out while still being connected
+    if (loggedOutWhileConnected) {
+      store.set(walletLockedAtom, false);
     }
   });
 }
