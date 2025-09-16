@@ -2,6 +2,7 @@ import styled from '@emotion/styled';
 import { keyframes } from '@emotion/react';
 
 import { timing } from 'styles';
+import { HTMLAttributes, ReactNode } from 'react';
 
 const intro = keyframes`
   from { 
@@ -30,13 +31,21 @@ const FullScreenComponent = styled.div(({ theme }) => ({
   gridTemplateRows: 'min-content auto min-content',
 }));
 
-const ContainerComponent = styled.div(({ width }) => ({
-  width,
-  marginLeft: 'auto',
-  marginRight: 'auto',
-}));
+const ContainerComponent = styled.div<{ width?: number | string }>(
+  ({ width }) => ({
+    width,
+    marginLeft: 'auto',
+    marginRight: 'auto',
+  })
+);
 
-const Container = ({ width = 768, children }) =>
+const Container = ({
+  width = 768,
+  children,
+}: {
+  width?: number | string;
+  children: ReactNode;
+}) =>
   width ? (
     <ContainerComponent width={width}>{children}</ContainerComponent>
   ) : (
@@ -66,13 +75,19 @@ const FullScreenFooter = styled.div({
   gridArea: 'footer',
 });
 
+export interface FullScreenProps extends HTMLAttributes<HTMLDivElement> {
+  header?: ReactNode;
+  footer?: ReactNode;
+  width?: number | string;
+}
+
 export default function FullScreen({
   children,
   header,
   footer,
   width,
   ...rest
-}) {
+}: FullScreenProps) {
   return (
     <FullScreenComponent {...rest}>
       {!!header && (

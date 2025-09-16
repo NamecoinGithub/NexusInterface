@@ -26,7 +26,7 @@ export type Locale =
   | 'sr'
   | 'zh-cn';
 
-const locales: Locale[] = [
+export const locales: Locale[] = [
   'en',
   'ar',
   'de',

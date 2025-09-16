@@ -1,7 +1,6 @@
 import { useAtomValue } from 'jotai';
-import { useState } from 'react';
+import { ReactNode, useState } from 'react';
 
-import { openModal } from 'lib/ui';
 import { settingsAtom } from 'lib/settings';
 import { walletClosingAtom, walletLockedAtom } from 'lib/wallet';
 import { coreConnectedAtom } from 'lib/coreInfo';
@@ -16,7 +15,7 @@ import TestnetWarningModal from './TestnetWarningModal';
 import Wallet from './Wallet';
 import { preRelease } from 'consts/misc';
 
-export default function Overlays({ children }) {
+export default function Overlays({ children }: { children: ReactNode }) {
   const { locale, liteModeNoticeDisabled, acceptedAgreement } =
     useAtomValue(settingsAtom);
   const closing = useAtomValue(walletClosingAtom);

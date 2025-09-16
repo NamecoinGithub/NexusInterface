@@ -1,8 +1,6 @@
 import styled from '@emotion/styled';
-import { useAtomValue } from 'jotai';
 import Button from 'components/Button';
 import { confirmPin, openErrorDialog } from 'lib/dialog';
-import { usernameAtom } from 'lib/session';
 import { walletLockedAtom } from 'lib/wallet';
 import { store } from 'lib/store';
 import { callAPI } from 'lib/api';
@@ -23,20 +21,13 @@ const BannerMessage = styled.div(({ theme }) => ({
   paddingBottom: '2em',
 }));
 
-const ErrorMessage = styled.div(({ theme }) => ({
-  color: theme.danger,
-  marginTop: '1em',
-  textAlign: 'center',
-}));
-
 const UnlockButton = styled(Button)({
   maxWidth: 300,
 });
 
 export default function LockedScreen() {
-  const username = useAtomValue(usernameAtom);
   return (
-    <FullScreen width={null}>
+    <FullScreen>
       <Wrapper>
         <BannerMessage>{__('Wallet is locked')}</BannerMessage>
         <UnlockButton
@@ -58,7 +49,7 @@ export default function LockedScreen() {
                     message: __('Invalid Pin'),
                   });
                 }
-              } catch (error) {
+              } catch (error: any) {
                 openErrorDialog({
                   message: __('Error unlocking wallet'),
                   note: error?.message || __('Unknown error'),

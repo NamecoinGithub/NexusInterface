@@ -1,27 +1,22 @@
-import Button from 'components/Button';
-import Modal from 'components/Modal';
 import { shell } from 'electron';
-import ModalContext from 'context/modal';
+import Button from 'components/Button';
+import Modal, { ModalProps } from 'components/Modal';
+import { alphaRelease } from 'consts/misc';
 
-export default function TestnetWarningModal(props) {
+export default function PreReleaseWarningModal(props: ModalProps) {
   const versionRunning = APP_VERSION.toString();
+  const releaseType = alphaRelease ? 'Alpha' : 'Beta';
   return (
     <Modal maxWidth={600} {...props}>
       {(closeModal) => (
         <>
-          <Modal.Header>{__('Testnet Only Mode')}</Modal.Header>
+          <Modal.Header>{__('Pre-Release Active')}</Modal.Header>
           <Modal.Body>
             <div className="text-center">{versionRunning}</div>
 
             <div className="mt1 text-center">
               {__(
-                `You are currenctly running a Testnet only version of the wallet. `
-              )}
-            </div>
-
-            <div className="mt1 text-center">
-              {__(
-                `The core will only connect to nexus-interactions.io:testnet1 `
+                `You are currenctly running a ${releaseType} version of the wallet. `
               )}
             </div>
             <div className="mt1 text-center">

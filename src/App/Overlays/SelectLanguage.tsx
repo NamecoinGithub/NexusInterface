@@ -6,6 +6,7 @@ import languages from 'data/languages';
 import { timing } from 'styles';
 import * as color from 'utils/color';
 import { updateSettingsFile } from 'lib/settings/universal';
+import { Locale, locales } from 'lib/intl';
 
 import FullScreen from './FullScreen';
 
@@ -14,7 +15,7 @@ const Flag = styled.img({
   verticalAlign: 'middle',
 });
 
-const Language = styled.div(
+const Language = styled.div<{ first?: boolean; selected?: boolean }>(
   ({ first, theme }) => ({
     display: 'flex',
     justifyContent: 'center',
@@ -41,7 +42,7 @@ const Language = styled.div(
 );
 
 export default function SelectLanguage() {
-  const [selection, setSelection] = useState('en');
+  const [selection, setSelection] = useState<Locale>('en');
 
   const proceed = () => {
     updateSettingsFile({ locale: selection });
@@ -71,7 +72,11 @@ export default function SelectLanguage() {
           key={lang.code}
           selected={lang.code === selection}
           first={i === 0}
-          onClick={() => setSelection(lang.code)}
+          onClick={() => {
+            if (locales.includes(lang.code as Locale)) {
+              setSelection(lang.code as Locale);
+            }
+          }}
         >
           <Flag src={lang.flag} />
           {lang.name}

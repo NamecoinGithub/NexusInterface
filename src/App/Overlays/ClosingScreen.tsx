@@ -27,7 +27,7 @@ const ClosingMessage = styled.div(({ theme }) => ({
 
 export default function ClosingScreen() {
   return (
-    <FullScreen width={null}>
+    <FullScreen>
       <Wrapper>
         <ClosingMessage>{__('Closing Nexus Wallet')}</ClosingMessage>
       </Wrapper>
