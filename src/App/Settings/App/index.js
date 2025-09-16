@@ -37,16 +37,15 @@ const WarningIcon = styled(Icon)(({ theme }) => ({
  * Handles setting the auto launch function.
  * @param {element} e Attached element
  */
-async function toggleOpenOnStart(e) {
-  const { checked } = e.target;
+async function toggleOpenOnStart(checked) {
   const nexusAutoLaunch = new AutoLaunch({
     name: 'Nexus Wallet',
   });
   if (checked) {
-    nexusAutoLaunch.enabled();
+    nexusAutoLaunch.enable();
     updateSettings({ openOnStart: true });
   } else {
-    nexusAutoLaunch.disabled();
+    nexusAutoLaunch.disable();
     updateSettings({ openOnStart: false });
   }
 }
@@ -54,8 +53,8 @@ async function toggleOpenOnStart(e) {
 /**
  * Toggles if modules should be verified or not.
  */
-async function toggleVerifyModuleSource(e) {
-  if (e.target.checked) {
+async function toggleVerifyModuleSource(checked) {
+  if (checked) {
     const confirmed = await confirm({
       question: __('Turn module open source policy on?'),
       note: __(
@@ -100,8 +99,8 @@ async function toggleVerifyModuleSource(e) {
 /**
  * Handles update Change
  */
-async function handleAutoUpdateChange(e) {
-  if (!e.target.checked) {
+async function handleAutoUpdateChange(checked) {
+  if (!checked) {
     const confirmed = await confirm({
       question: __('Are you sure you want to disable auto update?'),
       note: __(
@@ -142,7 +141,7 @@ export default function SettingsApp() {
       >
         <Switch
           checked={settings.minimizeOnClose}
-          onChange={updateHandlers('minimizeOnClose')}
+          onCheckedChange={updateHandlers('minimizeOnClose')}
         />
       </SettingsField>
 
@@ -151,7 +150,10 @@ export default function SettingsApp() {
         label={__('Open on startup')}
         subLabel={__('Open the wallet when ever the OS starts.')}
       >
-        <Switch checked={settings.openOnStart} onChange={toggleOpenOnStart} />
+        <Switch
+          checked={settings.openOnStart}
+          onCheckedChange={toggleOpenOnStart}
+        />
       </SettingsField>
 
       <SettingsField
@@ -176,7 +178,7 @@ export default function SettingsApp() {
       >
         <Switch
           checked={settings.autoUpdate}
-          onChange={handleAutoUpdateChange}
+          onCheckedChange={handleAutoUpdateChange}
         />
       </SettingsField>
 
@@ -208,7 +210,7 @@ export default function SettingsApp() {
         ) : (
           <Switch
             checked={settings.allowPrerelease}
-            onChange={(evt) => setAllowPrerelease(evt.target.checked)}
+            onCheckedChange={(checked) => setAllowPrerelease(checked)}
           />
         )}
       </SettingsField>
@@ -222,13 +224,13 @@ export default function SettingsApp() {
       >
         <Switch
           checked={settings.sendUsageData}
-          onChange={(value) => {
-            if (value) {
+          onCheckedChange={(checked) => {
+            if (checked) {
               UT.EnableAnalytics();
             } else {
               UT.DisableAnalytics();
             }
-            updateSettings({ sendUsageData: value });
+            updateSettings({ sendUsageData: checked });
           }}
         />
       </SettingsField>
@@ -251,7 +253,7 @@ export default function SettingsApp() {
       >
         <Switch
           checked={settings.devMode}
-          onChange={updateHandlers('devMode')}
+          onCheckedChange={updateHandlers('devMode')}
         />
       </SettingsField>
 
@@ -266,7 +268,7 @@ export default function SettingsApp() {
         >
           <Switch
             checked={settings.verifyModuleSource}
-            onChange={toggleVerifyModuleSource}
+            onCheckedChange={toggleVerifyModuleSource}
           />
         </SettingsField>
         <SettingsField
@@ -279,7 +281,7 @@ export default function SettingsApp() {
         >
           <Switch
             checked={settings.allowSymLink}
-            onChange={updateHandlers('allowSymLink')}
+            onCheckedChange={updateHandlers('allowSymLink')}
           />
         </SettingsField>
       </div>
