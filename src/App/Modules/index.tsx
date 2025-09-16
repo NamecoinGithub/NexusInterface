@@ -17,7 +17,7 @@ export default function Modules() {
   useEffect(() => {
     UT.SendScreen('Module');
   }, []);
-  const module = modulesMap[name];
+  const module = name ? modulesMap[name] : null;
   if (!module || module.info.type !== 'app' || !module.enabled) return null;
 
   if (module.info.options && module.info.options.wrapInPanel) {

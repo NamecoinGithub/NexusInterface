@@ -1,8 +1,9 @@
 import Panel from 'components/Panel';
 import ModuleIcon from 'components/ModuleIcon';
 import WebView from './WebView';
+import { Module } from 'lib/modules';
 
-export default function WrappedAppModule({ module }) {
+export default function WrappedAppModule({ module }: { module: Module }) {
   return (
     <Panel
       title={

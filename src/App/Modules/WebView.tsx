@@ -1,20 +1,20 @@
 // External
-import { useRef, useEffect } from 'react';
+import { useRef, useEffect, HTMLAttributes } from 'react';
 import { existsSync } from 'fs';
 import { URL } from 'url';
 import { join } from 'path';
-import { ipcRenderer } from 'electron';
+import { ipcRenderer, WebviewTag } from 'electron';
 
 // Internal Global
-import { setActiveAppModule, unsetActiveAppModule } from 'lib/modules';
+import { Module, setActiveAppModule, unsetActiveAppModule } from 'lib/modules';
 
 const domain = ipcRenderer.sendSync('get-file-server-domain');
 
-const getEntryUrl = (module) => {
+const getEntryUrl = (module: Module) => {
   if (module.development) {
     try {
       // Check if entry is a URL itself
-      new URL(module.info.entry);
+      new URL(module.info.entry || '');
       return module.info.entry;
     } catch (err) {}
   }
@@ -29,8 +29,12 @@ const getEntryUrl = (module) => {
   }
 };
 
-export default function WebView({ module, className, style }) {
-  const webviewRef = useRef();
+export interface WebViewProps extends HTMLAttributes<HTMLWebViewElement> {
+  module: Module;
+}
+
+export default function WebView({ module, ...rest }: WebViewProps) {
+  const webviewRef = useRef<HTMLWebViewElement>(null);
 
   useEffect(() => {
     if (!module.development) {
@@ -42,17 +46,19 @@ export default function WebView({ module, className, style }) {
   }, []);
 
   useEffect(() => {
+    if (!webviewRef.current) return;
     const {
       info: { name },
     } = module;
-    setActiveAppModule(webviewRef.current, name);
+    setActiveAppModule(webviewRef.current as WebviewTag, name);
 
     return () => {
       unsetActiveAppModule();
     };
-  }, []);
+  }, [webviewRef.current]);
 
   const entryUrl = getEntryUrl(module);
+  if (!entryUrl) return null;
 
   const preloadUrl =
     process.env.NODE_ENV === 'development'
@@ -67,8 +73,7 @@ export default function WebView({ module, className, style }) {
     );
   return (
     <webview
-      className={className}
-      style={style}
+      {...rest}
       ref={webviewRef}
       src={entryUrl}
       preload={preloadUrl}

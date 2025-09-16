@@ -4,6 +4,7 @@ import styled from '@emotion/styled';
 import { keyframes } from '@emotion/react';
 
 import { timing, consts } from 'styles';
+import { ComponentProps } from 'react';
 
 const pulseRing = keyframes`
   0% {
@@ -76,5 +77,7 @@ const NavLinkItem = styled(NavLink)(({ theme }) => ({
     },
   },
 }));
+
+export type NavLinkItemProps = ComponentProps<typeof NavLinkItem>;
 
 export default NavLinkItem;

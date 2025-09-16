@@ -1,6 +1,7 @@
 import WebView from './WebView';
+import { Module } from 'lib/modules';
 
-export default function AppModule({ module }) {
+export default function AppModule({ module }: { module: Module }) {
   return (
     <WebView
       /* Set key attribute here so that the WebView instance will be reset and 

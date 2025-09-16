@@ -3,11 +3,11 @@ import { keyframes } from '@emotion/react';
 import { useAtomValue } from 'jotai';
 
 import HorizontalLine from 'components/HorizontalLine';
-import Icon from 'components/Icon';
+import Icon, { SvgIcon } from 'components/Icon';
 import Tooltip from 'components/Tooltip';
 import ModuleIcon from 'components/ModuleIcon';
 import { consts, timing } from 'styles';
-import { modulesAtom, moduleUpdateCountAtom } from 'lib/modules';
+import { Module, modulesAtom, moduleUpdateCountAtom } from 'lib/modules';
 
 import logoIcon from 'icons/logo.svg';
 import sendIcon from 'icons/send.svg';
@@ -17,7 +17,7 @@ import settingsIcon from 'icons/settings.svg';
 import consoleIcon from 'icons/console.svg';
 import userIcon from 'icons/user.svg';
 
-import NavLinkItem from './NavLinkItem';
+import NavLinkItem, { NavLinkItemProps } from './NavLinkItem';
 
 __ = __context('NavigationBar');
 
@@ -69,7 +69,12 @@ const Badge = styled.div(({ theme }) => ({
  * @param {*} { icon, children, ...rest }
  * @memberof Navigation
  */
-const NavItem = ({ icon, children, badge, ...rest }) => (
+const NavItem = ({
+  icon,
+  children,
+  badge,
+  ...rest
+}: { icon: SvgIcon; children: string; badge?: number } & NavLinkItemProps) => (
   <Tooltip.Trigger tooltip={children} position="top">
     <NavLinkItem {...rest}>
       <Icon icon={icon} />
@@ -84,7 +89,7 @@ const NavItem = ({ icon, children, badge, ...rest }) => (
  * @param {*} { module }
  * @memberof Navigation
  */
-const ModuleNavItem = ({ module }) => (
+const ModuleNavItem = ({ module }: { module: Module }) => (
   <Tooltip.Trigger tooltip={module.info.displayName} position="top">
     <NavLinkItem to={`/Modules/${module.info.name}`}>
       <ModuleIcon module={module} />
