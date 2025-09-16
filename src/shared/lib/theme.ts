@@ -23,6 +23,7 @@ export interface Theme {
   globeArchColor: string;
   wallpaperSize?: string;
   wallpaperBackgroundColor?: string;
+  featuredTokenName?: string;
 }
 
 export type PartialTheme = Partial<Theme>;

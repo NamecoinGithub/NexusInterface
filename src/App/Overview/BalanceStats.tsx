@@ -20,10 +20,16 @@ import warningIcon from 'icons/warning.svg';
 import waitIcon from 'icons/wait.svg';
 
 import Stat from './Stat';
+import { TokenBalance } from 'lib/api';
+import { ReactNode } from 'react';
 
 __ = __context('Overview');
 
-function TokenBalancesTooltip({ tokenBalances }) {
+function TokenBalancesTooltip({
+  tokenBalances,
+}: {
+  tokenBalances: TokenBalance[];
+}) {
   return (
     <div style={{ textAlign: 'right' }}>
       <div>{__('Token balances')}</div>
@@ -52,7 +58,7 @@ function UnsyncWarning() {
 
 const blank = <span className="dim">-</span>;
 
-function BalanceValue({ children }) {
+function BalanceValue({ children }: { children: ReactNode }) {
   const { hideOverviewBalances } = useAtomValue(settingsAtom);
 
   if (hideOverviewBalances) {
@@ -62,7 +68,7 @@ function BalanceValue({ children }) {
 }
 
 export function NXSBalanceStat() {
-  const [nxsBalances, tokenBalances] = balancesQuery.use();
+  const [nxsBalances, tokenBalances] = balancesQuery.use() || [];
   const synchronized = useSynchronized();
   const { hideOverviewBalances } = useAtomValue(settingsAtom);
 
@@ -70,7 +76,7 @@ export function NXSBalanceStat() {
     <Stat
       tooltipAlign="end"
       tooltip={
-        tokenBalances?.length > 0 &&
+        !!tokenBalances?.length &&
         !hideOverviewBalances && (
           <TokenBalancesTooltip tokenBalances={tokenBalances} />
         )
@@ -107,7 +113,7 @@ export function NXSBalanceStat() {
 }
 
 export function NXSFiatBalanceStat() {
-  const [nxsBalances] = balancesQuery.use();
+  const [nxsBalances] = balancesQuery.use() || [];
   const marketData = marketDataQuery.use();
   const { price, currency } = marketData || {};
 
@@ -119,7 +125,7 @@ export function NXSFiatBalanceStat() {
           {__('NXS Balance')} ({currency})
         </>
       }
-      icon={currencyIcons(currency)}
+      icon={currencyIcons(currency || '')}
     >
       <BalanceValue>
         {price && nxsBalances
@@ -135,7 +141,7 @@ export function NXSFiatBalanceStat() {
 
 export function FeaturedTokenBalanceStat() {
   const theme = useAtomValue(themeAtom);
-  const [nxsBalances, tokenBalances] = balancesQuery.use();
+  const [_, tokenBalances] = balancesQuery.use() || [];
   const featuredToken = theme.featuredTokenName
     ? tokenBalances?.find((token) => token.ticker === theme.featuredTokenName)
     : undefined;
@@ -150,7 +156,7 @@ export function FeaturedTokenBalanceStat() {
     >
       <BalanceValue>
         {featuredToken
-          ? formatNumber(featuredToken.balance, featuredToken.decimals)
+          ? formatNumber(featuredToken.available, featuredToken.decimals)
           : blank}
       </BalanceValue>
     </Stat>
@@ -158,9 +164,11 @@ export function FeaturedTokenBalanceStat() {
 }
 
 export function IncomingBalanceStat() {
-  const [nxsBalances] = balancesQuery.use();
+  const [nxsBalances] = balancesQuery.use() || [];
   const incoming =
-    nxsBalances?.unclaimed + nxsBalances?.unconfirmed + nxsBalances?.immature;
+    (nxsBalances?.unclaimed || 0) +
+    (nxsBalances?.unconfirmed || 0) +
+    (nxsBalances?.immature || 0);
 
   return (
     <Stat

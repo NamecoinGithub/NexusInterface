@@ -15,7 +15,17 @@ import Stat from './Stat';
 
 __ = __context('Overview');
 
-function CurrencyValue({ value, currency, fiatDecimals, btcDecimals }) {
+function CurrencyValue({
+  value,
+  currency,
+  fiatDecimals,
+  btcDecimals,
+}: {
+  value?: number | null;
+  currency?: string;
+  fiatDecimals: number;
+  btcDecimals: number;
+}) {
   if (typeof value !== 'number' || Number.isNaN(value)) {
     return <span className="dim">-</span>;
   }

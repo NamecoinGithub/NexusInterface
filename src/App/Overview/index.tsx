@@ -6,7 +6,7 @@ import styled from '@emotion/styled';
 // Internal
 import { webGLAvailable } from 'consts/misc';
 import UT from 'lib/usageTracking';
-import { settingsAtom } from 'lib/settings';
+import { Settings, settingsAtom } from 'lib/settings';
 import { themeAtom } from 'lib/theme';
 import { useCoreInfo } from 'lib/coreInfo';
 import Globe from './Globe';
@@ -19,7 +19,7 @@ const OverviewPage = styled.div({
   position: 'relative',
 });
 
-function usePrevious(value) {
+function usePrevious(value?: any) {
   const ref = useRef(undefined);
   useEffect(() => {
     ref.current = value;
@@ -27,7 +27,15 @@ function usePrevious(value) {
   return ref.current;
 }
 
-function useUpdateGlobe({ settings, connections, blocks }) {
+function useUpdateGlobe({
+  settings,
+  connections,
+  blocks,
+}: {
+  settings: Settings;
+  connections?: number;
+  blocks?: number;
+}) {
   const prevConnections = usePrevious(connections);
   const prevBlocks = usePrevious(blocks);
   const redrawCurves = useRef(() => {});
@@ -86,8 +94,8 @@ export default function Overview() {
     <OverviewPage>
       {!!showingGlobe && (
         <Globe
-          handleOnLineRender={(f) => (redrawCurves.current = f)}
-          handleRemoveAllPoints={(f) => (removeAllPoints.current = f)}
+          handleOnLineRender={(f: any) => (redrawCurves.current = f)}
+          handleRemoveAllPoints={(f: any) => (removeAllPoints.current = f)}
           connections={connections}
           blocks={blocks}
           pillarColor={theme.globePillarColor}

@@ -3,14 +3,15 @@ import { Link } from 'react-router';
 import styled from '@emotion/styled';
 
 // Internal
-import Icon from 'components/Icon';
-import Tooltip from 'components/Tooltip';
+import Icon, { SvgIcon } from 'components/Icon';
+import Tooltip, { TooltipAlign, TooltipPosition } from 'components/Tooltip';
 import { useCoreConnected } from 'lib/coreInfo';
 import { timing } from 'styles';
+import { HTMLAttributes, ReactNode } from 'react';
 
 __ = __context('Overview');
 
-export const StatWrapper = styled.div(
+export const StatWrapper = styled.div<{ to?: string }>(
   ({ theme }) => ({
     display: 'grid',
     columnGap: 15,
@@ -54,6 +55,16 @@ const StatIcon = styled(Icon)(({ theme }) => ({
   color: theme.primary,
 }));
 
+export interface StatProps extends HTMLAttributes<HTMLDivElement> {
+  tooltip?: ReactNode;
+  tooltipAlign?: TooltipAlign;
+  tooltipPosition?: TooltipPosition;
+  linkTo?: string;
+  label: ReactNode;
+  icon: SvgIcon;
+  waitForCore?: boolean;
+}
+
 export default function Stat({
   tooltip,
   tooltipAlign = 'end',
@@ -63,7 +74,7 @@ export default function Stat({
   icon,
   waitForCore = true,
   children,
-}) {
+}: StatProps) {
   const coreConnected = useCoreConnected();
   const value =
     waitForCore && !coreConnected ? <span className="dim">-</span> : children;

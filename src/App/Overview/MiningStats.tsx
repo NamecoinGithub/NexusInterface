@@ -1,6 +1,3 @@
-// External
-import { useAtomValue } from 'jotai';
-
 // Internal
 import { formatNumber } from 'lib/intl';
 import { ledgerInfoQuery } from 'lib/ledger';
@@ -10,11 +7,11 @@ import mathIcon from 'icons/math.svg';
 import hashIcon from 'icons/hash.svg';
 import nxsStakeIcon from 'icons/nxs-staking.svg';
 
-import Stat from './Stat';
+import Stat, { StatProps } from './Stat';
 
 __ = __context('Overview');
 
-function MiningStat({ value, ...props }) {
+function MiningStat({ value, ...props }: { value?: number } & StatProps) {
   return (
     <Stat {...props}>
       {value ? formatNumber(value, 6) : <span className="dim">-</span>}

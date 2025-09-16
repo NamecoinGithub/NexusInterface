@@ -7,7 +7,24 @@ import * as THREE from 'three';
  * @class Point
  */
 export default class Point {
-  constructor(lat, lng, params) {
+  lat: number;
+  lng: number;
+  params: {
+    peerConnections: number;
+    name: string;
+    color: string;
+  };
+  pillar: THREE.Mesh;
+
+  constructor(
+    lat: number,
+    lng: number,
+    params: {
+      peerConnections: number;
+      name: string;
+      color: string;
+    }
+  ) {
     this.lat = lat;
     this.lng = lng;
     this.params = params || {};
@@ -39,7 +56,8 @@ export default class Point {
    * @param {string} hex
    * @memberof Point
    */
-  setColor(hex) {
+  setColor(hex: string) {
+    // @ts-ignore - TODO: Fix this?
     this.pillar.material.color.set(hex);
   }
 }

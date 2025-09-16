@@ -27,7 +27,8 @@ import trust100 from 'icons/trust00.svg';
 import interestIcon from 'icons/interest.svg';
 import stakeIcon from 'icons/staking-white.svg';
 
-import Stat from './Stat';
+import Stat, { StatProps } from './Stat';
+import { StakeInfo } from 'lib/api';
 
 __ = __context('Overview');
 
@@ -67,7 +68,12 @@ function getTrustWeightIcon(trustWeight = 0) {
   return trustIcons[tw];
 }
 
-function StakingStat({ stakeInfo, value, ...props }) {
+interface StakingStatProps extends StatProps {
+  stakeInfo?: StakeInfo | null;
+  value?: number;
+}
+
+function StakingStat({ stakeInfo, value, ...props }: StakingStatProps) {
   return (
     <Stat
       tooltipAlign="start"

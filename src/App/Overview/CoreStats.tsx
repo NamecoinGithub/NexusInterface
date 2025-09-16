@@ -18,7 +18,10 @@ import Stat from './Stat';
 
 __ = __context('Overview');
 
-function getConnectionsIcon(conn) {
+function getConnectionsIcon(conn?: number) {
+  if (!conn) {
+    return Connections0;
+  }
   if (conn > 4 && conn <= 6) {
     return Connections4;
   } else if (conn > 6 && conn <= 12) {
@@ -56,7 +59,7 @@ export function BlockCountStat() {
         !!blockDate && (
           <div style={{ textAlign: 'center' }}>
             {__('Last updated\n%{time}', {
-              time: blockDate && formatRelativeTime(blockDate),
+              time: blockDate && formatRelativeTime(blockDate.getTime()),
             })}
           </div>
         )

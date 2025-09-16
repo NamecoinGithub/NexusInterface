@@ -53,7 +53,11 @@ const slideLeft = keyframes`
   }
 `;
 
-const StatsColumn = styled.div(
+const StatsColumn = styled.div<{
+  left?: boolean;
+  right?: boolean;
+  compact?: boolean;
+}>(
   {
     position: 'absolute',
     top: '50%',
@@ -72,7 +76,7 @@ const StatsColumn = styled.div(
       textAlign: 'right',
       right: compact ? 'calc(56% + 40px)' : 'calc(70% + 40px)',
       animation: `${timing.slow} ${consts.enhancedEaseOut} 0s ${slideRight}`,
-      [StatWrapper]: {
+      [`${StatWrapper}`]: {
         gridTemplateAreas: '"content icon"',
         justifyContent: 'end',
       },
@@ -82,14 +86,14 @@ const StatsColumn = styled.div(
       textAlign: 'left',
       left: compact ? 'calc(56% + 40px)' : 'calc(70% + 40px)',
       animation: `${timing.slow} ${consts.enhancedEaseOut} 0s ${slideLeft}`,
-      [StatWrapper]: {
+      [`${StatWrapper}`]: {
         gridTemplateAreas: '"icon content"',
         justifyContent: 'start',
       },
     }
 );
 
-export default function Stats({ showingGlobe }) {
+export default function Stats({ showingGlobe }: { showingGlobe?: boolean }) {
   const { overviewDisplay } = useAtomValue(settingsAtom);
   const featuredTokenName = useAtomValue(themeAtom)?.featuredTokenName;
 

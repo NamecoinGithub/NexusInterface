@@ -255,7 +255,7 @@ const toRelativeTime = (timestamp: number) => {
 
 export const formatRelativeTime = (
   timestamp: number,
-  options: Intl.RelativeTimeFormatOptions
+  options?: Intl.RelativeTimeFormatOptions
 ) =>
   new Intl.RelativeTimeFormat(locale, {
     style: 'long',
