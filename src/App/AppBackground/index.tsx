@@ -14,7 +14,11 @@ import StarryNight from './StarryNight';
 import NexusThemeBg from './Particles';
 import lightImg from './Light_Space.jpg';
 
-const CustomWallpaper = styled.div(
+const CustomWallpaper = styled.div<{
+  image?: string;
+  size?: string;
+  backgroundColor?: string;
+}>(
   {
     position: 'fixed',
     top: 0,
