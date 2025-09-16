@@ -59,24 +59,24 @@ function exportAddressBook() {
   rows.push(NameEntry); //how we get our header line
   const contacts = store.get(contactsAtom);
   contacts.map((e) => {
-    let tempentry = [];
+    let tempentry: string[] = [];
     tempentry.push(e.name);
-    tempentry.push(e.phoneNumber);
+    tempentry.push(e.phoneNumber || '');
 
-    tempentry.push(e.timeZone);
-    tempentry.push(e.notes);
-    // rows.push(tempentry); // moving down.
-    let tempAddresses = [];
+    tempentry.push(typeof e.timeZone === 'number' ? e.timeZone.toString() : '');
+    tempentry.push(e.notes || '');
+    // Why was this here? There is no addresses column
+    // let tempAddresses: Array<[string, string]> = [];
 
-    if (e.addresses.length > 0) {
-      e.addresses.map((add) => {
-        const label =
-          add.label ||
-          (add.isMine ? 'My Address for ' + e.name : e.name + "'s Address");
-        tempAddresses.push([label, add.address]);
-      });
-      tempentry.push(tempAddresses);
-    }
+    // if (e.addresses.length > 0) {
+    //   e.addresses.map((add) => {
+    //     const label =
+    //       add.label ||
+    //       (add.isMine ? 'My Address for ' + e.name : e.name + "'s Address");
+    //     tempAddresses.push([label, add.address]);
+    //   });
+    //   tempentry.push(tempAddresses);
+    // }
     rows.push(tempentry);
   });
 

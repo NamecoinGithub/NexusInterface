@@ -4,7 +4,11 @@ import { useAtomValue } from 'jotai';
 import Tooltip from 'components/Tooltip';
 import Icon from 'components/Icon';
 import AddEditContactModal from 'components/AddEditContactModal';
-import { deleteContact, selectedContactNameAtom } from 'lib/addressBook';
+import {
+  type Contact,
+  deleteContact,
+  selectedContactNameAtom,
+} from 'lib/addressBook';
 import { openModal } from 'lib/ui';
 import { confirm } from 'lib/dialog';
 import { popupContextMenu } from 'lib/contextMenu';
@@ -14,12 +18,14 @@ import * as color from 'utils/color';
 import { defaultMenu } from 'lib/contextMenu';
 import { store } from 'lib/store';
 import plusIcon from 'icons/plus.svg';
+import { HTMLAttributes } from 'react';
 
 __ = __context('AddressBook');
 
-const getinitial = (name) => (name && name.length >= 1 ? name.charAt(0) : '');
+const getinitial = (name: string) =>
+  name && name.length >= 1 ? name.charAt(0) : '';
 
-const ContactComponent = styled.div(
+const ContactComponent = styled.div<{ selected?: boolean }>(
   ({ theme }) => ({
     display: 'flex',
     alignItems: 'center',
@@ -70,17 +76,22 @@ const AddressesCount = styled.div(({ theme }) => ({
   flexShrink: 0,
 }));
 
+interface ContactProps extends HTMLAttributes<HTMLDivElement> {
+  contact?: Contact;
+}
+
 // contact=null -> New Contact button
-export default function Contact({ contact, ...rest }) {
+export default function Contact({ contact, ...rest }: ContactProps) {
   const coreConnected = useCoreConnected();
   const selectedContactName = useAtomValue(selectedContactNameAtom);
   const editContact = () => {
+    if (!contact) return;
     openModal(AddEditContactModal, {
-      edit: true,
       contact: contact,
     });
   };
   const confirmDelete = async () => {
+    if (!contact) return;
     const confirmed = await confirm({
       question: __('Delete contact %{name}?', {
         name: contact.name,
@@ -91,24 +102,6 @@ export default function Contact({ contact, ...rest }) {
       deleteContact(contact.name);
     }
   };
-  const showContextMenu = (e) => {
-    e.preventDefault();
-    e.stopPropagation();
-    const template = [...defaultMenu];
-    if (coreConnected) {
-      template.push({
-        id: 'edit-contact',
-        label: __('Edit contact'),
-        click: editContact,
-      });
-    }
-    template.push({
-      id: 'delete-contact',
-      label: __('Delete contact'),
-      click: confirmDelete,
-    });
-    popupContextMenu(template);
-  };
 
   return contact ? (
     <ContactComponent
@@ -116,7 +109,24 @@ export default function Contact({ contact, ...rest }) {
         store.set(selectedContactNameAtom, contact.name);
       }}
       selected={contact.name === selectedContactName}
-      onContextMenu={showContextMenu}
+      onContextMenu={(e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        const template = [...defaultMenu];
+        if (coreConnected) {
+          template.push({
+            id: 'edit-contact',
+            label: __('Edit contact'),
+            click: editContact,
+          });
+        }
+        template.push({
+          id: 'delete-contact',
+          label: __('Delete contact'),
+          click: confirmDelete,
+        });
+        popupContextMenu(template);
+      }}
     >
       <ContactAvatar>{getinitial(contact.name)}</ContactAvatar>
       <ContactName>{contact.name}</ContactName>

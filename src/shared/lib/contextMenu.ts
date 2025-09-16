@@ -1,6 +1,6 @@
 import { ipcRenderer, MenuItemConstructorOptions } from 'electron';
 
-export const defaultMenu = [
+export const defaultMenu: MenuItemConstructorOptions[] = [
   {
     label: __('Copy'),
     accelerator: 'CmdOrCtrl+C',

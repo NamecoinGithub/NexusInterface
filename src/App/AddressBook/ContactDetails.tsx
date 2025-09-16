@@ -21,6 +21,7 @@ import timeZones from 'data/timeZones';
 import { timing, consts } from 'styles';
 import trashIcon from 'icons/trash.svg';
 import editIcon from 'icons/edit.svg';
+import { ReactNode } from 'react';
 
 __ = __context('AddressBook');
 
@@ -51,7 +52,7 @@ const ContactName = styled.div(({ theme }) => ({
   flexGrow: 1,
 }));
 
-const HeaderAction = styled.div(({ theme, danger }) => ({
+const HeaderAction = styled.div<{ danger?: boolean }>(({ theme, danger }) => ({
   cursor: 'pointer',
   flexShrink: 0,
   color: theme.mixer(0.25),
@@ -83,7 +84,13 @@ const UserID = styled.span({
  * @memberof ContactDetails
  * @param {*} { label, content }
  */
-const Field = ({ label, content }) => (
+const Field = ({
+  label,
+  content,
+}: {
+  label: ReactNode;
+  content: ReactNode;
+}) => (
   <div className="flex mt1">
     <FieldLabel>{label}</FieldLabel>
     <FieldContent>
@@ -98,10 +105,10 @@ const Field = ({ label, content }) => (
  * @param {*} tz TimeZone
  * @returns {string} Hours:Minutes AM/PM
  */
-const getLocalTime = (tz) => {
+const getLocalTime = (tz: number) => {
   const now = new Date();
   const utc = new Date().getTimezoneOffset();
-  now.setMinutes(now.getMinutes() + utc + parseInt(tz));
+  now.setMinutes(now.getMinutes() + utc + tz);
 
   let h = now.getHours();
   let m = now.getMinutes();
@@ -111,19 +118,16 @@ const getLocalTime = (tz) => {
     h = h - 12;
   }
   if (h === 0) {
-    h = '12';
-  }
-  if (m < 10) {
-    m = `0${m}`;
+    h = 12;
   }
 
-  return `${h}:${m} ${i}`;
+  return `${h}:${m < 10 ? '0' : ''}${m} ${i}`;
 };
 
 const contactAtom = atom((get) => {
   const addressBook = get(addressBookAtom);
   const selectedContactName = get(selectedContactNameAtom);
-  return addressBook[selectedContactName] || null;
+  return (selectedContactName && addressBook[selectedContactName]) || null;
 });
 
 export default function ContactDetails() {
@@ -163,7 +167,6 @@ export default function ContactDetails() {
             <HeaderAction
               onClick={() => {
                 openModal(AddEditContactModal, {
-                  edit: true,
                   contact: contact,
                 });
               }}

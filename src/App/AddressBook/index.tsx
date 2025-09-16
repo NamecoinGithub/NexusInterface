@@ -44,7 +44,6 @@ export default function AddressBook() {
       icon={addressBookIcon}
       title={__('Address book')}
       controls={<PanelControls />}
-      bodyScrollable={false}
     >
       {contacts.length > 0 ? (
         <AddressBookLayout>

@@ -46,7 +46,7 @@ export default function ContactList() {
         <>
           <Separator />
           <Contact
-            contact={null /* new contact */}
+            contact={undefined /* new contact */}
             onClick={() => {
               openModal(AddEditContactModal);
             }}
