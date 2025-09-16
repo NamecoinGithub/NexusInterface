@@ -1,4 +1,5 @@
 import { useAtomValue } from 'jotai';
+import { useState } from 'react';
 
 import { openModal } from 'lib/ui';
 import { settingsAtom } from 'lib/settings';
@@ -21,6 +22,8 @@ export default function Overlays({ children }) {
   const closing = useAtomValue(walletClosingAtom);
   const locked = useAtomValue(walletLockedAtom);
   const coreConnected = useAtomValue(coreConnectedAtom);
+  const [prereleaseWarningClosed, setPrereleaseWarningClosed] = useState(false);
+  const [testnetWarningClosed, setTestnetWarningClosed] = useState(false);
 
   if (closing) {
     return <ClosingScreen />;
@@ -46,13 +49,21 @@ export default function Overlays({ children }) {
     return <LiteModeNotice />;
   }
 
-  if (preRelease) {
-    openModal(PreReleaseWarningModal);
-  }
-
-  if (LOCK_TESTNET) {
-    openModal(TestnetWarningModal);
-  }
-
-  return <Wallet>{children}</Wallet>;
+  return (
+    <Wallet>
+      {children}
+      {preRelease && (
+        <PreReleaseWarningModal
+          visible={!prereleaseWarningClosed}
+          removeModal={() => setPrereleaseWarningClosed(true)}
+        />
+      )}
+      {LOCK_TESTNET && prereleaseWarningClosed && (
+        <TestnetWarningModal
+          visible={!testnetWarningClosed}
+          removeModal={() => setTestnetWarningClosed(true)}
+        />
+      )}
+    </Wallet>
+  );
 }
