@@ -14,7 +14,7 @@ import StatusIcon from './StatusIcon';
 __ = __context('Header');
 
 export default function StakingStatus() {
-  const { staking, stakeRate, pooled } = stakeInfoQuery.use() || {};
+  const { staking, stakerate, pooled } = stakeInfoQuery.use() || {};
   const synchronized = useSynchronized();
 
   return (
@@ -28,9 +28,9 @@ export default function StakingStatus() {
                   {__('Wallet is staking')}
                   {!!pooled && ` (${__('pooled')})`}
                 </strong>
-                {!!stakeRate && (
+                {!!stakerate && (
                   <div>
-                    {__('Stake Rate')}: {formatNumber(stakeRate, 2)}%
+                    {__('Stake Rate')}: {formatNumber(stakerate, 2)}%
                   </div>
                 )}
               </div>

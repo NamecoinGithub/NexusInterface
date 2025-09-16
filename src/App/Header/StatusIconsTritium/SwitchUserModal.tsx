@@ -11,29 +11,36 @@ import {
 } from 'lib/session';
 import userIcon from 'icons/user.svg';
 
-const UserWrapper = styled.div(({ theme, active, switching }) => ({
-  padding: '15px 20px',
-  display: 'flex',
-  justifyContent: 'space-between',
-  alignItems: 'center',
-  cursor: active || switching ? 'default' : 'pointer',
-  userSelect: 'none',
-  background: active ? theme.primary : undefined,
-  color: active ? theme.primaryAccent : undefined,
-  transition: `background-color ${timing.normal}`,
-  '&:hover':
-    active || switching
-      ? undefined
-      : {
-          background: theme.mixer(0.125),
-        },
-  [`&:hover ${Status}`]:
-    active || switching
-      ? undefined
-      : {
-          opacity: 0.65,
-        },
-}));
+interface UserWrapperProps {
+  active: boolean;
+  switching?: boolean;
+}
+
+const UserWrapper = styled.div<UserWrapperProps>(
+  ({ theme, active, switching }) => ({
+    padding: '15px 20px',
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    cursor: active || switching ? 'default' : 'pointer',
+    userSelect: 'none',
+    background: active ? theme.primary : undefined,
+    color: active ? theme.primaryAccent : undefined,
+    transition: `background-color ${timing.normal}`,
+    '&:hover':
+      active || switching
+        ? undefined
+        : {
+            background: theme.mixer(0.125),
+          },
+    [`&:hover ${Status}`]:
+      active || switching
+        ? undefined
+        : {
+            opacity: 0.65,
+          },
+  })
+);
 
 const Username = styled.div({
   fontWeight: 'bold',
@@ -41,12 +48,23 @@ const Username = styled.div({
   alignItems: 'center',
 });
 
-const Status = styled.div(({ active }) => ({
+interface StatusProps {
+  active: boolean;
+}
+
+const Status = styled.div<StatusProps>(({ active }) => ({
   opacity: active ? 0.65 : 0,
   transition: `opacity ${timing.normal}`,
 }));
 
-function User({ sessionId, username, active, closeModal }) {
+interface UserProps {
+  sessionId: string;
+  username: string;
+  active: boolean;
+  closeModal: () => void;
+}
+
+function User({ sessionId, username, active, closeModal }: UserProps) {
   const selectSessionId = useSetAtom(selectedSessionIdAtom);
   return (
     <UserWrapper
@@ -82,12 +100,11 @@ export default function SwitchUserModal() {
             {!!sessions &&
               Object.values(sessions)
                 .sort((a, b) => b.accessed - a.accessed)
-                .map(({ session: sessionId, username, genesis }) => (
+                .map(({ session: sessionId, username }) => (
                   <User
                     key={sessionId}
                     sessionId={sessionId}
                     username={username}
-                    genesis={genesis}
                     active={activeSessionId === sessionId}
                     closeModal={closeModal}
                   />

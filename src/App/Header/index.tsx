@@ -88,7 +88,7 @@ const preReleaseTag = alphaRelease ? 'ALPHA' : betaRelease ? 'BETA' : null;
 export default function Header() {
   const coreConnected = useCoreConnected();
   const coreInfo = useCoreInfo();
-  const { testnet, privateNet, lite, hybrid } = coreInfo || {};
+  const { testnet, private: privateNet, litemode, hybrid } = coreInfo || {};
 
   return (
     <HeaderComponent>
@@ -100,7 +100,7 @@ export default function Header() {
 
       <ModeDisplay>
         {__('Tritium Mode')}
-        {lite && ` [${__('Lite')}]`}
+        {litemode && ` [${__('Lite')}]`}
         {hybrid && ` [${__('Hybrid')}]`}
         {!!testnet && ` -${privateNet ? ' private' : ''} testnet ${testnet}`}
       </ModeDisplay>

@@ -17,7 +17,11 @@ import UserDropdown from './UserDropdown';
 
 __ = __context('Header');
 
-const UserControlComponent = styled(StatusIcon)(
+interface UserControlComponentProps {
+  loggedIn: boolean;
+}
+
+const UserControlComponent = styled(StatusIcon)<UserControlComponentProps>(
   ({ theme }) => ({
     display: 'flex',
     alignItems: 'center',
@@ -39,7 +43,7 @@ const UserControlComponent = styled(StatusIcon)(
 
 export default function UserControl() {
   const [open, setOpen] = useState(false);
-  const controlRef = useRef();
+  const controlRef = useRef<HTMLDivElement>(null);
   const loggedIn = useAtomValue(loggedInAtom);
 
   const openDropdown = () => {

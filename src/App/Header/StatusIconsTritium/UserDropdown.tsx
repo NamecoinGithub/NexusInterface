@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, CSSProperties } from 'react';
 import styled from '@emotion/styled';
 import { Link } from 'react-router';
 import { useAtomValue } from 'jotai';
@@ -56,7 +56,11 @@ const Username = styled.div(({ theme }) => ({
   fontWeight: 'bold',
 }));
 
-const MenuItem = styled.div(({ theme, disabled }) => ({
+interface MenuItemProps {
+  disabled?: boolean;
+}
+
+const MenuItem = styled.div<MenuItemProps>(({ theme, disabled }) => ({
   display: 'flex',
   alignItems: 'center',
   padding: `0 15px`,
@@ -78,7 +82,11 @@ const Separator = styled.div(({ theme }) => ({
   borderBottom: `1px solid ${theme.mixer(0.125)}`,
 }));
 
-function LoggedInDropdown({ closeDropdown }) {
+interface LoggedInDropdownProps {
+  closeDropdown: () => void;
+}
+
+function LoggedInDropdown({ closeDropdown }: LoggedInDropdownProps) {
   const username = useAtomValue(usernameAtom);
   const hasRecoveryPhrase = useAtomValue(hasRecoveryPhraseAtom);
   const multiUser = useAtomValue(multiUserAtom);
@@ -154,7 +162,11 @@ function LoggedInDropdown({ closeDropdown }) {
   );
 }
 
-function NotLoggedInDropdown({ closeDropdown }) {
+interface NotLoggedInDropdownProps {
+  closeDropdown: () => void;
+}
+
+function NotLoggedInDropdown({ closeDropdown }: NotLoggedInDropdownProps) {
   const multiUser = useAtomValue(multiUserAtom);
   return (
     <>
@@ -188,7 +200,15 @@ function NotLoggedInDropdown({ closeDropdown }) {
   );
 }
 
-export default function UserDropdown({ closeDropdown, ...rest }) {
+interface UserDropdownProps {
+  closeDropdown: () => void;
+  style?: CSSProperties;
+}
+
+export default function UserDropdown({
+  closeDropdown,
+  ...rest
+}: UserDropdownProps) {
   const loggedIn = useAtomValue(loggedInAtom);
   return (
     <UserDropdownComponent {...rest}>

@@ -48,7 +48,8 @@ function SyncTooltip() {
         {__('Synchronizing')} {progress}%...
       </div>
       <div>
-        {__('Blocks')}: {formatNumber(blocks, 0)} /{' '}
+        {__('Blocks')}:{' '}
+        {typeof blocks === 'number' ? formatNumber(blocks, 0) : ''} /{' '}
         {formatNumber(networkBlock, 0)} ({completed}%)
       </div>
       <div>
@@ -60,7 +61,7 @@ function SyncTooltip() {
   );
 }
 
-function timeRemaining(secondsRemaining) {
+function timeRemaining(secondsRemaining: number) {
   const hours = Math.floor(secondsRemaining / (60 * 60));
   const hText =
     hours > 0 ? __('%{smart_count} hour |||| %{smart_count} hours', hours) : '';

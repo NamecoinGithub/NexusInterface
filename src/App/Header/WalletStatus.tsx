@@ -21,7 +21,7 @@ export default function WalletStatus() {
 
   let nowTime = new Date();
   nowTime.setMinutes(nowTime.getMinutes() - 30);
-  const isInDanger = nowTime >= blockDate;
+  const isInDanger = blockDate && nowTime >= blockDate;
   return !coreConnected ? (
     <span className="dim">
       <CoreStatus />

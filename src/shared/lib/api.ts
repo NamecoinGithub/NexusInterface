@@ -239,6 +239,7 @@ export interface StakeInfo {
   new: boolean;
   staking: boolean;
   change: boolean;
+  pooled?: boolean;
 }
 
 export interface QueryParams {
