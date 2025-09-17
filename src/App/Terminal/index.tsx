@@ -42,7 +42,7 @@ export default function Terminal() {
     UT.SendScreen('Terminal');
   }, []);
   return (
-    <Panel icon={consoleIcon} title={__('Console')} bodyScrollable={false}>
+    <Panel icon={consoleIcon} title={__('Console')}>
       <TerminalComponent>
         <TerminalTabBar>
           <RouterHorizontalTab

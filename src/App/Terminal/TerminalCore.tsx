@@ -27,7 +27,7 @@ const TerminalCoreComponent = styled.div(({ theme }) => ({
   border: `1px solid ${theme.mixer(0.125)}`,
 }));
 
-const Output = styled.div(
+const Output = styled.div<{ reverse?: boolean }>(
   ({ theme }) => ({
     overflowY: 'auto',
     wordBreak: 'break-all',
@@ -50,14 +50,14 @@ const OutputLine = styled.code(({ theme }) => ({
 
 export default function TerminalCore() {
   useConsoleTab('Core');
-  const outputRef = useRef();
+  const outputRef = useRef<HTMLDivElement>(null);
   const { manualDaemon } = useAtomValue(settingsAtom);
   const output = useAtomValue(coreOutputAtom);
   const paused = useAtomValue(coreOutputPausedAtom);
 
   const prevOutput = useRef(output);
   useEffect(() => {
-    if (outputRef.current && output?.length != prevOutput?.length) {
+    if (outputRef.current && output.length != prevOutput.current?.length) {
       outputRef.current.scrollTop = outputRef.current.scrollHeight;
     }
   });
@@ -92,7 +92,7 @@ export default function TerminalCore() {
             </Output>
             <Button
               skin="filled-inverted"
-              fullWidth
+              // fullWidth
               onClick={togglePaused}
               style={{ flexShrink: 0 }}
             >
