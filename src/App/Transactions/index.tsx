@@ -8,7 +8,7 @@ import WaitingMessage from 'components/WaitingMessage';
 import Button from 'components/Button';
 import { TextField } from 'components/TextField';
 import RequireLoggedIn from 'components/RequireLoggedIn';
-import Spinner from 'components/Spinner';
+// import Spinner from 'components/Spinner';
 import Icon from 'components/Icon';
 import { pageAtom, transactionsQuery } from 'lib/transactions';
 import transactionIcon from 'icons/transaction.svg';
@@ -38,7 +38,7 @@ const TransactionsList = styled.div({
   padding: '0 20px',
 });
 
-const Pagination = styled.div(({ morePadding }) => ({
+const Pagination = styled.div<{ morePadding?: boolean }>(({ morePadding }) => ({
   gridArea: 'pagination',
   fontSize: '.9em',
   padding: `10px ${morePadding ? '26px' : '20px'} 20px 20px`,
@@ -61,14 +61,14 @@ const PaginationButton = styled(Button)({
   minWidth: 150,
 });
 
-const TransactionLoadingWarningSpinner = styled(Spinner)(({ theme }) => ({
-  color: theme.mixer(0.5),
-  width: '1.4em',
-  height: '1.4em',
-  position: 'absolute',
-  left: '100%',
-  marginLeft: '1em',
-}));
+// const TransactionLoadingWarningSpinner = styled(Spinner)(({ theme }) => ({
+//   color: theme.mixer(0.5),
+//   width: '1.4em',
+//   height: '1.4em',
+//   position: 'absolute',
+//   left: '100%',
+//   marginLeft: '1em',
+// }));
 
 const ErrorMessage = styled.div(({ theme }) => ({
   textAlign: 'center',

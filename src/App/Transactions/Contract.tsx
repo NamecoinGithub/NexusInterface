@@ -10,11 +10,12 @@ import { popupContextMenu } from 'lib/contextMenu';
 import { formatNumber } from 'lib/intl';
 import { getDeltaSign } from 'lib/transactions';
 import { lookupAddress } from 'lib/addressBook';
-import contactIcon from 'icons/address-book.svg';
 import walletIcon from 'icons/wallet.svg';
 import tokenIcon from 'icons/token.svg';
 import * as color from 'utils/color';
 import { consts, timing } from 'styles';
+import { NameRecord, Contract as ContractType } from 'lib/api';
+import { ComponentProps } from 'react';
 
 __ = __context('Transactions');
 
@@ -38,20 +39,22 @@ const ContractContent = styled.div({
   gridArea: 'content',
 });
 
-const ContractDelta = styled.div(({ theme, sign }) => ({
-  gridArea: 'delta',
-  fontSize: '1.2em',
-  justifySelf: 'end',
-  color:
-    sign === '+'
-      ? theme.primary
-      : sign === '-'
-      ? theme.danger
-      : theme.foreground,
-  '&::before': sign && {
-    content: `"${sign}"`,
-  },
-}));
+const ContractDelta = styled.div<{ sign?: '+' | '-' | '' }>(
+  ({ theme, sign }) => ({
+    gridArea: 'delta',
+    fontSize: '1.2em',
+    justifySelf: 'end',
+    color:
+      sign === '+'
+        ? theme.primary
+        : sign === '-'
+        ? theme.danger
+        : theme.foreground,
+    '&::before': sign && {
+      content: `"${sign}"`,
+    },
+  })
+);
 
 const Operation = styled.span(({ theme }) => ({
   fontWeight: 'bold',
@@ -78,7 +81,7 @@ const RegisterType = styled(Info)({
   textTransform: 'lowercase',
 });
 
-const Hash = ({ children, ...rest }) => {
+const Hash = ({ children, ...rest }: ComponentProps<typeof HashComponent>) => {
   if (!children || typeof children !== 'string' || children.length <= 11)
     return <span {...rest}>{children}</span>;
   return (
@@ -90,7 +93,13 @@ const Hash = ({ children, ...rest }) => {
   );
 };
 
-const accountLabel = ({ name, address, local, namespace, mine }) => {
+const accountLabel = ({
+  name,
+  address,
+  local,
+  namespace,
+  mine,
+}: Partial<NameRecord>) => {
   const match = lookupAddress(address);
   if (address && match) {
     return <span>{match.name + (match.label ? ' - ' + match.label : '')}</span>;
@@ -117,7 +126,11 @@ const accountLabel = ({ name, address, local, namespace, mine }) => {
   return null;
 };
 
-const Register = (props) => {
+const Register = (props: {
+  name?: string;
+  address?: string;
+  type?: string;
+}) => {
   const label = accountLabel(props);
   const { address, type } = props;
   const typeIcon =
@@ -146,7 +159,7 @@ const Register = (props) => {
   );
 };
 
-const creditFrom = (contract) => {
+const creditFrom = (contract: ContractType) => {
   switch (contract.for) {
     case 'DEBIT':
       if (contract.from) {
@@ -166,7 +179,8 @@ const creditFrom = (contract) => {
   }
 };
 
-const contractContent = (contract) => {
+// TODO: more detailed contract type
+const contractContent = (contract: any) => {
   switch (contract.OP) {
     case 'WRITE': {
       return (
@@ -353,7 +367,13 @@ const contractContent = (contract) => {
   }
 };
 
-const Contract = ({ contract, txid }) => (
+const Contract = ({
+  contract,
+  txid,
+}: {
+  contract: ContractType;
+  txid: string;
+}) => (
   <ContractComponent
     onClick={() => openModal(ContractDetailsModal, { contract, txid })}
     onContextMenu={(e) => {

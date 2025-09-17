@@ -2,7 +2,7 @@ import { useState } from 'react';
 import styled from '@emotion/styled';
 import { useAtom } from 'jotai';
 
-import Select from 'components/Select';
+import Select, { SelectOption } from 'components/Select';
 import { TextField } from 'components/TextField';
 import FormField from 'components/FormField';
 import Icon from 'components/Icon';
@@ -19,10 +19,11 @@ import { debounced } from 'utils/universal';
 import ListIcon from 'icons/list.svg';
 import SearchIcon from 'icons/search.svg';
 import SelectAddressModal from './SelectAddressModal';
+import { ContractOP } from 'lib/api';
 
 __ = __context('Transactions');
 
-const operations = [
+const operations: ContractOP[] = [
   'WRITE',
   'APPEND',
   'CREATE',
@@ -41,7 +42,7 @@ const operations = [
   'LEGACY',
 ];
 
-const opOptions = [
+const opOptions: SelectOption<ContractOP | null>[] = [
   {
     value: null,
     display: __('All'),
@@ -52,7 +53,7 @@ const opOptions = [
   })),
 ];
 
-const timeFrames = [
+const timeFrames: SelectOption<'year' | 'month' | 'week' | null>[] = [
   {
     value: null,
     display: __('All'),
@@ -71,18 +72,20 @@ const timeFrames = [
   },
 ];
 
-const FiltersWrapper = styled.div(({ morePadding }) => ({
-  gridArea: 'filters',
-  display: 'grid',
-  gridTemplateAreas: '"addressSearch timeFrame operation"',
-  gridTemplateColumns: '3fr  100px 100px',
-  columnGap: '.75em',
-  alignItems: 'end',
-  fontSize: 15,
-  padding: `0 ${morePadding ? '26px' : '20px'} 10px 20px`,
-}));
+const FiltersWrapper = styled.div<{ morePadding?: boolean }>(
+  ({ morePadding }) => ({
+    gridArea: 'filters',
+    display: 'grid',
+    gridTemplateAreas: '"addressSearch timeFrame operation"',
+    gridTemplateColumns: '3fr  100px 100px',
+    columnGap: '.75em',
+    alignItems: 'end',
+    fontSize: 15,
+    padding: `0 ${morePadding ? '26px' : '20px'} 10px 20px`,
+  })
+);
 
-export default function Filters({ morePadding }) {
+export default function Filters({ morePadding }: { morePadding?: boolean }) {
   const [addressQuery, setAddressQuery] = useAtom(addressQueryAtom);
   const [operation, setOperation] = useAtom(operationAtom);
   const [timeSpan, setTimeSpan] = useAtom(timeSpanAtom);

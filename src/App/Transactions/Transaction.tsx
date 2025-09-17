@@ -8,24 +8,25 @@ import { openModal } from 'lib/ui';
 
 import TransactionDetailsModal from 'components/TransactionDetailsModal';
 import Contract from './Contract';
+import { Transaction as TransactionType } from 'lib/api';
 
 __ = __context('Transactions');
 
-const dateFormat = {
+const dateFormat: Intl.DateTimeFormatOptions = {
   day: '2-digit',
   month: '2-digit',
   year: 'numeric',
 };
-const timeFormat = {
+const timeFormat: Intl.DateTimeFormatOptions = {
   hour: '2-digit',
   minute: '2-digit',
   second: '2-digit',
   hour12: false,
 };
-const dayFormat = { day: '2-digit' };
-const monthFormat = { month: 'short' };
+const dayFormat: Intl.DateTimeFormatOptions = { day: '2-digit' };
+const monthFormat: Intl.DateTimeFormatOptions = { month: 'short' };
 
-const TransactionComponent = styled.div(
+const TransactionComponent = styled.div<{ unconfirmed?: boolean }>(
   ({ theme }) => ({
     margin: '10px 0',
     color: theme.mixer(0.75),
@@ -99,7 +100,11 @@ const TransactionRight = styled.div({
   justifyContent: 'center',
 });
 
-export default function Transaction({ transaction }) {
+export default function Transaction({
+  transaction,
+}: {
+  transaction: TransactionType;
+}) {
   const txTime = new Date(transaction.timestamp * 1000);
 
   return (

@@ -6,8 +6,9 @@ import NexusAddress from 'components/NexusAddress';
 import TokenName from 'components/TokenName';
 import { timing } from 'styles';
 import { accountsQuery, tokensQuery } from 'lib/user';
-import { addressBookAtom } from 'lib/addressBook';
+import { AddressBook, addressBookAtom } from 'lib/addressBook';
 import memoize from 'utils/memoize';
+import { Account, Token } from 'lib/api';
 
 __ = __context('SelectAddress');
 
@@ -29,9 +30,9 @@ const Option = styled.div(({ theme }) => ({
   },
 }));
 
-const getKnownTokens = memoize((userTokens, accounts) => {
+const getKnownTokens = memoize((userTokens?: Token[], accounts?: Account[]) => {
   userTokens = userTokens || [];
-  const tokens = [{ address: '0', name: 'NXS' }, ...userTokens];
+  const tokens = [{ token: '0', ticker: 'NXS' }, ...userTokens];
   for (const account of accounts || []) {
     const tokenAddress = account.token;
     if (
@@ -39,18 +40,25 @@ const getKnownTokens = memoize((userTokens, accounts) => {
       !userTokens.some((token) => token.address === tokenAddress)
     ) {
       tokens.push({
-        name: account.ticker || account.token_name,
-        address: tokenAddress,
+        ticker: account.ticker || '',
+        token: tokenAddress,
       });
     }
   }
   return tokens;
 });
 
+type AddressInfo = {
+  name: string;
+  address: string;
+  isMine: boolean;
+  label?: string;
+};
+
 const getAddressList = memoize(
-  (addressBook) =>
+  (addressBook: AddressBook) =>
     addressBook &&
-    Object.entries(addressBook).reduce(
+    Object.entries(addressBook).reduce<AddressInfo[]>(
       (list, [name, { addresses }]) => [
         ...list,
         ...addresses.map((addressInfo) => ({ ...addressInfo, name })),
@@ -59,7 +67,11 @@ const getAddressList = memoize(
     )
 );
 
-export default function SelectAddressModal({ onSelect }) {
+export default function SelectAddressModal({
+  onSelect,
+}: {
+  onSelect: (address: string) => void;
+}) {
   const accounts = accountsQuery.use();
   const userTokens = tokensQuery.use();
   const knownTokens = getKnownTokens(userTokens, accounts);
@@ -99,15 +111,15 @@ export default function SelectAddressModal({ onSelect }) {
               <SubHeading>{__('Tokens')}</SubHeading>
               {knownTokens.map((token) => (
                 <Option
-                  key={token.address}
+                  key={token.token}
                   onClick={() => {
-                    onSelect?.(token.address);
+                    onSelect?.(token.token);
                     closeModal();
                   }}
                 >
                   <NexusAddress
                     label={<TokenName token={token} />}
-                    address={token.address}
+                    address={token.token}
                     copyable={false}
                   />
                 </Option>

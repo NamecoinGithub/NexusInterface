@@ -18,7 +18,7 @@ const getToken = ({
 }) => {
   const obj = token || account || contract;
   return {
-    name: obj?.ticker, //token_name might be deprecated
+    name: obj?.ticker,
     address: obj?.token,
   };
 };

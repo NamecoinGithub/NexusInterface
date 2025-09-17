@@ -29,7 +29,7 @@ const BalancesWrapper = styled.div(({ theme }) => ({
   color: theme.mixer(0.75),
 }));
 
-const Line = styled.div(
+const Line = styled.div<{ bold?: boolean }>(
   {
     marginTop: '.6em',
     '&::after': {
@@ -56,7 +56,7 @@ const Value = styled.div({
 });
 
 export default function Balances() {
-  const [nxsBalances, tokenBalances] = balancesQuery.use();
+  const [nxsBalances, tokenBalances] = balancesQuery.use() || [];
 
   const total =
     nxsBalances &&
@@ -75,7 +75,7 @@ export default function Balances() {
           <BalancesWrapper>
             <Line bold>
               <Label>{__('Total')}</Label>
-              <Value>{formatNumber(total, 6)} NXS</Value>
+              <Value>{formatNumber(total || 0, 6)} NXS</Value>
             </Line>
 
             <Line>
