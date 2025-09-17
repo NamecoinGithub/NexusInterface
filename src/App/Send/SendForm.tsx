@@ -30,6 +30,8 @@ import plusIcon from 'icons/plus.svg';
 import Recipients from './Recipients';
 import ExpiryFields from './ExpiryFields';
 import PreviewTransactionModal from './PreviewTransactionModal';
+import { Account, Token } from 'lib/api';
+import { SelectOption } from 'components/Select';
 
 __ = __context('Send');
 
@@ -60,17 +62,25 @@ const AdvancedOptionsSwitch = styled.div({
   fontSize: 15,
 });
 
-const AdvancedOptionsLabel = styled.label(({ active }) => ({
-  transition: `opacity ${timing.normal}`,
-  opacity: active ? 1 : 0.67,
-}));
+const AdvancedOptionsLabel = styled.label<{ active?: boolean }>(
+  ({ active }) => ({
+    transition: `opacity ${timing.normal}`,
+    opacity: active ? 1 : 0.67,
+  })
+);
 
 const Separator = styled.div(({ theme }) => ({
   fontWeight: 'bold',
   color: theme.primary,
 }));
 
-function getRecipientsParams({ recipients, advancedOptions }) {
+function getRecipientsParams({
+  recipients,
+  advancedOptions,
+}: {
+  recipients: { address: string; amount: string; reference: string }[];
+  advancedOptions: boolean;
+}) {
   return recipients.map(({ address, amount, reference }) => ({
     address_to: address,
     amount: parseFloat(amount),
@@ -78,8 +88,19 @@ function getRecipientsParams({ recipients, advancedOptions }) {
   }));
 }
 
-function getAdvancedParams({ expiry, advancedOptions }) {
-  const params = {};
+function getAdvancedParams({
+  expiry,
+  advancedOptions,
+}: {
+  expiry: {
+    expireSeconds: string;
+    expireMinutes: string;
+    expireHours: string;
+    expireDays: string;
+  };
+  advancedOptions: boolean;
+}) {
+  const params: { expires?: number } = {};
   if (advancedOptions) {
     const expires =
       parseInt(expiry.expireSeconds) +
@@ -93,70 +114,74 @@ function getAdvancedParams({ expiry, advancedOptions }) {
   return params;
 }
 
-const getAccountOptions = memoize((accounts, userTokens) => {
-  let options = [];
+const getAccountOptions = memoize(
+  (accounts?: Account[], userTokens?: Token[]) => {
+    let options: SelectOption<string>[] = [];
 
-  if (accounts?.length) {
-    options.push({
-      value: 'AccountsSeparator',
-      display: <Separator>{__('Accounts')}</Separator>,
-      isSeparator: true,
-      indent: false,
-    });
-    options.push(
-      ...accounts.map((account) => ({
-        value: `account:${account.address}`,
-        display: (
-          <span>
-            <Icon icon={walletIcon} className="mr0_4" />
-            <span className="v-align">
-              {account.name ? (
-                <span>{account.name}</span>
-              ) : (
-                <span>
-                  <em className="semi-dim">{__('Unnamed account')}</em>{' '}
-                  <span className="dim">{shortenAddress(account.address)}</span>
-                </span>
-              )}{' '}
-              ({account.balance} {TokenName.from({ account })})
+    if (accounts?.length) {
+      options.push({
+        value: 'AccountsSeparator',
+        display: <Separator>{__('Accounts')}</Separator>,
+        isSeparator: true,
+        indent: false,
+      });
+      options.push(
+        ...accounts.map((account) => ({
+          value: `account:${account.address}`,
+          display: (
+            <span>
+              <Icon icon={walletIcon} className="mr0_4" />
+              <span className="v-align">
+                {account.name ? (
+                  <span>{account.name}</span>
+                ) : (
+                  <span>
+                    <em className="semi-dim">{__('Unnamed account')}</em>{' '}
+                    <span className="dim">
+                      {shortenAddress(account.address)}
+                    </span>
+                  </span>
+                )}{' '}
+                ({account.balance} {TokenName.from({ account })})
+              </span>
             </span>
-          </span>
-        ),
-        indent: true,
-      }))
-    );
-  }
-  if (userTokens && userTokens.length > 0) {
-    options.push({
-      value: 'TokensSeparator',
-      display: <Separator>{__('Tokens')}</Separator>,
-      isSeparator: true,
-      indent: false,
-    });
-    options.push(
-      ...userTokens.map((token) => ({
-        value: `token:${token.address}`,
-        display: (
-          <span>
-            <Icon icon={tokenIcon} className="mr0_4" />
-            <span className="v-align">
-              {token.ticker || (
-                <span>
-                  <em>{__('Unnamed token')}</em>{' '}
-                  <span className="dim">{shortenAddress(token.address)}</span>
-                </span>
-              )}{' '}
-              ({token.balance} {TokenName.from({ token })})
+          ),
+          indent: true,
+        }))
+      );
+    }
+    if (userTokens && userTokens.length > 0) {
+      options.push({
+        value: 'TokensSeparator',
+        display: <Separator>{__('Tokens')}</Separator>,
+        isSeparator: true,
+        indent: false,
+      });
+      options.push(
+        ...userTokens.map((token) => ({
+          value: `token:${token.address}`,
+          display: (
+            <span>
+              <Icon icon={tokenIcon} className="mr0_4" />
+              <span className="v-align">
+                {token.ticker || (
+                  <span>
+                    <em>{__('Unnamed token')}</em>{' '}
+                    <span className="dim">{shortenAddress(token.address)}</span>
+                  </span>
+                )}{' '}
+                ({token.balance} {TokenName.from({ token })})
+              </span>
             </span>
-          </span>
-        ),
-        indent: true,
-      }))
-    );
-  }
+          ),
+          indent: true,
+        }))
+      );
+    }
 
-  return options;
-});
+    return options;
+  }
+);
 
 export default function SendForm() {
   const switchID = useId();
@@ -171,7 +196,7 @@ export default function SendForm() {
         name={formName}
         persistState
         initialValues={initialValues}
-        initialValuesEqual={() => true}
+        // initialValuesEqual={() => true}
         onSubmit={({ sendFrom, recipients, expiry, advancedOptions }, form) => {
           const source = getSource(sendFrom, accounts, userTokens);
           openModal(PreviewTransactionModal, {

@@ -366,6 +366,7 @@ export interface NameRecord extends NxsObject {
   local: boolean;
   namespace?: string;
   mine: boolean;
+  user?: string;
 }
 
 export interface NameEvent extends NxsObject {
@@ -590,6 +591,12 @@ async function callAPI<
   }
 >(endpoint: 'finance/get/any', customParams: TParams): Promise<Account>;
 async function callAPI<
+  TParams extends {
+    name?: string;
+    address?: string;
+  }
+>(endpoint: 'finance/get/token', customParams: TParams): Promise<Token>;
+async function callAPI<
   TParams extends QueryParams & {
     verbose?: string;
     name?: string;
@@ -629,6 +636,21 @@ async function callAPI<TParams extends QueryParams>(
   endpoint: 'finance/list/any',
   customParams?: TParams
 ): Promise<Account[]>;
+
+async function callAPI<
+  TParams extends {
+    name?: string;
+    address?: string;
+  }
+>(endpoint: 'names/get/name', customParams?: TParams): Promise<NameRecord>;
+async function callAPI<
+  TParams extends {
+    address: string;
+  }
+>(
+  endpoint: 'names/reverse/lookup',
+  customParams?: TParams
+): Promise<NameRecord>;
 
 async function callAPI(
   endpoint: string,
@@ -695,6 +717,7 @@ async function listAll<TParams extends QueryParams>(
   endpoint: 'names/list/namespaces',
   customParams?: TParams
 ): Promise<Namespace[]>;
+
 async function listAll<TParams extends QueryParams>(
   endpoint: 'assets/list/assets',
   customParams?: TParams

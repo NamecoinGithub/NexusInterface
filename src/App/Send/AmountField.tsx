@@ -46,22 +46,23 @@ const EqualSign = styled.div(({ theme }) => ({
   color: theme.mixer(0.5),
 }));
 
-const nxsToFiat = (value, price) => {
-  if (price) {
-    if (floatRegex.test(value)) {
-      const nxs = parseFloat(value);
-      const fiat = nxs * price;
-      return fiat.toFixed(2);
-    }
-  }
-  return null;
-};
+// const nxsToFiat = (value: string, price: number) => {
+//   if (price) {
+//     if (floatRegex.test(value)) {
+//       const nxs = parseFloat(value);
+//       const fiat = nxs * price;
+//       return fiat.toFixed(2);
+//     }
+//   }
+//   return null;
+// };
 
-function positiveNumber(value) {
+function positiveNumber(value: string) {
   const floatAmount = parseFloat(value);
   if (!floatAmount || floatAmount < 0) {
     return __('Invalid amount');
   }
+  return undefined;
 }
 
 // function FiatValue({ fieldName, source }) {
@@ -74,7 +75,11 @@ function positiveNumber(value) {
 //   return fiat ? `≈ ${fiat} ${currency}` : null;
 // }
 
-export default function AmountField({ parentFieldName }) {
+export default function AmountField({
+  parentFieldName,
+}: {
+  parentFieldName: string;
+}) {
   const source = useSource();
   const marketData = marketDataQuery.use();
   const { price, currency } = marketData || {};
@@ -83,12 +88,7 @@ export default function AmountField({ parentFieldName }) {
   const amountFieldName = parentFieldName + '.amount';
   const fiatAmountFieldName = parentFieldName + '.fiatAmount';
 
-  const sendAll = (evt) => {
-    evt.preventDefault();
-    form.change(amountFieldName, fullAmount);
-  };
-
-  const prevValuesRef = useRef(null);
+  const prevValuesRef = useRef<Record<string, any>>(null);
   const cascadingRef = useRef(false);
   useEffect(() =>
     form.subscribe(
@@ -144,7 +144,14 @@ export default function AmountField({ parentFieldName }) {
                   : __('Amount')}
               </span>
               {!!fullAmount && (
-                <SendAllLink onClick={sendAll}>{__('All')}</SendAllLink>
+                <SendAllLink
+                  onClick={(evt) => {
+                    evt.preventDefault();
+                    form.change(amountFieldName, fullAmount);
+                  }}
+                >
+                  {__('All')}
+                </SendAllLink>
               )}
             </span>
           }
@@ -155,14 +162,14 @@ export default function AmountField({ parentFieldName }) {
           <Form.TextField
             name={amountFieldName}
             skin="filled-inverted"
-            config={{
-              format: (value) => {
-                if (value && typeof value === 'string') {
-                  return value.replace(',', '.');
-                }
-                return value;
-              },
-            }}
+            // config={{
+            //   format: (value) => {
+            //     if (value && typeof value === 'string') {
+            //       return value.replace(',', '.');
+            //     }
+            //     return value;
+            //   },
+            // }}
             placeholder="0.00000"
             validate={positiveNumber}
           />

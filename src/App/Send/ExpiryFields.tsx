@@ -8,7 +8,7 @@ __ = __context('Send');
 const numberInputProps = {
   type: 'number',
   min: 0,
-  skin: 'filled-inverted',
+  skin: 'filled-inverted' as const,
   style: { maxWidth: 80 },
 };
 
@@ -31,7 +31,9 @@ export default function ExpiryFields() {
               />
             </span>
           }
-        ></FormField>
+        >
+          <></>
+        </FormField>
 
         <FormField label={__('Days')} className="ml1">
           <Form.TextField name={'expiry.expireDays'} {...numberInputProps} />

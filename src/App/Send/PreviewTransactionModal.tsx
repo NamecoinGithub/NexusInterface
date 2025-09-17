@@ -7,7 +7,7 @@ import Icon from 'components/Icon';
 import TokenName from 'components/TokenName';
 import Tooltip from 'components/Tooltip';
 import Form from 'components/Form';
-import { callAPI } from 'lib/api';
+import { Account, callAPI, Token } from 'lib/api';
 import { coreInfoQuery } from 'lib/coreInfo';
 import { openSuccessDialog } from 'lib/dialog';
 import { accountsQuery } from 'lib/user';
@@ -61,10 +61,10 @@ const UnNamed = styled(SourceName)(({ theme }) => ({
   color: theme.mixer(0.8),
 }));
 
-const RecipientName = styled.span(({ theme }) => ({
-  fontWeight: 'bold',
-  color: theme.foreground,
-}));
+// const RecipientName = styled.span(({ theme }) => ({
+//   fontWeight: 'bold',
+//   color: theme.foreground,
+// }));
 
 const Separator = styled.div(({ theme }) => ({
   gridColumn: '1 / span 2',
@@ -76,15 +76,19 @@ const SubmitButton = styled(Form.SubmitButton)({
   fontSize: 16,
 });
 
-function Source({ source }) {
-  const { name, address } = source?.account || source?.token || {};
-  const { ticker } = source?.token || {}; //Only get ticker if the source is a token.
+function Source({
+  source,
+}: {
+  source: { account?: Account; token?: Token } | null;
+}) {
+  const name = source?.account?.name || source?.token?.ticker;
+  const address = source?.account?.address || source?.token?.address || '';
   return (
     <NexusAddress
       address={address}
       label={
-        name || ticker ? (
-          <SourceName>{name || ticker}</SourceName>
+        name ? (
+          <SourceName>{name}</SourceName>
         ) : (
           <UnNamed>
             {source?.token ? __('Unnamed token') : __('Unnamed account')}
@@ -95,7 +99,15 @@ function Source({ source }) {
   );
 }
 
-function TransactionDetails({ source, recipients, expires }) {
+function TransactionDetails({
+  source,
+  recipients,
+  expires,
+}: {
+  source: { account?: Account; token?: Token } | null;
+  recipients: { address_to: string; amount: number; reference?: string }[];
+  expires?: number;
+}) {
   return (
     <Layout>
       <LabelCell>
@@ -179,12 +191,19 @@ const initialValues = {
   pin: '',
 };
 
+interface PreviewTransactionModalProps {
+  source: { account?: Account; token?: Token } | null;
+  recipients: { address_to: string; amount: number; reference?: string }[];
+  expires?: number;
+  resetSendForm: () => void;
+}
+
 export default function PreviewTransactionModal({
   source,
   recipients,
   expires,
   resetSendForm,
-}) {
+}: PreviewTransactionModalProps) {
   return (
     <ControlledModal>
       {(closeModal) => (
@@ -206,7 +225,16 @@ export default function PreviewTransactionModal({
               initialValues={initialValues}
               onSubmit={formSubmit({
                 submit: async ({ pin }) => {
-                  const params = {
+                  const params: {
+                    pin: string;
+                    recipients: {
+                      address_to: string;
+                      amount: number;
+                      reference?: string;
+                    }[];
+                    expires?: number;
+                    from?: string;
+                  } = {
                     pin,
                     recipients,
                     expires,
@@ -216,7 +244,7 @@ export default function PreviewTransactionModal({
                     params.from = source.token.address;
                     return await callAPI('finance/debit/token', params);
                   } else {
-                    params.from = source.account.address;
+                    params.from = source?.account?.address;
                     return await callAPI('finance/debit/any', params);
                   }
                 },

@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { ComponentProps, ReactNode, useEffect, useState } from 'react';
 import styled from '@emotion/styled';
 
 import NexusAddress from 'components/NexusAddress';
@@ -12,7 +12,19 @@ const Label = styled.span(({ theme }) => ({
   color: theme.foreground,
 }));
 
-function resolveReverseLookup({ name, local, mine, namespace, user }) {
+function resolveReverseLookup({
+  name,
+  local,
+  mine,
+  namespace,
+  user,
+}: {
+  name: string;
+  local: boolean;
+  mine: boolean;
+  namespace?: string;
+  user?: string;
+}) {
   if (namespace) {
     return namespace + '::' + name;
   }
@@ -33,8 +45,8 @@ function resolveReverseLookup({ name, local, mine, namespace, user }) {
   return name;
 }
 
-function useAddressLabel(address) {
-  const [name, setName] = useState(null);
+function useAddressLabel(address: string) {
+  const [name, setName] = useState<ReactNode | null>(null);
   const contact = lookupAddress(address);
   useEffect(() => {
     if (!address) {
@@ -71,7 +83,14 @@ function useAddressLabel(address) {
   }
 }
 
-export default function RecipientAddress({ address, ...rest }) {
+interface RecipientAddressProps extends ComponentProps<typeof NexusAddress> {
+  address: string;
+}
+
+export default function RecipientAddress({
+  address,
+  ...rest
+}: RecipientAddressProps) {
   const label = useAddressLabel(address);
 
   return (

@@ -1,5 +1,6 @@
 // External
 import styled from '@emotion/styled';
+import type { FieldArrayRenderProps } from 'react-final-form-arrays';
 
 // Internal
 import Tooltip from 'components/Tooltip';
@@ -54,7 +55,9 @@ const RightHalf = styled.div({
   justifyContent: 'space-between',
 });
 
-export default function Recipients({ fields }) {
+export default function Recipients({
+  fields,
+}: FieldArrayRenderProps<any, any>) {
   if (!fields?.length) return null;
 
   // if (fields.length === 1) {

@@ -9,12 +9,13 @@ __ = __context('Send');
 
 const uintRegex = /^[0-9]+$/;
 
-function validateReference(value) {
+function validateReference(value: string) {
   if (value) {
     if (!uintRegex.test(value)) {
       return __('Reference must be an unsigned integer');
     }
   }
+  return undefined;
 }
 
 const ReferenceFieldWrapper = styled.div({
@@ -22,7 +23,11 @@ const ReferenceFieldWrapper = styled.div({
   alignItems: 'flex-end',
 });
 
-export default function ReferenceField({ parentFieldName }) {
+export default function ReferenceField({
+  parentFieldName,
+}: {
+  parentFieldName: string;
+}) {
   const turnedOn = useFieldValue('advancedOptions');
 
   if (!turnedOn) return null;

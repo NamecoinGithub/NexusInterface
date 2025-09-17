@@ -1,7 +1,7 @@
 // External
 import styled from '@emotion/styled';
 import { useAtomValue } from 'jotai';
-import { useEffect, useRef } from 'react';
+import { ReactNode, useEffect, useRef } from 'react';
 import { Field, useField } from 'react-final-form';
 
 // Internal
@@ -17,8 +17,8 @@ import contactIcon from 'icons/address-book.svg';
 import plusIcon from 'icons/plus.svg';
 import walletIcon from 'icons/wallet.svg';
 import warningIcon from 'icons/warning.svg';
-import { contactsAtom } from 'lib/addressBook';
-import { callAPI } from 'lib/api';
+import { Contact, contactsAtom } from 'lib/addressBook';
+import { Account, callAPI, Token } from 'lib/api';
 import { checkAll, required } from 'lib/form';
 import { useSource } from 'lib/send';
 import { openModal } from 'lib/ui';
@@ -43,18 +43,20 @@ const TokenRecipientName = styled.span({
   color: 'gray',
 });
 
-const filterSuggestions = memoize((suggestions, inputValue) => {
-  if (!suggestions) return [];
-  if (!inputValue) return suggestions;
-  const query = inputValue.toLowerCase();
-  return suggestions.filter(
-    ({ address, name }) =>
-      (!!name && name.toLowerCase().includes(query)) ||
-      (!!address && address.toLowerCase().includes(query))
-  );
-});
+const filterSuggestions = memoize(
+  (suggestions: RecipientSuggestion[], inputValue: string) => {
+    if (!suggestions) return [];
+    if (!inputValue) return suggestions;
+    const query = inputValue.toLowerCase();
+    return suggestions.filter(
+      ({ address, name }) =>
+        (!!name && name.toLowerCase().includes(query)) ||
+        (!!address && address.toLowerCase().includes(query))
+    );
+  }
+);
 
-const notSameAccount = (value, { sendFrom }) => {
+const notSameAccount = (value: string, { sendFrom }: Record<string, any>) => {
   let sourceAddress;
   if (sendFrom?.startsWith('account:')) {
     sourceAddress = sendFrom.substring(8);
@@ -68,17 +70,22 @@ const notSameAccount = (value, { sendFrom }) => {
   return undefined;
 };
 
-const isOfSameToken = (source) =>
-  async function (address) {
+const isOfSameToken = (
+  source: {
+    account?: { token: string };
+    token?: { address: string };
+  } | null
+) =>
+  async function (address: string) {
     const sourceToken = source?.account?.token || source?.token?.address;
     if (sourceToken !== address) {
-      let account;
+      let account: Account | undefined;
       try {
         account = await callAPI('finance/get/any', { address });
       } catch (err) {
-        let token;
+        let token: Token | undefined;
         try {
-          token = await callAPI('tokens/get/token', { address });
+          token = await callAPI('finance/get/token', { address });
         } catch {}
         if (token && token.address !== sourceToken) {
           return __('Source and recipient must be of the same token');
@@ -88,18 +95,22 @@ const isOfSameToken = (source) =>
         return __('Source and recipient must be of the same token');
       }
     }
+    return undefined;
   };
 
 function createContact() {
   openModal(AddEditContactModal);
 }
 
-const resolveName = async (name, callback) => {
+const resolveName = async (
+  name: string,
+  callback: (register: string | null) => void
+) => {
   try {
     const result = await callAPI('names/get/name', { name });
     const { register } = result;
     callback(register);
-  } catch (err) {
+  } catch (err: any) {
     if (err?.code === -101) {
       // Unknown name
       try {
@@ -121,13 +132,20 @@ const resolveName = async (name, callback) => {
 
 const debouncedResolveName = debounced(resolveName, 500);
 
+interface RecipientAddressAdapterProps {
+  nameOrAddress: string;
+  address: string;
+  setAddress: (address: string | null) => void;
+  error: string | null;
+  justSelected: boolean;
+}
 function RecipientAddressAdapter({
   nameOrAddress,
   address,
   setAddress,
   error,
   justSelected,
-}) {
+}: RecipientAddressAdapterProps) {
   useEffect(() => {
     if (addressRegex.test(nameOrAddress)) {
       // Treat nameOrAddress as an address
@@ -162,9 +180,16 @@ function RecipientAddressAdapter({
   );
 }
 
+interface RecipientSuggestion {
+  name: string;
+  address: string;
+  value: string;
+  display: ReactNode;
+}
+
 export const getRecipientSuggestions = memoize(
-  (contacts, myAccounts, accountAddress) => {
-    const suggestions = [];
+  (contacts: Contact[], myAccounts: Account[], accountAddress: string) => {
+    const suggestions: RecipientSuggestion[] = [];
     if (contacts) {
       contacts.forEach((contact) => {
         contact.addresses?.forEach(({ address, label, isMine }) => {
@@ -201,7 +226,7 @@ export const getRecipientSuggestions = memoize(
         // if (tokenAddress && account.token !== tokenAddress) return;
 
         suggestions.push({
-          name: account.name,
+          name: account.name || '',
           address: account.address,
           value: account.name || account.address,
           display: (
@@ -234,7 +259,11 @@ export const getRecipientSuggestions = memoize(
   }
 );
 
-export default function RecipientNameOrAddress({ parentFieldName }) {
+export default function RecipientNameOrAddress({
+  parentFieldName,
+}: {
+  parentFieldName: string;
+}) {
   const fieldName = `${parentFieldName}.nameOrAddress`;
   const {
     input: { value: nameOrAddress, onChange, ...inputRest },
@@ -250,46 +279,48 @@ export default function RecipientNameOrAddress({ parentFieldName }) {
   const source = useSource();
   const suggestions = getRecipientSuggestions(
     contacts,
-    accounts,
-    source?.account?.address
+    accounts || [],
+    source?.account?.address || ''
   );
 
   return (
-    <FormField label={__('Send to')}>
-      <AutoSuggest
-        inputProps={{
-          ...inputRest,
-          value: nameOrAddress,
-          onChange: (...args) => {
-            justSelectedRef.current = false;
+    <>
+      <FormField label={__('Send to')}>
+        <AutoSuggest
+          inputProps={{
+            ...inputRest,
+            value: nameOrAddress,
+            onChange: (...args) => {
+              justSelectedRef.current = false;
+              onChange(...args);
+            },
+            error: meta.touched && meta.error,
+            placeholder: __('Recipient Name or Address'),
+            skin: 'filled-inverted',
+          }}
+          onSelect={(...args) => {
+            justSelectedRef.current = true;
             onChange(...args);
-          },
-          error: meta.touched && meta.error,
-          placeholder: __('Recipient Name or Address'),
-          skin: 'filled-inverted',
-        }}
-        onSelect={(...args) => {
-          justSelectedRef.current = true;
-          onChange(...args);
-        }}
-        suggestions={suggestions}
-        filterSuggestions={filterSuggestions}
-        emptyFiller={
-          suggestions.length === 0 && (
-            <EmptyMessage>
-              {__('Your address book is empty')}
-              <Button as="a" skin="hyperlink" onClick={createContact}>
-                <Icon
-                  icon={plusIcon}
-                  className="mr0_4"
-                  style={{ fontSize: '.8em' }}
-                />
-                <span className="v-align">{__('Create new contact')}</span>
-              </Button>
-            </EmptyMessage>
-          )
-        }
-      />
+          }}
+          suggestions={suggestions}
+          filterSuggestions={filterSuggestions}
+          emptyFiller={
+            suggestions.length === 0 && (
+              <EmptyMessage>
+                {__('Your address book is empty')}
+                <Button as="a" skin="hyperlink" onClick={createContact}>
+                  <Icon
+                    icon={plusIcon}
+                    className="mr0_4"
+                    style={{ fontSize: '.8em' }}
+                  />
+                  <span className="v-align">{__('Create new contact')}</span>
+                </Button>
+              </EmptyMessage>
+            )
+          }
+        />
+      </FormField>
       <div className="mt1">
         <Field
           name={`${parentFieldName}.address`}
@@ -309,6 +340,6 @@ export default function RecipientNameOrAddress({ parentFieldName }) {
           )}
         />
       </div>
-    </FormField>
+    </>
   );
 }
