@@ -2,7 +2,7 @@
 import { useAtomValue } from 'jotai';
 import styled from '@emotion/styled';
 import UT from 'lib/usageTracking';
-import * as AutoLaunch from 'auto-launch';
+import AutoLaunch from 'auto-launch';
 
 // Internal Global
 import { updateSettings, settingsAtom } from 'lib/settings';
@@ -37,7 +37,7 @@ const WarningIcon = styled(Icon)(({ theme }) => ({
  * Handles setting the auto launch function.
  * @param {element} e Attached element
  */
-async function toggleOpenOnStart(checked) {
+async function toggleOpenOnStart(checked: boolean) {
   const nexusAutoLaunch = new AutoLaunch({
     name: 'Nexus Wallet',
   });
@@ -53,7 +53,7 @@ async function toggleOpenOnStart(checked) {
 /**
  * Toggles if modules should be verified or not.
  */
-async function toggleVerifyModuleSource(checked) {
+async function toggleVerifyModuleSource(checked: boolean) {
   if (checked) {
     const confirmed = await confirm({
       question: __('Turn module open source policy on?'),
@@ -99,7 +99,7 @@ async function toggleVerifyModuleSource(checked) {
 /**
  * Handles update Change
  */
-async function handleAutoUpdateChange(checked) {
+async function handleAutoUpdateChange(checked: boolean) {
   if (!checked) {
     const confirmed = await confirm({
       question: __('Are you sure you want to disable auto update?'),
@@ -125,7 +125,7 @@ export default function SettingsApp() {
   useSettingsTab('App');
   const settings = useAtomValue(settingsAtom);
 
-  const updateHandlers = (settingName) => (input) =>
+  const updateHandlers = (settingName: string) => (input: any) =>
     updateSettings({ [settingName]: form.resolveValue(input) });
 
   return (
@@ -162,9 +162,7 @@ export default function SettingsApp() {
           <span>
             <span className="v-align">
               {__('Auto update (Recommended)')}{' '}
-              {!settings.autoUpdate && (
-                <WarningIcon spaceLeft icon={warningIcon} />
-              )}
+              {!settings.autoUpdate && <WarningIcon icon={warningIcon} />}
             </span>
           </span>
         }

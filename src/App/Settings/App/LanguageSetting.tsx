@@ -6,8 +6,9 @@ import styled from '@emotion/styled';
 import languages from 'data/languages';
 import { updateSettings, settingsAtom } from 'lib/settings';
 import SettingsField from 'components/SettingsField';
-import Select from 'components/Select';
+import Select, { SelectOption } from 'components/Select';
 import { confirm } from 'lib/dialog';
+import { Locale } from 'lib/intl';
 
 __ = __context('Settings.Application');
 
@@ -16,7 +17,7 @@ const Flag = styled.img({
   verticalAlign: 'middle',
 });
 
-const languageOptions = languages.map((lang) => ({
+const languageOptions: SelectOption<Locale>[] = languages.map((lang) => ({
   value: lang.code,
   display: (
     <span>
@@ -29,17 +30,17 @@ const languageOptions = languages.map((lang) => ({
 export default function LanguageSetting() {
   const { locale } = useAtomValue(settingsAtom);
 
-  const handleChange = async (locale) => {
+  const handleChange = async (locale: Locale) => {
     const language = languages.find((lang) => lang.code === locale);
     const agreed = await confirm({
       question: __('Switch language?'),
       note: __(
         'Translations for %{language} are contributed by our amazing community members',
         {
-          language: language.name,
+          language: language?.name,
         }
       ),
-      labelYes: __('Switch to %{language}', { language: language.name }),
+      labelYes: __('Switch to %{language}', { language: language?.name }),
       labelNo: __('Cancel'),
     });
     if (!agreed) return;

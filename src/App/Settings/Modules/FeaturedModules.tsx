@@ -6,7 +6,7 @@ import axios from 'axios';
 
 // Internal
 import memoize from 'utils/memoize';
-import { modulesMapAtom } from 'lib/modules';
+import { type Module as ModuleType, modulesMapAtom } from 'lib/modules';
 import Module from './Module';
 import SectionSeparator from './SectionSeparator';
 
@@ -16,8 +16,9 @@ const FeaturedModuleList = styled.div({
   opacity: 0.7,
 });
 
-const getNotInstalled = memoize((featuredModules, modulesMap) =>
-  featuredModules?.filter((m) => !modulesMap?.[m.name])
+const getNotInstalled = memoize(
+  (featuredModules: any[], modulesMap: Record<string, ModuleType>) =>
+    featuredModules?.filter((m) => !modulesMap?.[m.name])
 );
 
 export default function FeaturedModules() {

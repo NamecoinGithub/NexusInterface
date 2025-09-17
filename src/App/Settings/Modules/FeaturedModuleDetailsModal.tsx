@@ -3,7 +3,9 @@ import styled from '@emotion/styled';
 import { useAtomValue } from 'jotai';
 
 // Internal
-import ControlledModal from 'components/ControlledModal';
+import ControlledModal, {
+  ControlledModalProps,
+} from 'components/ControlledModal';
 import Icon from 'components/Icon';
 import Button from 'components/Button';
 import Tooltip from 'components/Tooltip';
@@ -22,6 +24,10 @@ import downloadIcon from 'icons/download.svg';
 
 __ = __context('ModuleDetails');
 
+interface FeaturedModuleDetailsModalProps extends ControlledModalProps {
+  featuredModule: any; // TODO: more detailed type
+}
+
 /**
  * Module details modal, for viewing details of both installed modules
  * and modules being installed
@@ -32,7 +38,7 @@ __ = __context('ModuleDetails');
 export default function FeaturedModuleDetailsModal({
   featuredModule,
   ...rest
-}) {
+}: FeaturedModuleDetailsModalProps) {
   const { host, owner, repo } = featuredModule.repoInfo || {};
   const repoUrl = featuredModule.repoInfo
     ? `https://${host}/${owner}/${repo}`
@@ -80,7 +86,7 @@ export default function FeaturedModuleDetailsModal({
         <InfoField ratio={[1, 2]} label={__('Source code')}>
           <div>
             <Tooltip.Trigger tooltip={repoUrl}>
-              <ExternalLink href={repoUrl}>
+              <ExternalLink href={repoUrl || ''}>
                 <span className="v-align">{__('Visit repository')}</span>
                 <Icon icon={linkIcon} className="ml0_4" />
               </ExternalLink>
@@ -112,14 +118,14 @@ const DownloadingSection = styled.div({
  * @class Installer
  * @extends {React.Component}
  */
-function Installer({ featuredModule }) {
+function Installer({ featuredModule }: { featuredModule: any }) {
   const moduleDownload = useAtomValue(moduleDownloadsAtom)[featuredModule.name];
   // `downloading` -> when the module package is being downloaded
   // `busy` -> when the module package is being downloaded OR is in other preparation steps
   const busy = !!moduleDownload;
 
   const { downloaded, totalSize, downloading } = moduleDownload || {};
-  const downloadProgress = downloaded / totalSize;
+  const downloadProgress = downloaded && totalSize ? downloaded / totalSize : 0;
 
   const doInstall = () => {
     downloadAndInstall({
@@ -142,7 +148,7 @@ function Installer({ featuredModule }) {
                     square
                     skin="plain-danger"
                     className="mr0_4"
-                    onClick={abortModuleDownload}
+                    onClick={() => abortModuleDownload(featuredModule.name)}
                   >
                     <Icon icon={closeIcon} />
                   </Button>

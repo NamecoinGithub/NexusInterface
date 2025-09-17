@@ -1,10 +1,22 @@
 import Form from 'components/Form';
 import SettingsField from 'components/SettingsField';
 import { defaultConfig } from 'lib/coreConfig';
+import { ComponentProps, ComponentType, ReactNode } from 'react';
 
 __ = __context('Settings.Core');
 
-function Setting({ label, subLabel, component: Component, ...rest }) {
+type SettingProps<T extends ComponentType<any>> = {
+  label: ReactNode;
+  subLabel: ReactNode;
+  component: T;
+} & ComponentProps<T>;
+
+function Setting<T extends ComponentType<any>>({
+  label,
+  subLabel,
+  component: Component,
+  ...rest
+}: SettingProps<T>) {
   return (
     <SettingsField indent={1} connectLabel label={label} subLabel={subLabel}>
       <Component {...rest} />
@@ -21,7 +33,7 @@ export default function RemoteCoreSettings() {
         component={Form.TextField}
         name="manualDaemonIP"
         placeholder={defaultConfig.ip}
-        size="12"
+        size={12}
       />
 
       <Setting
@@ -29,7 +41,7 @@ export default function RemoteCoreSettings() {
         subLabel={__('Use SSL for API calls')}
         component={Form.Switch}
         name="manualDaemonApiSSL"
-        placeholder={defaultConfig.apiSSL}
+        placeholder={defaultConfig.apiSSL.toString()}
       />
 
       <Setting
@@ -38,7 +50,7 @@ export default function RemoteCoreSettings() {
         component={Form.TextField}
         name="manualDaemonApiPort"
         placeholder={defaultConfig.apiPort}
-        size="5"
+        size={5}
       />
 
       <Setting
@@ -47,7 +59,7 @@ export default function RemoteCoreSettings() {
         component={Form.TextField}
         name="manualDaemonApiPortSSL"
         placeholder={defaultConfig.apiPortSSL}
-        size="5"
+        size={5}
       />
 
       <Setting
@@ -56,7 +68,7 @@ export default function RemoteCoreSettings() {
         component={Form.TextField}
         name="manualDaemonApiUser"
         placeholder={defaultConfig.apiUser}
-        size="12"
+        size={12}
       />
 
       <Setting
@@ -65,7 +77,7 @@ export default function RemoteCoreSettings() {
         component={Form.TextField}
         name="manualDaemonApiPassword"
         placeholder={defaultConfig.apiPassword}
-        size="12"
+        size={12}
       />
 
       <Setting

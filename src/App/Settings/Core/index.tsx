@@ -9,7 +9,12 @@ import { showNotification } from 'lib/ui';
 import { confirm } from 'lib/dialog';
 import { stopCore, startCore, restartCore } from 'lib/core';
 import { coreInfoQuery } from 'lib/coreInfo';
-import { updateSettings, settingsAtom } from 'lib/settings';
+import {
+  updateSettings,
+  settingsAtom,
+  Settings,
+  SettingKeys,
+} from 'lib/settings';
 import { formSubmit } from 'lib/form';
 import Button from 'components/Button';
 import Switch from 'components/Switch';
@@ -47,7 +52,9 @@ const CoreModes = styled.div({
   marginBottom: 20,
 });
 
-const EmbeddedMode = styled(Button)(
+const styledButton = styled(Button);
+
+const EmbeddedMode = styledButton<{ active?: boolean }>(
   {
     borderTopRightRadius: 0,
     borderBottomRightRadius: 0,
@@ -60,7 +67,7 @@ const EmbeddedMode = styled(Button)(
     }
 );
 
-const ManualMode = styled(Button)(
+const ManualMode = styledButton<{ active?: boolean }>(
   {
     borderTopLeftRadius: 0,
     borderBottomLeftRadius: 0,
@@ -101,17 +108,17 @@ const formKeys = [
   'embeddedCoreUseNonSSL',
   'embeddedCoreApiPort',
   'embeddedCoreApiPortSSL',
-];
+] as const;
 
 const getInitialValues = (() => {
-  let lastOutput = null;
-  let lastInput = null;
+  let lastOutput: Partial<Settings> | undefined = undefined;
+  let lastInput: Partial<Settings> | undefined = undefined;
 
-  return (settings) => {
+  return (settings: Partial<Settings>) => {
     if (settings === lastInput) return lastOutput;
 
     let changed = false;
-    const output = {};
+    const output: Partial<Record<SettingKeys, any>> = {};
     formKeys.forEach((key) => {
       if (!lastOutput || settings[key] !== lastOutput[key]) {
         changed = true;
@@ -131,7 +138,7 @@ const getInitialValues = (() => {
 /**
  * Confirms turning off Remote Core
  */
-async function turnOffRemoteCore(restartForm) {
+async function turnOffRemoteCore(restartForm: () => void) {
   const confirmed = await confirm({
     question: __('Exit remote Core mode?'),
     note: __('(This will restart your Core)'),
@@ -147,7 +154,7 @@ async function turnOffRemoteCore(restartForm) {
 /**
  * Confirms turning on Remote Core
  */
-async function turnOnRemoteCore(restartForm) {
+async function turnOnRemoteCore(restartForm: () => void) {
   const confirmed = await confirm({
     question: __('Enter remote Core mode?'),
     note: __(
@@ -182,8 +189,8 @@ export default function SettingsCore() {
         onSubmit={formSubmit({
           submit: (updatedSettings) => {
             Object.keys(updatedSettings).forEach((key) => {
-              const value = updatedSettings[key];
-              if (value !== settings[key]) {
+              const value = updatedSettings[key as SettingKeys];
+              if (value !== settings[key as SettingKeys]) {
                 updateSettings({ [key]: value });
               }
             });
@@ -198,8 +205,7 @@ export default function SettingsCore() {
           errorMessage: __('Error saving settings'),
         })}
         subscription={{ dirty: true }}
-      >
-        {({ dirty, form }) => (
+        render={({ dirty, form }) => (
           <div style={{ paddingBottom: dirty ? 55 : 0 }}>
             <CoreModes>
               <EmbeddedMode
@@ -262,7 +268,7 @@ export default function SettingsCore() {
             )}
           </div>
         )}
-      </Form>
+      />
     </>
   );
 }

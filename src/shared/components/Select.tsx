@@ -14,10 +14,10 @@ import {
   useRef,
   useState,
   useEffect,
-  MutableRefObject,
   CSSProperties,
   ReactNode,
-  ForwardedRef,
+  ComponentProps,
+  RefObject,
 } from 'react';
 import styled from '@emotion/styled';
 
@@ -72,7 +72,7 @@ const ErrorMessage = styled(Tooltip)({
 });
 
 const SelectControl = styled.div<{
-  skin: SelectSkin;
+  skin?: SelectSkin;
   active?: boolean;
   error?: ReactNode;
 }>(
@@ -175,6 +175,8 @@ const SelectControl = styled.div<{
               }
             : null),
         };
+      default:
+        return undefined;
     }
   }
 );
@@ -297,7 +299,7 @@ function Options<TValue extends SelectValue>({
   value,
   onChange,
 }: {
-  controlRef: MutableRefObject<HTMLDivElement | undefined>;
+  controlRef: RefObject<HTMLDivElement | null>;
   skin: SelectSkin;
   options: SelectOption<TValue>[];
   close: () => void;
@@ -305,8 +307,8 @@ function Options<TValue extends SelectValue>({
   onChange: (value: TValue) => void;
 }) {
   const anchorRef = useRef<HTMLDivElement>(null);
-  const elemRef = useRef<HTMLDivElement>();
-  const scrollTopRef = useRef<number>();
+  const elemRef = useRef<HTMLDivElement>(null);
+  const scrollTopRef = useRef<number | undefined>(undefined);
   const styleRef = useRef<CSSProperties>({
     fontSize: controlRef.current
       ? window
@@ -372,7 +374,7 @@ function Options<TValue extends SelectValue>({
             el.scrollTop = scrollTopRef.current;
             scrollTopRef.current = undefined;
           }
-          elemRef.current = el || undefined;
+          elemRef.current = el || null;
         }}
         style={styleRef.current}
         ready={ready}
@@ -395,14 +397,13 @@ function Options<TValue extends SelectValue>({
   );
 }
 
-interface SelectProps<TValue extends SelectValue> {
+interface SelectProps<TValue extends SelectValue>
+  extends Omit<ComponentProps<typeof SelectControl>, 'onChange'> {
   options?: SelectOption<TValue>[];
-  skin?: SelectSkin;
   value: TValue;
   error?: ReactNode;
   onChange: (value: TValue) => void;
   placeholder?: string;
-  ref?: ForwardedRef<HTMLDivElement>;
 }
 
 export default function Select<TValue extends SelectValue>({
@@ -415,7 +416,7 @@ export default function Select<TValue extends SelectValue>({
   ref,
   ...rest
 }: SelectProps<TValue>) {
-  const controlRef = useRef<HTMLDivElement>();
+  const controlRef = useRef<HTMLDivElement>(null);
   const [open, setOpen] = useState(false);
 
   options = options?.length

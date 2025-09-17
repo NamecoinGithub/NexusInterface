@@ -9,22 +9,23 @@ import {
   lightTheme,
   nexusTheme,
   setTheme,
+  Theme,
   themeAtom,
 } from 'lib/theme';
 
 __ = __context('Settings.Style');
 
-function equals(theme1, theme2) {
+function equals(theme1: Theme, theme2: Theme) {
   if (theme1 === theme2) return true;
   const entries1 = Object.entries(theme1);
   if (entries1.length !== Object.keys(theme2).length) return false;
   for (const [key, value] of entries1) {
-    if (theme2[key] !== value) return false;
+    if (theme2[key as keyof Theme] !== value) return false;
   }
   return true;
 }
 
-function getName(theme) {
+function getName(theme: Theme) {
   if (equals(theme, darkTheme)) return 'dark';
   if (equals(theme, lightTheme)) return 'light';
   if (equals(theme, nexusTheme)) return 'nexus';
@@ -34,7 +35,7 @@ function getName(theme) {
 export default function ThemePicker() {
   const theme = useAtomValue(themeAtom);
   const themeName = getName(theme);
-  const [customTheme, setCustomTheme] = useState(null);
+  const [customTheme, setCustomTheme] = useState<Partial<Theme>>({});
 
   return (
     <div>

@@ -106,14 +106,17 @@ const SwitchInput = styled.input(({ theme }) => {
 });
 
 const Switch = ({
+  value,
   onCheckedChange,
   ...props
-}: ComponentProps<typeof SwitchInput> & {
+}: Omit<ComponentProps<typeof SwitchInput>, 'value'> & {
+  value?: boolean;
   onCheckedChange?: (value: boolean) => void;
 }) => (
   <SwitchInput
     type="checkbox"
-    checked={!!props.value}
+    value={value?.toString()}
+    checked={!!value}
     {...props}
     onChange={(evt) => {
       onCheckedChange?.(evt.target.checked);

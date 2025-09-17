@@ -5,39 +5,43 @@ import styled from '@emotion/styled';
 import { ChromePicker } from 'react-color';
 
 // Internal
-import { themeAtom, updateTheme } from 'lib/theme';
+import { Theme, themeAtom, updateTheme } from 'lib/theme';
 import Button from 'components/Button';
 import Overlay from 'components/Overlay';
-import * as color from 'utils/color';
+import { fade, isDark } from 'utils/color';
 
 __ = __context('Settings.Style');
 
-const ColorButton = styled(Button)(({ color: c, open }) => {
-  const contrastColor = color.isDark(c) ? '#fff' : '#000';
-  return {
-    '&, &:active, &&[disabled]': {
-      background: c,
-      color: open ? contrastColor : color.fade(contrastColor, 0.3),
-      border: `1px solid ${
-        open ? contrastColor : color.fade(contrastColor, 0.3)
-      }`,
-      transitionProperty: 'color, border-color',
-    },
-    '&:hover': {
-      color: contrastColor,
-      borderColor: contrastColor,
-    },
-  };
-});
+const styledButton = styled(Button);
 
-export default function ColorPicker({ colorName }) {
-  const btnRef = useRef();
+const ColorButton = styledButton<{ color?: string; open?: boolean }>(
+  ({ color, open }) => {
+    if (!color) return undefined;
+    const contrastColor = isDark(color) ? '#fff' : '#000';
+    return {
+      '&, &:active, &&[disabled]': {
+        background: color,
+        color: open ? contrastColor : fade(contrastColor, 0.3),
+        border: `1px solid ${open ? contrastColor : fade(contrastColor, 0.3)}`,
+        transitionProperty: 'color, border-color',
+      },
+      '&:hover': {
+        color: contrastColor,
+        borderColor: contrastColor,
+      },
+    };
+  }
+);
+
+export default function ColorPicker({ colorName }: { colorName: keyof Theme }) {
+  const btnRef = useRef<HTMLButtonElement>(null);
   const [open, setOpen] = useState(false);
   const [pickerStyles, setPickerStyles] = useState({});
   const theme = useAtomValue(themeAtom);
   const currentColor = theme[colorName];
 
   const openPicker = () => {
+    if (!btnRef.current) return;
     const btnRect = btnRef.current.getBoundingClientRect();
     const styles = {
       position: 'fixed',
@@ -52,10 +56,6 @@ export default function ColorPicker({ colorName }) {
   const closePicker = () => {
     setOpen(false);
     setPickerStyles({});
-  };
-
-  const handleColorChange = (pickedColor) => {
-    updateTheme({ [colorName]: pickedColor.hex });
   };
 
   return (
@@ -75,7 +75,9 @@ export default function ColorPicker({ colorName }) {
             <ChromePicker
               color={currentColor}
               disableAlpha={true}
-              onChangeComplete={handleColorChange}
+              onChangeComplete={(pickedColor) => {
+                updateTheme({ [colorName]: pickedColor.hex });
+              }}
             />
           </div>
         </Overlay>

@@ -24,7 +24,9 @@ export type Locale =
   | 'pt'
   | 'ru'
   | 'sr'
-  | 'zh-cn';
+  | 'zh-cn'
+  | 'ro'
+  | 'hu';
 
 export const locales: Locale[] = [
   'en',
@@ -42,6 +44,8 @@ export const locales: Locale[] = [
   'ru',
   'sr',
   'zh-cn',
+  'ro',
+  'hu',
 ];
 
 function loadDict(locale: Locale) {

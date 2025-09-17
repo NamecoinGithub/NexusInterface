@@ -17,7 +17,7 @@ import { store } from 'lib/store';
 
 __ = __context('Settings.Core');
 
-const removeWhiteSpaces = (value) => (value || '').replace(' ', '');
+// const removeWhiteSpaces = (value: string) => (value || '').replace(' ', '');
 
 export default function EmbeddedCoreSettings() {
   return (
@@ -97,7 +97,7 @@ function BasicSettings() {
             <div>
               {__(
                 'Nexus Core under lite mode runs lighter and synchronize much faster, but you will <b>NOT</b> be able to stake, mine, or switch the wallet to Legacy Mode.',
-                null,
+                undefined,
                 { b: (text) => <strong>{text}</strong> }
               )}
             </div>
@@ -232,8 +232,8 @@ function BasicSettings() {
         >
           <Form.TextField
             name="ipMineWhitelist"
-            normalize={removeWhiteSpaces}
-            size="12"
+            // normalize={removeWhiteSpaces}
+            size={12}
           />
         </SettingsField>
       )}
@@ -302,10 +302,10 @@ function TestnetSettings() {
             type="number"
             min={0}
             max={99999999}
-            config={{
-              parse: (value) => parseInt(value) || null,
-              format: (value) => value || '',
-            }}
+            // config={{
+            //   parse: (value) => parseInt(value) || null,
+            //   format: (value) => value || '',
+            // }}
             style={{ maxWidth: 50 }}
           />
         )}
@@ -336,7 +336,7 @@ function PortSettings() {
         <Form.TextField
           name="embeddedCoreApiPortSSL"
           placeholder={defaultConfig.apiPortSSL}
-          size="5"
+          size={5}
         />
       </SettingsField>
 
@@ -359,7 +359,7 @@ function PortSettings() {
         <Form.TextField
           name="embeddedCoreApiPort"
           placeholder={defaultConfig.apiPort}
-          size="5"
+          size={5}
         />
       </SettingsField>
     </>
@@ -394,20 +394,6 @@ function AdvancedOptions() {
 }
 
 /**
- *  Asks to reload TX History. Only for legacy mode.
- */
-async function reloadTxHistory() {
-  const confirmed = await confirm({
-    question: __('Reload transaction history') + '?',
-    note: 'Nexus Core will be restarted, after that, it will take a while for the transaction history to be reloaded',
-  });
-  if (confirmed) {
-    updateSettings({ walletClean: true });
-    restartCore();
-  }
-}
-
-/**
  *  Asks to clear Peer Connections. Only for legacy mode.
  */
 async function clearPeerConnections() {
@@ -438,7 +424,7 @@ async function resyncLiteMode() {
     const clientFolder = path.join(coreDataDir, 'client');
     try {
       await deleteDirectory(clientFolder, { recursive: true, force: true });
-    } catch (err) {
+    } catch (err: any) {
       openErrorDialog({ message: err && err.message });
     }
     await startCore();

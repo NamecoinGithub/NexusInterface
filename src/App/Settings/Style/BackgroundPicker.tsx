@@ -14,7 +14,7 @@ import {
 
 __ = __context('Settings.Style');
 
-async function handleFilePick(e) {
+async function handleFilePick() {
   const files = await ipcRenderer.invoke('show-open-dialog', {
     title: __('Select wallpaper'),
     properties: ['openFile'],
@@ -47,7 +47,7 @@ export default function BackgroundPicker() {
         skin={wallpaper === starryNightBackground ? 'filled-primary' : 'plain'}
         className="mr1"
         onClick={() => updateTheme({ wallpaper: starryNightBackground })}
-        selected={wallpaper === starryNightBackground}
+        // selected={wallpaper === starryNightBackground}
         style={{ display: 'inline', marginBottom: '.5em' }}
       >
         {__('Starry night')}
@@ -56,7 +56,7 @@ export default function BackgroundPicker() {
         skin={wallpaper === cosmicLightBackground ? 'filled-primary' : 'plain'}
         className="mr1"
         onClick={() => updateTheme({ wallpaper: cosmicLightBackground })}
-        selected={wallpaper === cosmicLightBackground}
+        // selected={wallpaper === cosmicLightBackground}
         style={{ display: 'inline', marginBottom: '.5em' }}
       >
         {__('Cosmic light')}
@@ -65,7 +65,7 @@ export default function BackgroundPicker() {
         skin={wallpaper === nexusThemeBackground ? 'filled-primary' : 'plain'}
         className="mr1"
         onClick={() => updateTheme({ wallpaper: nexusThemeBackground })}
-        selected={wallpaper === nexusThemeBackground}
+        // selected={wallpaper === nexusThemeBackground}
         style={{ display: 'inline', marginBottom: '.5em' }}
       >
         {__('Nexus.io')}
@@ -73,7 +73,7 @@ export default function BackgroundPicker() {
       <Button
         skin={customWallpaper ? 'filled-primary' : 'plain'}
         className="mr1"
-        selected={customWallpaper}
+        // selected={customWallpaper}
         onClick={handleFilePick}
       >
         {customWallpaper ? (

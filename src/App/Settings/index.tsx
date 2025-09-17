@@ -83,7 +83,7 @@ export default function Settings() {
   const updateCount = useAtomValue(moduleUpdateCountAtom);
 
   return (
-    <Panel bodyScrollable={false} icon={settingsIcon} title={__('Settings')}>
+    <Panel icon={settingsIcon} title={__('Settings')}>
       <SettingsComponent>
         <SettingsTabBar>
           <RouterHorizontalTab

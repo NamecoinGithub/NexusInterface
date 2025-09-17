@@ -29,7 +29,7 @@ export default function AddDevModule() {
     <Wrapper>
       {__(
         'Your module is still in development? <link>Add a development module</link>',
-        null,
+        undefined,
         {
           link: (txt) => (
             <Button skin="hyperlink" onClick={handleClick}>

@@ -15,7 +15,9 @@ import plusCircleIcon from 'icons/plus.svg';
 
 __ = __context('Settings.Modules');
 
-const AddModuleComponent = styled(FieldSet)(
+const styledFieldSet = styled(FieldSet);
+
+const AddModuleComponent = styledFieldSet<{ active?: boolean }>(
   ({ theme }) => ({
     textAlign: 'center',
     fontSize: '.9em',
@@ -37,7 +39,7 @@ const AddModuleComponent = styled(FieldSet)(
     }
 );
 
-const InnerMessage = styled.div(
+const InnerMessage = styled.div<{ noPointerEvents?: boolean }>(
   {
     height: consts.lineHeight * 2 + 'em',
     display: 'flex',
@@ -51,26 +53,12 @@ const InnerMessage = styled.div(
 );
 
 /**
- * Override react-dropzone's default getFilesFromEvent function because
- * by default the full paths of dropped files are tripped off
- *
- */
-function getFilesFromEvent(event) {
-  if (!event || !event.dataTransfer) return [];
-  if (event.type === 'drop') {
-    return Array.from(event.dataTransfer.files);
-  } else {
-    return Array.from(event.dataTransfer.items);
-  }
-}
-
-/**
  * The Add Module section in Modules Settings tab
  */
 export default function AddModule() {
   const [checking, setChecking] = useState(false);
 
-  const startInstall = async (path) => {
+  const startInstall = async (path: string) => {
     setChecking(true);
     try {
       await installModule(path);
@@ -105,14 +93,27 @@ export default function AddModule() {
     }
   };
 
-  const handleDrop = (acceptedFiles) => {
-    if (acceptedFiles && acceptedFiles.length > 0) {
-      startInstall(acceptedFiles[0].path);
-    }
-  };
-
   return (
-    <Dropzone getFilesFromEvent={getFilesFromEvent} onDrop={handleDrop}>
+    <Dropzone
+      getFilesFromEvent={
+        // Override react-dropzone's default getFilesFromEvent function because
+        // by default the full paths of dropped files are tripped off
+        async (event) => {
+          if (!event || !('dataTransfer' in event) || !event.dataTransfer)
+            return [];
+          if (event.type === 'drop') {
+            return Array.from(event.dataTransfer.files);
+          } else {
+            return Array.from(event.dataTransfer.items);
+          }
+        }
+      }
+      onDrop={(acceptedFiles) => {
+        if (acceptedFiles && acceptedFiles.length > 0) {
+          startInstall(acceptedFiles[0].path);
+        }
+      }}
+    >
       {({ getRootProps, getInputProps, isDragActive }) => (
         <AddModuleComponent
           {...getRootProps()}

@@ -7,9 +7,8 @@ import fs from 'fs';
 import SettingsField from 'components/SettingsField';
 import Button from 'components/Button';
 import Switch from 'components/Switch';
-import Select from 'components/Select';
+import Select, { SelectOption } from 'components/Select';
 import NexusAddress from 'components/NexusAddress';
-import UT from 'lib/usageTracking';
 import { updateSettings, settingsAtom } from 'lib/settings';
 import { showNotification } from 'lib/ui';
 import { loadCustomTheme } from 'lib/theme';
@@ -22,6 +21,8 @@ import { useSettingsTab } from '../atoms';
 import ColorPicker from './ColorPicker';
 import BackgroundPicker from './BackgroundPicker';
 import ThemePicker from './ThemePicker';
+import { Account } from 'lib/api';
+import { AddressStyle, OverviewDisplay } from 'lib/settings/defaultSettings';
 
 __ = __context('Settings.Style');
 
@@ -39,15 +40,17 @@ const addressStyleOptions = [
   { value: 'raw', display: 'Raw' },
 ];
 
-const getTritiumDefaultAddress = memoize((accounts) => {
+const getTritiumDefaultAddress = memoize((accounts?: Account[]) => {
   const account = accounts?.find((a) => a.name === 'default');
   return account?.address;
 });
 
-const setRenderGlobe = (renderGlobe) => updateSettings({ renderGlobe });
-const setOverviewDisplay = (overviewDisplay) =>
+const setRenderGlobe = (renderGlobe: boolean) =>
+  updateSettings({ renderGlobe });
+const setOverviewDisplay = (overviewDisplay: OverviewDisplay) =>
   updateSettings({ overviewDisplay });
-const setAddressStyle = (addressStyle) => updateSettings({ addressStyle });
+const setAddressStyle = (addressStyle: AddressStyle) =>
+  updateSettings({ addressStyle });
 
 async function openPickThemeFileDialog() {
   const files = await ipcRenderer.invoke('show-open-dialog', {
@@ -70,7 +73,7 @@ async function exportThemeFileDialog() {
   fs.copyFile(walletDataDir + '/theme.json', path, (err) => {
     if (err) {
       console.error(err);
-      showNotification(err, 'error');
+      showNotification(err?.message, 'error');
     }
     showNotification(__('Theme exported'), 'success');
   });
@@ -111,7 +114,7 @@ export default function SettingsStyle() {
         <Select
           value={settings.overviewDisplay}
           onChange={setOverviewDisplay}
-          options={overviewDisplays}
+          options={overviewDisplays as SelectOption<OverviewDisplay>[]}
           style={{ maxWidth: 260 }}
         />
       </SettingsField>
@@ -135,22 +138,24 @@ export default function SettingsStyle() {
         label={__('Nexus Addresses format')}
         subLabel={__('Choose your Nexus Address display preference')}
       >
-        <div>
-          <Select
-            value={settings.addressStyle}
-            onChange={setAddressStyle}
-            options={addressStyleOptions}
-          />
-        </div>
-        <div className="mt1">
-          <NexusAddress
-            address={
-              defaultAddress ||
-              '000000000000000000000000000000000000000000000000000'
-            }
-            label={__('Sample Address')}
-          />
-        </div>
+        <>
+          <div>
+            <Select
+              value={settings.addressStyle}
+              onChange={setAddressStyle}
+              options={addressStyleOptions as SelectOption<AddressStyle>[]}
+            />
+          </div>
+          <div className="mt1">
+            <NexusAddress
+              address={
+                defaultAddress ||
+                '000000000000000000000000000000000000000000000000000'
+              }
+              label={__('Sample Address')}
+            />
+          </div>
+        </>
       </SettingsField>
 
       <SettingsField label={__('Wallet theme')}>
@@ -164,7 +169,9 @@ export default function SettingsStyle() {
         <BackgroundPicker />
       </SettingsField>
 
-      <SettingsField label={__('Color scheme')} />
+      <SettingsField label={__('Color scheme')}>
+        <></>
+      </SettingsField>
 
       <SettingsField indent={1} label={__('Background Color')}>
         <ColorPicker colorName="background" />

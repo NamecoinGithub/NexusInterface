@@ -19,16 +19,18 @@ import {
   downloadAndInstall,
   abortModuleDownload,
   moduleDownloadsAtom,
+  type Module as ModuleType,
 } from 'lib/modules';
 import warningIcon from 'icons/warning.svg';
 import downloadIcon from 'icons/download.svg';
 import closeIcon from 'icons/x-circle.svg';
 
 import FeaturedModuleDetailsModal from './FeaturedModuleDetailsModal';
+import { ComponentProps } from 'react';
 
 __ = __context('Settings.Modules');
 
-const ModuleComponent = styled.div(
+const ModuleComponent = styled.div<{ last?: boolean }>(
   ({ theme }) => ({
     display: 'grid',
     gridTemplateAreas: '"logo info controls"',
@@ -49,7 +51,7 @@ const ModuleComponent = styled.div(
     }
 );
 
-const ModuleLogo = styled.div(
+const ModuleLogo = styled.div<{ unclickable?: boolean }>(
   ({ unclickable }) =>
     !unclickable && {
       cursor: 'pointer',
@@ -59,7 +61,7 @@ const ModuleLogo = styled.div(
   }
 );
 
-const ModuleInfo = styled.div(
+const ModuleInfo = styled.div<{ unclickable?: boolean }>(
   {
     gridArea: 'info',
   },
@@ -113,8 +115,13 @@ const LatestVersion = styled.span(({ theme }) => ({
   fontSize: '.9em',
 }));
 
-export default function Module({ module, ...rest }) {
+export interface ModuleProps extends ComponentProps<typeof ModuleComponent> {
+  module: ModuleType;
+}
+
+export default function Module({ module, ...rest }: ModuleProps) {
   const { disabledModules } = useAtomValue(settingsAtom);
+  const disallowed = !module.development && module.disallowed;
 
   const enableModule = () => {
     updateSettings({
@@ -129,7 +136,7 @@ export default function Module({ module, ...rest }) {
   };
 
   const toggleModule = async () => {
-    if (module.disallowed) return;
+    if (disallowed) return;
 
     if (module.enabled) {
       const confirmed = await confirm({
@@ -169,16 +176,16 @@ export default function Module({ module, ...rest }) {
   return (
     <ModuleComponent {...rest}>
       <ModuleLogo
-        className={module.disallowed ? 'dim' : undefined}
+        className={disallowed ? 'dim' : undefined}
         onClick={openModuleDetails}
       >
         <ModuleIcon module={module} />
       </ModuleLogo>
 
       <ModuleInfo onClick={openModuleDetails}>
-        <div className={module.disallowed ? 'dim' : undefined}>
+        <div className={disallowed ? 'dim' : undefined}>
           <ModuleName>{module.info.displayName}</ModuleName>
-          {!!module.info.version && (
+          {!module.development && !!module.info.version && (
             <ModuleVersion>v{module.info.version}</ModuleVersion>
           )}
           {!module.development && (
@@ -218,7 +225,7 @@ export default function Module({ module, ...rest }) {
         </div>
 
         <div>
-          <ModuleDescription className={module.disallowed ? 'dim' : undefined}>
+          <ModuleDescription className={disallowed ? 'dim' : undefined}>
             {module.info.description}
           </ModuleDescription>
         </div>
@@ -230,7 +237,7 @@ export default function Module({ module, ...rest }) {
         ) : (
           <Tooltip.Trigger
             tooltip={
-              !module.disallowed &&
+              !disallowed &&
               !module.development &&
               (module.enabled ? 'Enabled' : 'Disabled')
             }
@@ -238,7 +245,7 @@ export default function Module({ module, ...rest }) {
             <Switch
               checked={module.enabled}
               onChange={toggleModule}
-              disabled={module.disallowed || module.development}
+              disabled={disallowed || module.development}
             />
           </Tooltip.Trigger>
         )}
@@ -247,13 +254,20 @@ export default function Module({ module, ...rest }) {
   );
 }
 
-Module.FeaturedModule = function ({ featuredModule, ...rest }) {
+interface FeaturedModuleProps extends ComponentProps<typeof ModuleComponent> {
+  featuredModule: any; // TODO: more detailed type
+}
+
+Module.FeaturedModule = function ({
+  featuredModule,
+  ...rest
+}: FeaturedModuleProps) {
   const moduleDownload = useAtomValue(moduleDownloadsAtom)[featuredModule.name];
   // `downloading` -> when the module package is being downloaded
   // `busy` -> when the module package is being downloaded OR is in other preparation steps
   const busy = !!moduleDownload;
   const { downloaded, totalSize, downloading } = moduleDownload || {};
-  const downloadProgress = downloaded / totalSize;
+  const downloadProgress = downloaded && totalSize ? downloaded / totalSize : 0;
 
   const openModuleDetails = () => {
     openModal(FeaturedModuleDetailsModal, {
@@ -284,7 +298,7 @@ Module.FeaturedModule = function ({ featuredModule, ...rest }) {
               <Button
                 skin="plain-danger"
                 className="mr1"
-                onClick={abortModuleDownload}
+                onClick={() => abortModuleDownload(featuredModule.name)}
               >
                 <Icon icon={closeIcon} />
               </Button>

@@ -1,7 +1,7 @@
 // External
 import styled from '@emotion/styled';
 
-export default styled.span(({ theme, label }) => ({
+export default styled.span<{ label?: string }>(({ theme, label }) => ({
   position: 'relative',
   display: 'flex',
   justifyContent: 'center',
