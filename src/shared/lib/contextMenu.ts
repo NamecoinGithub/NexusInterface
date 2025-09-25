@@ -1,4 +1,5 @@
 import { ipcRenderer, MenuItemConstructorOptions } from 'electron';
+import { MouseEvent } from 'react';
 
 export const defaultMenu: MenuItemConstructorOptions[] = [
   {
@@ -13,7 +14,7 @@ export const defaultMenu: MenuItemConstructorOptions[] = [
   },
 ];
 
-export function showDefaultMenu(e: Event) {
+export function showDefaultMenu(e: MouseEvent<HTMLElement>) {
   e.preventDefault();
   ipcRenderer.invoke('popup-context-menu', defaultMenu);
 }
