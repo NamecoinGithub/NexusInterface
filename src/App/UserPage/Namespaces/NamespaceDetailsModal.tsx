@@ -7,10 +7,11 @@ import { openModal } from 'lib/ui';
 
 import TransferNamespaceModal from './TransferNamespaceModal';
 import NamespaceHistoryModal from './NamespaceHistoryModal';
+import { Namespace } from 'lib/api';
 
 __ = __context('NamespaceDetails');
 
-const timeFormatOptions = {
+const timeFormatOptions: Intl.DateTimeFormatOptions = {
   year: 'numeric',
   month: 'long',
   day: '2-digit',
@@ -19,7 +20,11 @@ const timeFormatOptions = {
   second: '2-digit',
 };
 
-export default function NamespaceDetailsModal({ namespace }) {
+export default function NamespaceDetailsModal({
+  namespace,
+}: {
+  namespace: Namespace;
+}) {
   return (
     <ControlledModal>
       {(closeModal) => (

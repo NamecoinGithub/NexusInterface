@@ -10,7 +10,7 @@ import { formSubmit } from 'lib/form';
 import { confirmPin, openSuccessDialog } from 'lib/dialog';
 import { nameRecordsQuery } from 'lib/user';
 import { usernameAtom } from 'lib/session';
-import { callAPI } from 'lib/api';
+import { callAPI, NameRecord } from 'lib/api';
 import memoize from 'utils/memoize';
 
 __ = __context('ChangeRegisterAddress');
@@ -27,9 +27,15 @@ const getInitialValues = memoize((registerAddress) => ({
   registerAddress,
 }));
 
-export default function ChangeRegisterAddressModal({ nameRecord }) {
+export interface ChangeRegisterAddressModalProps {
+  nameRecord: NameRecord;
+}
+
+export default function ChangeRegisterAddressModal({
+  nameRecord,
+}: ChangeRegisterAddressModalProps) {
   const username = useAtomValue(usernameAtom);
-  const inputRef = useRef();
+  const inputRef = useRef<HTMLInputElement>(null);
   useEffect(() => {
     setTimeout(() => {
       // Select all register address
@@ -58,6 +64,7 @@ export default function ChangeRegisterAddressModal({ nameRecord }) {
                       register: registerAddress,
                     });
                   }
+                  return undefined;
                 },
                 onSuccess: async (result) => {
                   if (!result) return; // Submission was cancelled
@@ -71,17 +78,19 @@ export default function ChangeRegisterAddressModal({ nameRecord }) {
               })}
             >
               <FormField label={__('Name')}>
-                {nameRecord.global ? null : nameRecord.namespace ? (
-                  <Prefix>{nameRecord.namespace + '::'}</Prefix>
-                ) : (
-                  <Prefix>{username + ':'}</Prefix>
-                )}
-                <Name>{nameRecord.name}</Name>
+                <>
+                  {nameRecord.global ? null : nameRecord.namespace ? (
+                    <Prefix>{nameRecord.namespace + '::'}</Prefix>
+                  ) : (
+                    <Prefix>{username + ':'}</Prefix>
+                  )}
+                  <Name>{nameRecord.name}</Name>
+                </>
               </FormField>
 
               <FormField connectLabel label={__('Register address')}>
                 <Form.TextField
-                  inputRef={inputRef}
+                  ref={inputRef}
                   name="registerAddress"
                   placeholder={__('Register address that this name points to')}
                 />

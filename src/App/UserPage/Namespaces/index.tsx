@@ -13,6 +13,7 @@ import NamespaceDetailsModal from './NamespaceDetailsModal';
 import CreateNamespaceModal from './CreateNamespaceModal';
 import TransferNamespaceModal from './TransferNamespaceModal';
 import TabContentWrapper from '../TabContentWrapper';
+import { Namespace as NamespaceType } from 'lib/api';
 
 __ = __context('User.Namespaces');
 
@@ -38,7 +39,7 @@ const EmptyMessage = styled(Item)(({ theme }) => ({
   color: theme.mixer(0.5),
 }));
 
-function Namespace({ namespace }) {
+function Namespace({ namespace }: { namespace: NamespaceType }) {
   return (
     <NamespaceComponent
       onClick={() => {
@@ -51,7 +52,7 @@ function Namespace({ namespace }) {
         popupContextMenu([
           {
             id: 'view-details',
-            label: __('View name details'),
+            label: __('View namespace details'),
             click: () => {
               openModal(NamespaceDetailsModal, { namespace });
             },

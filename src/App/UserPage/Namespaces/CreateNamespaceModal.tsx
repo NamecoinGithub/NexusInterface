@@ -41,8 +41,9 @@ export default function CreateNamespaceModal() {
                       namespace,
                     });
                   }
+                  return undefined;
                 },
-                onSuccess: async (result, values, form) => {
+                onSuccess: async (result, _values, form) => {
                   if (!result) return; // Submission was cancelled
                   UT.CreateNewItem('namespace');
                   namespacesQuery.refetch();

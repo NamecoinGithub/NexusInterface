@@ -1,4 +1,3 @@
-import { useAtomValue } from 'jotai';
 import styled from '@emotion/styled';
 
 import Form from 'components/Form';
@@ -7,18 +6,13 @@ import FormField from 'components/FormField';
 import Spinner from 'components/Spinner';
 import { formSubmit, required } from 'lib/form';
 import { confirmPin, openSuccessDialog } from 'lib/dialog';
-import { nameRecordsQuery } from 'lib/user';
-import { usernameAtom } from 'lib/session';
-import { callAPI } from 'lib/api';
+import { namespacesQuery } from 'lib/user';
+import { callAPI, Namespace } from 'lib/api';
 import { userIdRegex } from 'consts/misc';
 
-__ = __context('TransferName');
+__ = __context('TransferNamespace');
 
-const Prefix = styled.span(({ theme }) => ({
-  color: theme.mixer(0.5),
-}));
-
-const Name = styled.span(({ theme }) => ({
+const NamespaceName = styled.span(({ theme }) => ({
   color: theme.foreground,
 }));
 
@@ -26,50 +20,56 @@ const initialValues = {
   recipient: '',
 };
 
-export default function TransferNameModal({ nameRecord }) {
-  const username = useAtomValue(usernameAtom);
+export default function TransferNamespaceModal({
+  namespace,
+}: {
+  namespace: Namespace;
+}) {
   return (
     <ControlledModal maxWidth={600}>
       {(closeModal) => (
         <>
-          <ControlledModal.Header>{__('Transfer name')}</ControlledModal.Header>
+          <ControlledModal.Header>
+            {__('Transfer namespace')}
+          </ControlledModal.Header>
           <ControlledModal.Body>
             <Form
-              name="transfer-name"
+              name="transfer-namespace"
               initialValues={initialValues}
               onSubmit={formSubmit({
                 submit: async ({ recipient }) => {
                   const pin = await confirmPin();
 
-                  const params = { pin, address: nameRecord.address };
-                  if (userIdRegex.test(recipient)) {
-                    params.destination = recipient;
-                  } else {
-                    params.username = recipient;
-                  }
-
                   if (pin) {
-                    return await callAPI('names/transfer/name', params);
+                    const params: {
+                      pin: string;
+                      address?: string;
+                      username?: string;
+                      destination?: string;
+                    } = { pin, address: namespace.address };
+                    if (userIdRegex.test(recipient)) {
+                      params.destination = recipient;
+                    } else {
+                      params.username = recipient;
+                    }
+
+                    return await callAPI('names/transfer/namespace', params);
                   }
+                  return undefined;
                 },
                 onSuccess: async (result) => {
                   if (!result) return; // Submission was cancelled
-                  nameRecordsQuery.refetch();
+                  namespacesQuery.refetch();
                   closeModal();
                   openSuccessDialog({
-                    message: __('Name has been transferred'),
+                    message: __('Namespace has been transferred'),
                   });
                 },
-                errorMessage: __('Error transferring name'),
+                errorMessage: __('Error transferring namespace'),
               })}
             >
-              <FormField label={__('Name')}>
-                {nameRecord.global ? null : nameRecord.namespace ? (
-                  <Prefix>{nameRecord.namespace + '::'}</Prefix>
-                ) : (
-                  <Prefix>{username + ':'}</Prefix>
-                )}
-                <Name>{nameRecord.name}</Name>
+              <FormField label={__('Namespace')}>
+                <NamespaceName>{namespace.namespace}</NamespaceName>
               </FormField>
 
               <FormField connectLabel label={__('Transfer to')}>
@@ -87,11 +87,11 @@ export default function TransferNameModal({ nameRecord }) {
                     <span>
                       <Spinner className="mr0_4" />
                       <span className="v-align">
-                        {__('Transferring name')}...
+                        {__('Transferring namespace')}...
                       </span>
                     </span>
                   ) : (
-                    __('Transfer name')
+                    __('Transfer namespace')
                   )
                 }
               </Form.SubmitButton>

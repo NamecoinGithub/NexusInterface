@@ -16,7 +16,7 @@ import {
 } from 'lib/fees';
 import { nameRecordsQuery, namespacesQuery } from 'lib/user';
 import { usernameAtom } from 'lib/session';
-import { callAPI } from 'lib/api';
+import { callAPI, Namespace } from 'lib/api';
 import UT from 'lib/usageTracking';
 
 __ = __context('CreateName');
@@ -35,7 +35,7 @@ const NameTypes = styled.div({
   marginBottom: '2em',
 });
 
-function NameType({ namespaces }) {
+function NameType({ namespaces }: { namespaces?: Namespace[] }) {
   const { input } = useField('type');
   return (
     <>
@@ -94,7 +94,7 @@ const initialValues = {
   registerAddress: '',
 };
 
-const notStartWithColon = (value) =>
+const notStartWithColon = (value: string) =>
   value.startsWith(':')
     ? __('Name cannot start with a colon character')
     : undefined;
@@ -127,8 +127,9 @@ export default function CreateNameModal() {
                       register: registerAddress,
                     });
                   }
+                  return undefined;
                 },
-                onSuccess: async (result, values, form) => {
+                onSuccess: async (result, _values, form) => {
                   if (!result) return; // Submission was cancelled
                   UT.CreateNewItem('name');
                   nameRecordsQuery.refetch();

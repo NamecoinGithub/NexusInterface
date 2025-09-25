@@ -19,6 +19,7 @@ import CreateNameModal from './CreateNameModal';
 import ChangeRegisterAddressModal from './ChangeRegisterAddressModal';
 import TransferNameModal from './TransferNameModal';
 import TabContentWrapper from '../TabContentWrapper';
+import { NameRecord } from 'lib/api';
 
 __ = __context('User.Names');
 
@@ -64,7 +65,13 @@ const EmptyMessage = styled(Item)(({ theme }) => ({
   color: theme.mixer(0.5),
 }));
 
-function Name({ nameRecord, username }) {
+function Name({
+  nameRecord,
+  username,
+}: {
+  nameRecord: NameRecord;
+  username: string;
+}) {
   return (
     <NameComponent
       onClick={() => {
@@ -126,10 +133,11 @@ function Name({ nameRecord, username }) {
   );
 }
 
-const filterNames = memoize((nameRecords, showUnusedNames) =>
-  showUnusedNames
-    ? nameRecords
-    : nameRecords?.filter((nr) => nr.register && nr.register !== '0')
+const filterNames = memoize(
+  (nameRecords: NameRecord[] | undefined, showUnusedNames: boolean) =>
+    showUnusedNames
+      ? nameRecords
+      : nameRecords?.filter((nr) => nr.register && nr.register !== '0')
 );
 
 export default function Names() {

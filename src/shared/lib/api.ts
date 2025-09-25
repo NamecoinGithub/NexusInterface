@@ -372,6 +372,7 @@ export interface NameRecord extends NxsObject {
   namespace?: string;
   mine: boolean;
   user?: string;
+  global?: boolean;
 }
 
 export interface NameEvent extends NxsObject {
@@ -380,10 +381,21 @@ export interface NameEvent extends NxsObject {
   local: boolean;
   mine: boolean;
   action: string;
+  checksum?: string;
+  namespace?: string;
 }
 
 export interface Namespace extends NxsObject {
   namespace: string;
+}
+
+export interface NamespaceEvent extends NxsObject {
+  register: string;
+  name: string;
+  local: boolean;
+  mine: boolean;
+  action: string;
+  checksum?: string;
 }
 
 export interface Asset extends NxsObject {
@@ -677,6 +689,45 @@ async function callAPI<
   endpoint: 'names/reverse/lookup',
   customParams?: TParams
 ): Promise<NameRecord>;
+async function callAPI<
+  TParams extends {
+    address: string;
+  }
+>(endpoint: 'names/history/name', customParams?: TParams): Promise<NameEvent[]>;
+async function callAPI<
+  TParams extends {
+    address: string;
+  }
+>(
+  endpoint: 'names/history/namespace',
+  customParams?: TParams
+): Promise<NamespaceEvent[]>;
+// TODO: double check if these params are correct
+async function callAPI<
+  TParams extends {
+    address?: string;
+    name?: string;
+    pin: string;
+    username?: string;
+    destination?: string;
+  }
+>(
+  endpoint: 'names/transfer/name',
+  customParams?: TParams
+): Promise<OperationResultWithAddress>;
+// TODO: double check if these params are correct
+async function callAPI<
+  TParams extends {
+    address?: string;
+    namespace?: string;
+    pin: string;
+    username?: string;
+    destination?: string;
+  }
+>(
+  endpoint: 'names/transfer/namespace',
+  customParams?: TParams
+): Promise<OperationResultWithAddress>;
 
 async function callAPI<
   TParams extends {

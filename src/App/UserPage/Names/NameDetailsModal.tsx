@@ -13,10 +13,11 @@ import editIcon from 'icons/edit.svg';
 import ChangeRegisterAddressModal from './ChangeRegisterAddressModal';
 import TransferNameModal from './TransferNameModal';
 import NameHistoryModal from './NameHistoryModal';
+import { NameRecord } from 'lib/api';
 
 __ = __context('NameDetails');
 
-const timeFormatOptions = {
+const timeFormatOptions: Intl.DateTimeFormatOptions = {
   year: 'numeric',
   month: 'long',
   day: '2-digit',
@@ -35,7 +36,11 @@ const EditName = styled.div({
   fontSize: '1rem',
 });
 
-export default function NameDetailsModal({ nameRecord }) {
+export default function NameDetailsModal({
+  nameRecord,
+}: {
+  nameRecord: NameRecord;
+}) {
   return (
     <ControlledModal>
       {(closeModal) => (

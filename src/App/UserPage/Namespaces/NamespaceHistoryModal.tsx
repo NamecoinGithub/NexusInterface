@@ -6,14 +6,15 @@ import WaitingMessage from 'components/WaitingMessage';
 import Tooltip from 'components/Tooltip';
 import { formatDateTime } from 'lib/intl';
 import { openModal } from 'lib/ui';
-import { callAPI } from 'lib/api';
+import { callAPI, Namespace, NamespaceEvent } from 'lib/api';
 import { handleError } from 'lib/form';
 
-import NameHistoryDetailsModal from './NameHistoryDetailsModal';
+import NamespaceHistoryDetailsModal from './NamespaceHistoryDetailsModal';
+import { ColumnDef } from '@tanstack/react-table';
 
-__ = __context('NameHistory');
+__ = __context('NamespaceHistory');
 
-const timeFormatOptions = {
+const timeFormatOptions: Intl.DateTimeFormatOptions = {
   year: 'numeric',
   month: 'short',
   day: '2-digit',
@@ -22,13 +23,15 @@ const timeFormatOptions = {
   second: '2-digit',
 };
 
-export const tableColumns = [
+export const tableColumns: ColumnDef<NamespaceEvent>[] = [
   {
     id: 'modified',
     header: __('Time'),
     accessorKey: 'modified',
     cell: ({ getValue }) =>
-      getValue() ? formatDateTime(getValue() * 1000, timeFormatOptions) : '',
+      getValue()
+        ? formatDateTime(getValue<number>() * 1000, timeFormatOptions)
+        : '',
     size: 200,
   },
   {
@@ -42,7 +45,7 @@ export const tableColumns = [
     header: __('Register'),
     accessorKey: 'register',
     cell: ({ getValue }) => {
-      const value = getValue();
+      const value = getValue<string>();
       return (
         <Tooltip.Trigger tooltip={value} align="start">
           <span>{value}</span>
@@ -56,7 +59,7 @@ export const tableColumns = [
     header: __('Owner'),
     accessorKey: 'owner',
     cell: ({ getValue }) => {
-      const value = getValue();
+      const value = getValue<string>();
       return (
         <Tooltip.Trigger tooltip={value} align="start">
           <span>{value}</span>
@@ -67,14 +70,18 @@ export const tableColumns = [
   },
 ];
 
-export default function NameHistoryModal({ nameRecord }) {
-  const [events, setEvents] = useState(null);
-  const closeModalRef = useRef();
+export default function NamespaceHistoryModal({
+  namespace,
+}: {
+  namespace: Namespace;
+}) {
+  const closeModalRef = useRef(() => {});
+  const [events, setEvents] = useState<NamespaceEvent[] | null>(null);
   useEffect(() => {
     (async () => {
       try {
-        const events = await callAPI('names/history/name', {
-          address: nameRecord.address,
+        const events = await callAPI('names/history/namespace', {
+          address: namespace.address,
         });
         setEvents(events.reverse());
       } catch (err) {
@@ -92,23 +99,23 @@ export default function NameHistoryModal({ nameRecord }) {
       style={{ width: '80%' }}
     >
       <ControlledModal.Header className="relative">
-        {__('Name History')}
+        {__('Namespace History')}
       </ControlledModal.Header>
 
       <ControlledModal.Body>
         {!events ? (
           <WaitingMessage>
-            {__('Loading name history')}
+            {__('Loading namespace history')}
             ...
           </WaitingMessage>
         ) : (
           <Table
             data={events}
             columns={tableColumns}
-            defaultPageSize={10}
+            // defaultPageSize={10}
             onRowClick={(row) => {
               const event = row?.original;
-              openModal(NameHistoryDetailsModal, {
+              openModal(NamespaceHistoryDetailsModal, {
                 event,
               });
             }}
