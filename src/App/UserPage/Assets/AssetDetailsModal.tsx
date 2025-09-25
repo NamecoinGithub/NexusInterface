@@ -11,7 +11,7 @@ import { formatDateTime } from 'lib/intl';
 import { openModal } from 'lib/ui';
 import { getAssetData } from 'lib/asset';
 import { userGenesisAtom } from 'lib/session';
-import { callAPI } from 'lib/api';
+import { Asset, AssetSchemaItem, callAPI } from 'lib/api';
 import editIcon from 'icons/edit.svg';
 
 import EditAssetModal from './EditAssetModal';
@@ -21,7 +21,7 @@ import TokenizeAssetModal from './TokenizeAssetModal';
 
 __ = __context('AssetDetails');
 
-const timeFormatOptions = {
+const timeFormatOptions: Intl.DateTimeFormatOptions = {
   year: 'numeric',
   month: 'long',
   day: '2-digit',
@@ -40,10 +40,10 @@ const EditAsset = styled.div({
   fontSize: '1rem',
 });
 
-const isEditable = (schema) =>
+const isEditable = (schema?: AssetSchemaItem[]) =>
   !!Array.isArray(schema) && schema.some((field) => field.mutable);
 
-export default function AssetDetailsModal({ asset }) {
+export default function AssetDetailsModal({ asset }: { asset: Asset }) {
   const address = asset?.address;
   const genesis = useAtomValue(userGenesisAtom);
   const isOwner = !!asset?.owner && genesis === asset.owner;
@@ -61,7 +61,7 @@ export default function AssetDetailsModal({ asset }) {
         <>
           <ControlledModal.Header className="relative">
             {__('Asset Details')}
-            {isOwner && isEditable(schema) && (
+            {isOwner && schema && isEditable(schema) && (
               <EditAsset>
                 <Tooltip.Trigger tooltip={__('Edit asset')}>
                   <Button

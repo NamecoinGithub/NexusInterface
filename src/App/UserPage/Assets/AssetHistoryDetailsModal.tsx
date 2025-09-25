@@ -1,10 +1,11 @@
 import ControlledModal from 'components/ControlledModal';
 import InfoField from 'components/InfoField';
+import { AssetHistoryEvent } from 'lib/api';
 import { formatDateTime } from 'lib/intl';
 
 __ = __context('AssetHistoryDetails');
 
-const timeFormatOptions = {
+const timeFormatOptions: Intl.DateTimeFormatOptions = {
   year: 'numeric',
   month: 'long',
   day: '2-digit',
@@ -15,6 +16,8 @@ const timeFormatOptions = {
 
 export default function AssetHistoryDetailsModal({
   event: { type, owner, modified, address, checksum, name, ...data },
+}: {
+  event: AssetHistoryEvent;
 }) {
   return (
     <ControlledModal>

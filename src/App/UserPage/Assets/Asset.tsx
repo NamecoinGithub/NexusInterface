@@ -7,6 +7,7 @@ import { getAssetData } from 'lib/asset';
 import { timing } from 'styles';
 
 import AssetDetailsModal from './AssetDetailsModal';
+import { Asset as AssetType } from 'lib/api';
 
 __ = __context('User.Assets');
 
@@ -35,7 +36,7 @@ const AssetHeader = styled.div(({ theme }) => ({
   },
 }));
 
-const AssetName = styled.div(({ theme, unnamed }) => ({
+const AssetName = styled.div<{ unnamed?: boolean }>(({ theme, unnamed }) => ({
   color: unnamed ? theme.mixer(0.25) : theme.foreground,
   fontWeight: 'bold',
 }));
@@ -52,7 +53,7 @@ const AssetData = styled.div({
   padding: '.6em 1em .1em',
 });
 
-export default function Asset({ asset }) {
+export default function Asset({ asset }: { asset: AssetType }) {
   const data = getAssetData(asset);
 
   return (

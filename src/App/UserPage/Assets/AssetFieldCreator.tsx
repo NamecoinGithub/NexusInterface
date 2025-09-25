@@ -7,6 +7,7 @@ import QuestionCircle from 'components/QuestionCircle';
 import { useFieldValue, required } from 'lib/form';
 import { consts, timing } from 'styles';
 import { assetNumberTypes } from 'consts/misc';
+import { ComponentProps, ReactNode } from 'react';
 
 __ = __context('CreateAsset');
 
@@ -80,7 +81,19 @@ const SwitchWrapper = styled.div({
   alignItems: 'center',
 });
 
-const ConditionalFormField = ({ showLabel, label, children, ...rest }) =>
+interface ConditionalFormFieldProps
+  extends Omit<ComponentProps<typeof FormField>, 'children'> {
+  showLabel?: boolean;
+  label: ReactNode;
+  children: ReactNode;
+}
+
+const ConditionalFormField = ({
+  showLabel,
+  label,
+  children,
+  ...rest
+}: ConditionalFormFieldProps) =>
   showLabel ? (
     <FormField label={label} capitalizeLabel {...rest}>
       <div style={{ marginTop: '.75em' }}>{children}</div>
@@ -89,12 +102,19 @@ const ConditionalFormField = ({ showLabel, label, children, ...rest }) =>
     children
   );
 
+export interface AssetFieldCreatorProps {
+  fieldName: string;
+  first?: boolean;
+  remove: () => void;
+  onlyField?: boolean;
+}
+
 export default function AssetFieldCreator({
   fieldName,
   first,
   remove,
   onlyField,
-}) {
+}: AssetFieldCreatorProps) {
   const fieldValue = useFieldValue(fieldName);
   const lengthDisabled = !(fieldValue.mutable && fieldValue.type === 'string');
 

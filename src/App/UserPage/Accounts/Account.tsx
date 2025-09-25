@@ -15,12 +15,14 @@ import AccountDetailsModal from './AccountDetailsModal';
 import AccountHistoryModal from './AccountHistoryModal';
 import RenameAccountModal from './RenameAccountModal';
 import { totalBalance } from './utils';
+import { Account as AccountType } from 'lib/api';
+import { RefObject } from 'react';
 
 __ = __context('User.Accounts');
 
-const AccountComponent = styled.div(({ theme }) => ({
+const AccountComponent = styled.div({
   padding: '1em 0 3em',
-}));
+});
 
 const AccountInfo = styled.div({
   cursor: 'pointer',
@@ -31,7 +33,7 @@ const AccountName = styled.span(({ theme }) => ({
   color: theme.foreground,
 }));
 
-export default function Account({ account }) {
+export default function Account({ account }: { account: AccountType }) {
   return (
     <AccountComponent>
       <div className="flex space-between">
@@ -92,11 +94,11 @@ export default function Account({ account }) {
               </>
             )}
           >
-            {({ open, controlRef, openDropdown }) => (
+            {({ open, ref, openDropdown }) => (
               <Button
                 skin="plain"
                 fitHeight
-                ref={controlRef}
+                ref={ref as RefObject<HTMLButtonElement | null>}
                 onClick={openDropdown}
                 className={open ? 'hover' : undefined}
               >

@@ -6,7 +6,7 @@ import Button from 'components/Button';
 import FormField from 'components/FormField';
 import { formSubmit, required } from 'lib/form';
 import { confirmPin, openErrorDialog } from 'lib/dialog';
-import { callAPI } from 'lib/api';
+import { Account, callAPI, NameRecord } from 'lib/api';
 import { accountsQuery } from 'lib/user';
 import { showNotification } from 'lib/ui';
 import { createLocalNameFee } from 'lib/fees';
@@ -17,12 +17,23 @@ import UT from 'lib/usageTracking';
 __ = __context('RenameAccount');
 
 // If you already own a name but is inactive, you do not need to pay a fee.
-const getFee = (nameRecord) => (nameRecord ? 0 : createLocalNameFee);
+const getFee = (nameRecord?: NameRecord) =>
+  nameRecord ? 0 : createLocalNameFee;
 
-const getInitialValues = memoize((accountName) => ({ name: accountName }));
+const getInitialValues = memoize((accountName?: string) => ({
+  name: accountName || '',
+}));
 
-async function submit({ name, account, username }) {
-  let nameRecord;
+async function submit({
+  name,
+  account,
+  username,
+}: {
+  name: string;
+  account: Account;
+  username: string;
+}) {
+  let nameRecord: NameRecord | undefined = undefined;
   try {
     nameRecord = await callAPI('names/get/name', {
       name: `${username}:${name}`,
@@ -34,9 +45,9 @@ async function submit({ name, account, username }) {
           'The name you entered is already in use. Please choose another name.'
         ),
       });
-      return;
+      return false;
     }
-  } catch (err) {
+  } catch (err: any) {
     if (err.code === -49) {
       // Error -49: Unsupported type for name/address
       // When name is inactive
@@ -67,12 +78,21 @@ async function submit({ name, account, username }) {
         register: account.address,
       });
     }
-
     return true;
   }
+
+  return false;
 }
 
-function handleSubmitSuccess({ result, name, closeModal }) {
+function handleSubmitSuccess({
+  result,
+  name,
+  closeModal,
+}: {
+  result?: boolean;
+  name: string;
+  closeModal: () => void;
+}) {
   if (!result) return; // Submission was cancelled
   UT.RenameAccount();
   accountsQuery.refetch();
@@ -85,7 +105,7 @@ function handleSubmitSuccess({ result, name, closeModal }) {
   );
 }
 
-export default function RenameAccountForm({ account }) {
+export default function RenameAccountForm({ account }: { account: Account }) {
   const username = useAtomValue(usernameAtom);
 
   return (
@@ -109,8 +129,7 @@ export default function RenameAccountForm({ account }) {
                 submitting: true,
                 pristine: true,
               }}
-            >
-              {({ submitting, pristine }) => (
+              render={({ submitting, pristine }) => (
                 <>
                   <FormField connectLabel label={__('Account name')}>
                     <Form.TextField
@@ -131,7 +150,7 @@ export default function RenameAccountForm({ account }) {
                   </div>
                 </>
               )}
-            </Form>
+            />
           </ControlledModal.Body>
         </>
       )}

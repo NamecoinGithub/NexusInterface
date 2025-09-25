@@ -7,8 +7,9 @@ import Spinner from 'components/Spinner';
 import { formSubmit, required } from 'lib/form';
 import { confirmPin, openSuccessDialog } from 'lib/dialog';
 import { assetsQuery, tokensQuery } from 'lib/user';
-import { callAPI } from 'lib/api';
+import { Asset, callAPI, Token } from 'lib/api';
 import memoize from 'utils/memoize';
+import { SuggestionType } from 'components/AutoSuggest';
 
 __ = __context('TokenizeAsset');
 
@@ -21,36 +22,43 @@ const TokenName = styled.span(({ theme }) => ({
   marginLeft: '.5em',
 }));
 
-const filterSuggestions = memoize((suggestions, inputValue) => {
-  if (!suggestions) return [];
-  const query = new String(inputValue || '').toLowerCase();
-  return suggestions.filter((suggestion) => {
-    const { name } = suggestion;
-    return (
-      !!name && typeof name === 'string' && name.toLowerCase().includes(query)
-    );
-  });
-});
+type TokenSuggestion = SuggestionType & {
+  name?: string;
+};
 
-const getTokenSuggestions = memoize((ownedTokens) =>
-  ownedTokens
-    ? ownedTokens.map((token) => ({
-        value: token.address,
-        name: token.ticker,
-        display: (
-          <span>
-            {token.ticker} -<span className="dim"> {token.address}</span>
-          </span>
-        ),
-      }))
-    : []
+const filterSuggestions = memoize(
+  (suggestions: TokenSuggestion[], inputValue: string) => {
+    if (!suggestions) return [];
+    const query = new String(inputValue || '').toLowerCase();
+    return suggestions.filter((suggestion) => {
+      const { name } = suggestion;
+      return (
+        !!name && typeof name === 'string' && name.toLowerCase().includes(query)
+      );
+    });
+  }
+);
+
+const getTokenSuggestions = memoize(
+  (ownedTokens?: Token[]): TokenSuggestion[] =>
+    ownedTokens
+      ? ownedTokens.map((token) => ({
+          value: token.address,
+          name: token.ticker,
+          display: (
+            <span>
+              {token.ticker} -<span className="dim"> {token.address}</span>
+            </span>
+          ),
+        }))
+      : []
 );
 
 const initialValues = {
   token: '',
 };
 
-export default function TokenizeAssetModal({ asset }) {
+export default function TokenizeAssetModal({ asset }: { asset: Asset }) {
   const ownedTokens = tokensQuery.use();
   const tokenSuggestions = getTokenSuggestions(ownedTokens);
 
@@ -75,6 +83,7 @@ export default function TokenizeAssetModal({ asset }) {
                       token,
                     });
                   }
+                  return undefined;
                 },
                 onSuccess: async (result) => {
                   if (!result) return; // Submission was cancelled
@@ -105,7 +114,10 @@ export default function TokenizeAssetModal({ asset }) {
                         name="token"
                         render={({ input }) => {
                           const suggestion = tokenSuggestions?.find(
-                            (suggestion) => suggestion.value === input.value
+                            (suggestion) =>
+                              (typeof suggestion === 'string'
+                                ? suggestion
+                                : suggestion.value) === input.value
                           );
                           const tokenName = suggestion?.name;
                           return (

@@ -7,7 +7,7 @@ import Spinner from 'components/Spinner';
 import { formSubmit, required } from 'lib/form';
 import { confirmPin, openSuccessDialog } from 'lib/dialog';
 import { assetsQuery } from 'lib/user';
-import { callAPI } from 'lib/api';
+import { Asset, callAPI } from 'lib/api';
 import { userIdRegex } from 'consts/misc';
 
 __ = __context('TransferAsset');
@@ -20,7 +20,7 @@ const initialValues = {
   recipient: '',
 };
 
-export default function TransferAssetModal({ asset }) {
+export default function TransferAssetModal({ asset }: { asset: Asset }) {
   return (
     <ControlledModal maxWidth={600}>
       {(closeModal) => (
@@ -36,16 +36,21 @@ export default function TransferAssetModal({ asset }) {
                 submit: async ({ recipient }) => {
                   const pin = await confirmPin();
 
-                  const params = { pin, address: asset.address };
-                  if (userIdRegex.test(recipient)) {
-                    params.destination = recipient;
-                  } else {
-                    params.username = recipient;
-                  }
-
                   if (pin) {
+                    const params: {
+                      pin: string;
+                      address: string;
+                      destination?: string;
+                      username?: string;
+                    } = { pin, address: asset.address };
+                    if (userIdRegex.test(recipient)) {
+                      params.destination = recipient;
+                    } else {
+                      params.username = recipient;
+                    }
                     return await callAPI('assets/transfer/asset', params);
                   }
+                  return undefined;
                 },
                 onSuccess: async (result) => {
                   if (!result) return; // Submission was cancelled

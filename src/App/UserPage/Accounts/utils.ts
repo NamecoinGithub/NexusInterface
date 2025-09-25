@@ -1,4 +1,6 @@
-export function totalBalance(account) {
+import { Account } from 'lib/api';
+
+export function totalBalance(account: Account) {
   const {
     balance = 0,
     unclaimed = 0,

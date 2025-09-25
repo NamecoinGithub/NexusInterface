@@ -6,14 +6,15 @@ import WaitingMessage from 'components/WaitingMessage';
 import Tooltip from 'components/Tooltip';
 import { formatDateTime } from 'lib/intl';
 import { openModal } from 'lib/ui';
-import { callAPI } from 'lib/api';
+import { Asset, AssetHistoryEvent, callAPI } from 'lib/api';
 import { handleError } from 'lib/form';
 
 import AssetHistoryDetailsModal from './AssetHistoryDetailsModal';
+import { ColumnDef } from '@tanstack/react-table';
 
 __ = __context('AssetHistory');
 
-const timeFormatOptions = {
+const timeFormatOptions: Intl.DateTimeFormatOptions = {
   year: 'numeric',
   month: 'short',
   day: '2-digit',
@@ -22,13 +23,15 @@ const timeFormatOptions = {
   second: '2-digit',
 };
 
-export const tableColumns = [
+export const tableColumns: ColumnDef<AssetHistoryEvent>[] = [
   {
     id: 'modified',
     header: __('Time'),
     accessorKey: 'modified',
-    cell: ({ getValue }) =>
-      getValue() ? formatDateTime(getValue() * 1000, timeFormatOptions) : '',
+    cell: ({ getValue }) => {
+      const value = getValue<number>();
+      return value ? formatDateTime(value * 1000, timeFormatOptions) : '';
+    },
     size: 200,
   },
   {
@@ -42,7 +45,7 @@ export const tableColumns = [
     header: __('Register'),
     accessorKey: 'register',
     cell: ({ getValue }) => {
-      const value = getValue();
+      const value = getValue() ? String(getValue()) : undefined;
       return (
         <Tooltip.Trigger tooltip={value} align="start">
           <span>{value}</span>
@@ -56,7 +59,7 @@ export const tableColumns = [
     header: __('Owner'),
     accessorKey: 'owner',
     cell: ({ getValue }) => {
-      const value = getValue();
+      const value = getValue() ? String(getValue()) : undefined;
       return (
         <Tooltip.Trigger tooltip={value} align="start">
           <span>{value}</span>
@@ -67,9 +70,9 @@ export const tableColumns = [
   },
 ];
 
-export default function AssetHistoryModal({ asset }) {
-  const [events, setEvents] = useState(null);
-  const closeModalRef = useRef();
+export default function AssetHistoryModal({ asset }: { asset: Asset }) {
+  const [events, setEvents] = useState<AssetHistoryEvent[] | null>(null);
+  const closeModalRef = useRef(() => {});
   useEffect(() => {
     (async () => {
       try {
@@ -104,8 +107,8 @@ export default function AssetHistoryModal({ asset }) {
         ) : (
           <Table
             data={events}
-            columns={columns}
-            defaultPageSize={10}
+            columns={tableColumns}
+            // defaultPageSize={10}
             onRowClick={(row) => {
               const event = row?.original;
               openModal(AssetHistoryDetailsModal, {

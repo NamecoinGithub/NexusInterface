@@ -10,7 +10,7 @@ import FieldSet from 'components/FieldSet';
 import { NativeLink } from 'components/Link';
 import Icon from 'components/Icon';
 import Tooltip from 'components/Tooltip';
-import { listAll } from 'lib/api';
+import { Account, Contract, FromOrTo, listAll } from 'lib/api';
 import { formatDateTime, formatNumber, formatCurrency } from 'lib/intl';
 import { openModal } from 'lib/ui';
 import { marketDataQuery } from 'lib/market';
@@ -21,6 +21,7 @@ import contactIcon from 'icons/address-book.svg';
 
 import { balancesShowFiatAtom } from '../atoms';
 import { totalBalance } from './utils';
+import { ColumnDef } from '@tanstack/react-table';
 
 __ = __context('User.Accounts.AccountHistory');
 
@@ -37,7 +38,7 @@ const displayedOperations = [
   'LEGACY',
 ];
 
-const timeFormatOptions = {
+const timeFormatOptions: Intl.DateTimeFormatOptions = {
   year: 'numeric',
   month: 'short',
   day: '2-digit',
@@ -47,7 +48,7 @@ const timeFormatOptions = {
   hour12: false,
 };
 
-const accountDisplay = (value) => {
+const accountDisplay = (value: FromOrTo) => {
   if (!value) return '';
   if (typeof value === 'string') return value;
 
@@ -101,14 +102,16 @@ const defaultColumn = {
   size: 100,
 };
 
-const columns = [
+const columns: ColumnDef<ContractWithExtraInfo>[] = [
   {
     id: 'timestamp',
     header: __('Time'),
     accessorKey: 'timestamp',
     cell: ({ getValue }) => {
       const value = getValue();
-      return value ? formatDateTime(value * 1000, timeFormatOptions) : '';
+      return typeof value === 'number'
+        ? formatDateTime(value * 1000, timeFormatOptions)
+        : '';
     },
     size: 180,
     sortingFn: 'datetime',
@@ -219,13 +222,13 @@ const BalancesFieldSet = styled(FieldSet)({
   fontSize: 15,
 });
 
-const ContractsTable = styled(Table)(({ theme }) => ({
+const ContractsTable = styled(Table<ContractWithExtraInfo>)(({ theme }) => ({
   gridArea: 'table',
   color: theme.foreground,
   overflow: 'auto',
 }));
 
-const Amount = styled.span(({ theme, possitive }) => ({
+const Amount = styled.span<{ possitive?: boolean }>(({ theme, possitive }) => ({
   fontWeight: 'bold',
   color: possitive ? theme.primary : theme.danger,
   '&::before': {
@@ -233,12 +236,17 @@ const Amount = styled.span(({ theme, possitive }) => ({
   },
 }));
 
-export default function AccountHistoryModal({ account }) {
-  const [contracts, setContracts] = useState(null);
+interface ContractWithExtraInfo extends Contract {
+  txid: string;
+  timestamp: number;
+}
+
+export default function AccountHistoryModal({ account }: { account: Account }) {
+  const [contracts, setContracts] = useState<ContractWithExtraInfo[]>([]);
   const [showFiat, setShowFiat] = useAtom(balancesShowFiatAtom);
   const marketData = marketDataQuery.use();
   const { price, currency } = marketData || {};
-  const closeModalRef = useRef();
+  const closeModalRef = useRef(() => {});
 
   useEffect(() => {
     (async () => {
@@ -248,21 +256,24 @@ export default function AccountHistoryModal({ account }) {
           verbose: 'summary',
         });
 
-        const contracts = transactions.reduce((contracts, tx) => {
-          if (Array.isArray(tx.contracts)) {
-            tx.contracts.forEach((contract) => {
-              if (displayedOperations.includes(contract.OP)) {
-                contracts.push({
-                  ...contract,
-                  txid: tx.txid,
-                  timestamp: tx.timestamp,
-                });
-              }
-            });
-          }
-          return contracts.sort((c1, c2) => c2.timestamp - c1.timestamp);
-        }, []);
-        setContracts(contracts);
+        const c = transactions.reduce<ContractWithExtraInfo[]>(
+          (contracts, tx) => {
+            if (Array.isArray(tx.contracts)) {
+              tx.contracts.forEach((contract) => {
+                if (displayedOperations.includes(contract.OP)) {
+                  contracts.push({
+                    ...contract,
+                    txid: tx.txid,
+                    timestamp: tx.timestamp,
+                  });
+                }
+              });
+            }
+            return contracts.sort((c1, c2) => c2.timestamp - c1.timestamp);
+          },
+          []
+        );
+        setContracts(c);
       } catch (err) {
         handleError(err);
         closeModalRef.current?.();
@@ -319,12 +330,9 @@ export default function AccountHistoryModal({ account }) {
                     <strong>{__('Total')}</strong>
                   </div>
                   <div>
-                    {showFiat && account.ticker === '0'
-                      ? formatCurrency(
-                          totalBalance(account, 6) * price,
-                          currency
-                        )
-                      : formatNumber(totalBalance(account, 6))}
+                    {showFiat && account.ticker === '0' && price
+                      ? formatCurrency(totalBalance(account) * price, currency)
+                      : formatNumber(totalBalance(account), 6)}
                   </div>
                 </div>
                 <div className="text-center">
@@ -332,7 +340,7 @@ export default function AccountHistoryModal({ account }) {
                     <strong>{__('Available')}</strong>
                   </div>
                   <div>
-                    {showFiat && account.ticker === '0'
+                    {showFiat && account.ticker === '0' && price
                       ? formatCurrency(account.balance * price, currency)
                       : formatNumber(account.balance, 6)}
                   </div>
@@ -342,7 +350,7 @@ export default function AccountHistoryModal({ account }) {
                     <strong>{__('Unclaimed')}</strong>
                   </div>
                   <div>
-                    {showFiat && account.ticker === '0'
+                    {showFiat && account.ticker === '0' && price
                       ? formatCurrency(
                           (account.unclaimed || 0) * price,
                           currency
@@ -355,7 +363,7 @@ export default function AccountHistoryModal({ account }) {
                     <strong>{__('Unconfirmed')}</strong>
                   </div>
                   <div>
-                    {showFiat && account.ticker === '0'
+                    {showFiat && account.ticker === '0' && price
                       ? formatCurrency(
                           (account.unconfirmed || 0) * price,
                           currency
@@ -369,7 +377,7 @@ export default function AccountHistoryModal({ account }) {
                       <strong>{__('Stake')}</strong>
                     </div>
                     <div>
-                      {showFiat && account.ticker === '0'
+                      {showFiat && account.ticker === '0' && price
                         ? formatCurrency(account.stake * price, currency)
                         : formatNumber(account.stake, 6)}
                     </div>
@@ -382,7 +390,7 @@ export default function AccountHistoryModal({ account }) {
               data={contracts}
               defaultColumn={defaultColumn}
               columns={columns}
-              defaultPageSize={10}
+              // defaultPageSize={10}
               onRowClick={(row) => {
                 const contract = row?.original;
                 openModal(ContractDetailsModal, {

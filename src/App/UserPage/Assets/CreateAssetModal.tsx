@@ -17,10 +17,19 @@ import plusIcon from 'icons/plus.svg';
 
 import AssetFieldCreator from './AssetFieldCreator';
 import UT from 'lib/usageTracking';
+import { FieldArrayRenderProps } from 'react-final-form-arrays';
 
 __ = __context('CreateAsset');
 
-const createInitialField = () => ({
+type AssetField = {
+  name: string;
+  value: string;
+  mutable: boolean;
+  type: string;
+  maxlength?: string;
+};
+
+const createInitialField = (): AssetField => ({
   name: '',
   value: '',
   mutable: false,
@@ -33,7 +42,9 @@ const initialValues = {
   fields: [createInitialField()],
 };
 
-function AssetFields({ fields }) {
+type FormValues = typeof initialValues;
+
+function AssetFields({ fields }: FieldArrayRenderProps<any, any>) {
   return (
     <>
       {fields.map((fieldName, i) => (
@@ -71,16 +82,22 @@ export default function CreateAssetModal() {
               name="create-asset"
               initialValues={initialValues}
               onSubmit={formSubmit({
-                submit: async ({ name, fields }) => {
+                submit: async ({ name, fields }: FormValues) => {
                   const pin = await confirmPin();
 
                   if (pin) {
                     const params = {
+                      name: name || undefined,
                       pin,
                       format: 'JSON',
                       json: fields.map(
                         ({ name, value, mutable, type, maxlength }) => {
-                          const field = { name, value, mutable, type };
+                          const field: AssetField = {
+                            name,
+                            value,
+                            mutable,
+                            type,
+                          };
                           if (mutable && type === 'string' && maxlength) {
                             field.maxlength = maxlength;
                           }
@@ -88,9 +105,9 @@ export default function CreateAssetModal() {
                         }
                       ),
                     };
-                    if (name) params.name = name;
                     return await callAPI('assets/create/asset', params);
                   }
+                  return undefined;
                 },
                 onSuccess: async (result) => {
                   if (!result) return; // Submission was cancelled

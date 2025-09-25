@@ -8,12 +8,13 @@ import { goToSend } from 'lib/send';
 import { formatDateTime, formatNumber } from 'lib/intl';
 import { stakeInfoQuery } from 'lib/session';
 import { openModal } from 'lib/ui';
+import { Account } from 'lib/api';
 
 import { totalBalance } from './utils';
 
 __ = __context('User.Accounts.AccountDetails');
 
-const timeFormatOptions = {
+const timeFormatOptions: Intl.DateTimeFormatOptions = {
   year: 'numeric',
   month: 'long',
   day: '2-digit',
@@ -22,7 +23,7 @@ const timeFormatOptions = {
   second: '2-digit',
 };
 
-export default function AccountDetailsModal({ account }) {
+export default function AccountDetailsModal({ account }: { account: Account }) {
   const stakeInfo = stakeInfoQuery.use();
   return (
     <ControlledModal>

@@ -277,29 +277,29 @@ export type ContractOP =
   | 'FEE'
   | 'LEGACY';
 
+export type FromOrTo = {
+  address: string;
+  name: string;
+  local: boolean;
+  mine: boolean;
+  type: string;
+  namespace?: string;
+};
+
 export interface Contract {
   id: number;
   OP: ContractOP;
   for: string;
   txid: string;
   contract: number;
-  from: {
-    address: string;
-    name: string;
-    local: boolean;
-    mine: boolean;
-    type: string;
-  };
-  to: {
-    address: string;
-    name: string;
-    local: boolean;
-    mine: boolean;
-    type: string;
-  };
+  from: FromOrTo;
+  to: FromOrTo;
   amount: number;
   token: string;
   ticker?: string;
+  trustkey?: string;
+  name?: string;
+  address?: string;
 }
 
 export interface Transaction {
@@ -327,6 +327,11 @@ export interface Account extends NxsObject {
   token: string;
   ticker?: string;
   name?: string;
+  unclaimed?: number;
+  unconfirmed?: number;
+  stake?: number;
+  immature?: number;
+  data?: string;
 }
 
 export interface NexusBalance {
@@ -384,6 +389,21 @@ export interface Namespace extends NxsObject {
 export interface Asset extends NxsObject {
   name?: string;
   data: any;
+  [key: string]: any;
+}
+
+export interface AssetSchemaItem {
+  name: string;
+  type: string;
+  value: any;
+  mutable: boolean;
+  maxlength?: number;
+}
+
+export interface AssetHistoryEvent extends NxsObject {
+  address: string;
+  name: string;
+  action: 'CREATE' | 'MODIFY' | 'TRANSFER' | 'CLAIM';
   [key: string]: any;
 }
 
@@ -645,12 +665,35 @@ async function callAPI<
 >(endpoint: 'names/get/name', customParams?: TParams): Promise<NameRecord>;
 async function callAPI<
   TParams extends {
+    name?: string;
+    address?: string;
+  }
+>(endpoint: 'names/get/inactive', customParams?: TParams): Promise<NameRecord>;
+async function callAPI<
+  TParams extends {
     address: string;
   }
 >(
   endpoint: 'names/reverse/lookup',
   customParams?: TParams
 ): Promise<NameRecord>;
+
+async function callAPI<
+  TParams extends {
+    address: string;
+  }
+>(
+  endpoint: 'assets/get/schema',
+  customParams?: TParams
+): Promise<AssetSchemaItem[]>;
+async function callAPI<
+  TParams extends {
+    address: string;
+  }
+>(
+  endpoint: 'assets/history/asset',
+  customParams?: TParams
+): Promise<AssetHistoryEvent[]>;
 
 async function callAPI(
   endpoint: string,

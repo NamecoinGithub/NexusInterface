@@ -5,20 +5,28 @@ import Spinner from 'components/Spinner';
 import { formSubmit } from 'lib/form';
 import { confirmPin, openSuccessDialog } from 'lib/dialog';
 import { assetsQuery } from 'lib/user';
-import { callAPI } from 'lib/api';
+import { Asset, AssetSchemaItem, callAPI } from 'lib/api';
 import { getAssetData } from 'lib/asset';
 import { assetNumberTypes } from 'consts/misc';
 import memoize from 'utils/memoize';
 
 __ = __context('EditAsset');
 
-const getInitialValues = memoize((schema) =>
+const getInitialValues = memoize((schema: AssetSchemaItem[]) =>
   schema
     .filter((field) => field.mutable)
-    .reduce((values, field) => ({ ...values, [field.name]: field.value }), {})
+    .reduce<Record<string, any>>(
+      (values, field) => ({ ...values, [field.name]: field.value }),
+      {}
+    )
 );
 
-export default function EditAssetModal({ schema, asset }) {
+export interface EditAssetModalProps {
+  schema: AssetSchemaItem[];
+  asset: Asset;
+}
+
+export default function EditAssetModal({ schema, asset }: EditAssetModalProps) {
   const data = getAssetData(asset);
 
   return (
@@ -29,7 +37,7 @@ export default function EditAssetModal({ schema, asset }) {
           <ControlledModal.Body>
             <Form
               name="edit-asset"
-              initialValues={getInitialValues(asset)}
+              initialValues={getInitialValues(schema)}
               onSubmit={formSubmit({
                 submit: async (values) => {
                   const pin = await confirmPin();
@@ -41,8 +49,9 @@ export default function EditAssetModal({ schema, asset }) {
                       ...values,
                     });
                   }
+                  return undefined;
                 },
-                onSuccess: async (result, values, form) => {
+                onSuccess: async (result, _, form) => {
                   if (!result) return; // Submission was cancelled
                   assetsQuery.refetch();
                   form.restart();
