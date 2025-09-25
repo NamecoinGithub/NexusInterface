@@ -243,6 +243,7 @@ export interface StakeInfo {
   requested?: number;
   expires?: number;
   onhold?: boolean;
+  holdtime?: number;
 }
 
 export interface QueryParams {
