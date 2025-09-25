@@ -34,7 +34,6 @@ export default function UserPage() {
     <Panel
       icon={userIcon}
       title={__('User')}
-      bodyScrollable={false}
       controls={loggedIn ? <UserOptions /> : undefined}
     >
       <RequireLoggedIn>

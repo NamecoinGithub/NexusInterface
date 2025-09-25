@@ -8,6 +8,7 @@ import ChangePasswordPinModal from 'components/ChangePasswordPinModal';
 import { hasRecoveryPhraseAtom } from 'lib/session';
 import { openModal } from 'lib/ui';
 import menuIcon from 'icons/menu.svg';
+import { RefObject } from 'react';
 
 __ = __context('User');
 
@@ -40,10 +41,10 @@ export default function UserOptions() {
         </>
       )}
     >
-      {({ controlRef, openDropdown }) => (
+      {({ ref, openDropdown }) => (
         <Button
           skin="plain"
-          ref={controlRef}
+          ref={ref as RefObject<HTMLButtonElement>}
           onClick={openDropdown}
           style={{ height: 'auto' }}
         >

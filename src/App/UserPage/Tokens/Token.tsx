@@ -27,7 +27,16 @@ const Owner = styled.span(({ theme }) => ({
   fontWeight: '75%',
 }));
 
-export default function Token({ token, mine }) {
+export default function Token({
+  token,
+  mine,
+}: {
+  token: {
+    ticker?: string;
+    address: string;
+  };
+  mine?: boolean;
+}) {
   return (
     <TokenComponent>
       <div className="flex space-between">
@@ -40,8 +49,7 @@ export default function Token({ token, mine }) {
           <NativeLink
             onClick={() => {
               openModal(TokenDetailsModal, {
-                token: mine ? token : undefined,
-                tokenAddress: mine ? undefined : token.address,
+                tokenAddress: token.address,
               });
             }}
           >

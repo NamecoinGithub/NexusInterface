@@ -240,6 +240,9 @@ export interface StakeInfo {
   staking: boolean;
   change: boolean;
   pooled?: boolean;
+  requested?: number;
+  expires?: number;
+  onhold?: boolean;
 }
 
 export interface QueryParams {
@@ -363,6 +366,8 @@ export interface Token extends NxsObject {
   maxsupply: number;
   token: string;
   ticker?: string;
+  unclaimed?: number;
+  unconfirmed?: number;
 }
 
 export interface NameRecord extends NxsObject {
@@ -654,6 +659,18 @@ async function callAPI<
   }
 >(
   endpoint: 'finance/create/account',
+  customParams: TParams
+): Promise<OperationResultWithAddress>;
+async function callAPI<
+  TParams extends {
+    pin: string;
+    name?: string;
+    data?: any;
+    suppply: number;
+    decimals: number;
+  }
+>(
+  endpoint: 'finance/create/token',
   customParams: TParams
 ): Promise<OperationResultWithAddress>;
 async function callAPI(endpoint: 'finance/get/stakeinfo'): Promise<StakeInfo>;

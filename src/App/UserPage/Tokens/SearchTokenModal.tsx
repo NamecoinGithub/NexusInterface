@@ -33,7 +33,7 @@ export default function SearchTokenModal() {
                   if (addressRegex.test(searchValue)) {
                     try {
                       // Test if searchValue is the token address
-                      return await callAPI('tokens/get/token', {
+                      return await callAPI('finance/get/token', {
                         address: searchValue,
                       });
                     } catch (err) {}
@@ -41,7 +41,7 @@ export default function SearchTokenModal() {
 
                   // Assuming searchValue is token name
                   try {
-                    return await callAPI('tokens/get/token', {
+                    return await callAPI('finance/get/token', {
                       name: searchValue,
                     });
                   } catch (err) {
@@ -50,11 +50,15 @@ export default function SearchTokenModal() {
                       note: __('Unknown token name/address'),
                     });
                   }
+                  return undefined;
                 },
-                onSuccess: async (result) => {
+                onSuccess: async (result: any) => {
                   if (!result) return; // Submission was cancelled
                   closeModal();
-                  openModal(TokenDetailsModal, { token: result });
+                  openModal(TokenDetailsModal, {
+                    token: result,
+                    tokenAddress: result.address,
+                  });
                 },
               })}
             >

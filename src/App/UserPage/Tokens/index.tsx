@@ -21,23 +21,25 @@ import NewTokenModal from './NewTokenModal';
 import Token from './Token';
 import SearchTokenModal from './SearchTokenModal';
 import TabContentWrapper from '../TabContentWrapper';
+import { Account, Token as TokenType } from 'lib/api';
 
 __ = __context('User.Tokens');
 
-const getAccountTokens = memoize((accounts, ownedTokens) =>
-  accounts?.reduce((tokens, account) => {
-    if (
-      account.token !== '0' &&
-      !ownedTokens?.some((token) => token.address === account.token) &&
-      !tokens?.some((token) => token.address === account.token)
-    ) {
-      tokens.push({
-        ticker: account.ticker || account.token_name,
-        address: account.token,
-      });
-    }
-    return tokens;
-  }, [])
+const getAccountTokens = memoize(
+  (accounts: Account[], ownedTokens: TokenType[]) =>
+    accounts?.reduce((tokens, account) => {
+      if (
+        account.token !== '0' &&
+        !ownedTokens?.some((token) => token.address === account.token) &&
+        !tokens?.some((token) => token.address === account.token)
+      ) {
+        tokens.push({
+          ticker: account.ticker,
+          address: account.token,
+        });
+      }
+      return tokens;
+    }, [] as Array<{ ticker?: string; address: string }>)
 );
 
 export default function Tokens() {
@@ -45,7 +47,7 @@ export default function Tokens() {
   const sessionId = useAtomValue(activeSessionIdAtom);
   const accounts = accountsQuery.use();
   const ownedTokens = tokensQuery.use();
-  const accountTokens = getAccountTokens(accounts, ownedTokens);
+  const accountTokens = getAccountTokens(accounts || [], ownedTokens || []);
 
   useEffect(() => {
     UT.SendScreen('Tokens');

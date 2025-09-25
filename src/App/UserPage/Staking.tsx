@@ -25,7 +25,7 @@ import UT from 'lib/usageTracking';
 
 __ = __context('User.Staking');
 
-const dateTimeFormat = {
+const dateTimeFormat: Intl.DateTimeFormatOptions = {
   month: 'short',
   day: '2-digit',
   hour: '2-digit',
@@ -33,7 +33,7 @@ const dateTimeFormat = {
   second: '2-digit',
 };
 
-const Line = styled.div(
+const Line = styled.div<{ bold?: boolean }>(
   {
     display: 'flex',
     justifyContent: 'space-between',
@@ -50,7 +50,7 @@ const Pending = styled.div({
   paddingLeft: '1em',
 });
 
-const BalanceTooltip = (staking) =>
+const BalanceTooltip = (staking: boolean) =>
   staking
     ? __(
         'The current NXS balance of the trust account that is not staked. You can spend this amount without affecting your Trust Score'
@@ -61,7 +61,7 @@ const BalanceTooltip = (staking) =>
 
 function promptForStakeAmount() {
   let completed = false;
-  return new Promise((resolve, reject) => {
+  return new Promise<boolean>((resolve) => {
     openModal(AdjustStakeModal, {
       onComplete: () => {
         completed = true;
@@ -87,7 +87,7 @@ export default function Staking() {
       const { liteMode, multiUser, enableStaking } = store.get(settingsAtom);
       const synchronized = isSynchronized();
 
-      if (stakeInfo?.amount === 0) {
+      if (stakeInfo?.balance === 0) {
         if (stakeInfo?.balance === 0) {
           openErrorDialog({
             message: __('Trust balance empty!'),
@@ -140,7 +140,7 @@ export default function Staking() {
             liteMode: false,
             multiUser: false,
           });
-          UT.StartStake(true);
+          UT.StartStake();
           restartCore();
           showNotification(__('Restarting Core'));
         } else {
@@ -165,7 +165,7 @@ export default function Staking() {
           ),
         });
       }
-    } catch (err) {
+    } catch (err: any) {
       openErrorDialog({
         message: __('Error'),
         note: err?.message || err,
@@ -182,7 +182,7 @@ export default function Staking() {
     };
     let confirmed = false;
 
-    if (stakeInfo?.amount) {
+    if (stakeInfo?.balance) {
       confirmed = await confirm({
         question: __('Stop staking?'),
       });
@@ -194,7 +194,7 @@ export default function Staking() {
         question: __('Stop staking?'),
         note: __(
           'If you stop staking, stake amount will still stay locked. In case you want to unlock the stake amount, <link>set your stake amount to 0</link> and keep staking until the next Trust transaction is mined.',
-          null,
+          undefined,
           {
             link: (text) => (
               <Button
@@ -269,18 +269,20 @@ export default function Staking() {
                 />
               </div>
               <div>
-                {stakeInfo.amount > 0 && '+'}
-                {formatNumber(stakeInfo.amount, 6)} NXS
+                {stakeInfo.balance > 0 && '+'}
+                {formatNumber(stakeInfo.balance, 6)} NXS
               </div>
             </Line>
-            <Line>
-              <div>
-                <span className="v-align">{__('Requested at')}</span>
-              </div>
-              <div>
-                {formatDateTime(stakeInfo.requested * 1000, dateTimeFormat)}
-              </div>
-            </Line>
+            {!!stakeInfo.requested && (
+              <Line>
+                <div>
+                  <span className="v-align">{__('Requested at')}</span>
+                </div>
+                <div>
+                  {formatDateTime(stakeInfo.requested * 1000, dateTimeFormat)}
+                </div>
+              </Line>
+            )}
             {!!stakeInfo.expires && (
               <Line>
                 <div>

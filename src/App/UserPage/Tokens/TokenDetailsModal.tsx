@@ -11,11 +11,11 @@ import Spinner from 'components/Spinner';
 import plusIcon from 'icons/plus.svg';
 import { formatDateTime, formatNumber } from 'lib/intl';
 import { openModal } from 'lib/ui';
-import { callAPI } from 'lib/api';
+import { callAPI, Token } from 'lib/api';
 
 __ = __context('User.Tokens.TokenDetails');
 
-const timeFormatOptions = {
+const timeFormatOptions: Intl.DateTimeFormatOptions = {
   year: 'numeric',
   month: 'long',
   day: '2-digit',
@@ -29,11 +29,17 @@ const CloseButton = styled(Button)({
   width: '25%',
 });
 
-export default function TokenDetailsModal({ token: tokenProp, tokenAddress }) {
-  const [tokenState, setTokenState] = useState(null);
+export default function TokenDetailsModal({
+  token: tokenProp,
+  tokenAddress,
+}: {
+  token?: Token;
+  tokenAddress?: string;
+}) {
+  const [tokenState, setTokenState] = useState<Token | null>(null);
   useEffect(() => {
     if (!tokenProp) {
-      callAPI('tokens/get/token', {
+      callAPI('finance/get/token', {
         address: tokenAddress,
       }).then(setTokenState);
     }

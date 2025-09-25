@@ -115,7 +115,7 @@ export default function AdjustStakeModal({
   onComplete,
 }: {
   initialStake?: number;
-  onClose: () => void;
+  onClose?: () => void;
   onComplete?: () => void;
 }) {
   const { stake: currentStake, balance } = stakeInfoQuery.use() || {};

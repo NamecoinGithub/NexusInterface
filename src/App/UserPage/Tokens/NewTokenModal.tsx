@@ -32,14 +32,14 @@ function FeeMessage() {
 
 const initialValues = {
   name: '',
-  supply: null,
-  decimals: null,
+  supply: 0,
+  decimals: 2,
 };
 
-const isInteger = (value) =>
+const isInteger = (value: any) =>
   !Number.isInteger(Number(value)) ? __('Must be an integer') : undefined;
 
-const positiveNumber = (value) =>
+const positiveNumber = (value: any) =>
   value <= 0 ? __('Supply cannot be zero or negative') : undefined;
 
 export default function NewTokenModal() {
@@ -69,12 +69,18 @@ export default function NewTokenModal() {
 
                   const pin = await confirmPin();
                   if (pin) {
-                    const params = { pin, supply, decimals };
+                    const params: {
+                      pin: string;
+                      supply: number;
+                      decimals: number;
+                      name?: string;
+                    } = { pin, supply, decimals };
                     if (name) params.name = name;
-                    return await callAPI('tokens/create/token', params);
+                    return await callAPI('finance/create/token', params);
                   }
+                  return undefined;
                 },
-                onSuccess: async (result, { name }) => {
+                onSuccess: async (result: any, { name }) => {
                   if (!result) return; // Submission was cancelled
                   UT.CreateNewItem('token');
                   showNotification(
