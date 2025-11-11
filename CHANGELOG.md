@@ -1,3 +1,28 @@
+# 3.1.6 (2025.11.11)
+
+[Release Link](https://github.com/Nexusoft/NexusInterface/releases/tag/v3.1.6)
+
+#### Additions
+
+- **New Mining Tab**: Dedicated mining control interface with start/stop buttons and CPU thread selection
+- Mining and staking now work simultaneously while logged in
+- Enhanced CPU Mining Documentation and Features
+- Improved mining settings visibility and user experience
+- Updated mining statistics display on Overview page
+- Real-time mining status and difficulty statistics
+
+#### Adjustments
+
+- Clarified mining capabilities in README
+- Enhanced mining configuration documentation
+- Improved mining feature descriptions in Settings
+- Mining no longer requires core restart or user logout
+
+#### Fixes
+
+- Fixed issue where enabling mining would log out the user
+- Fixed mining and staking conflict - both can now run simultaneously
+
 # 3.1.5 (2024.12.06)
 
 [Release Link](https://github.com/Nexusoft/NexusInterface/releases/tag/v3.1.5)

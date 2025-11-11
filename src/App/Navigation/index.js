@@ -16,6 +16,7 @@ import addressBookIcon from 'icons/address-book.svg';
 import settingsIcon from 'icons/settings.svg';
 import consoleIcon from 'icons/console.svg';
 import userIcon from 'icons/user.svg';
+import miningIcon from 'icons/work.svg';
 
 import NavLinkItem from './NavLinkItem';
 
@@ -132,6 +133,10 @@ export default function Navigation() {
 
         <NavItem icon={addressBookIcon} to="/AddressBook">
           {__('Address Book')}
+        </NavItem>
+
+        <NavItem icon={miningIcon} to="/Mining">
+          {__('Mining')}
         </NavItem>
 
         <NavItem icon={settingsIcon} to="/Settings" badge={updateCount}>
