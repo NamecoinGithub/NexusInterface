@@ -158,8 +158,8 @@ export default function Mining() {
 
   // Check current mining status
   useEffect(() => {
-    if (userStatus) {
-      setIsMining(userStatus.mining || false);
+    if (userStatus?.unlocked) {
+      setIsMining(userStatus.unlocked.mining || false);
     }
   }, [userStatus]);
 
