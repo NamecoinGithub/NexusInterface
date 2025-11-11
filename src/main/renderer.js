@@ -1,7 +1,8 @@
-import { BrowserWindow, screen } from 'electron';
+import { BrowserWindow, screen, app } from 'electron';
 import path from 'path';
 import installExtension, {
   REACT_DEVELOPER_TOOLS,
+  REDUX_DEVTOOLS,
 } from 'electron-devtools-installer';
 
 // Internal
@@ -12,7 +13,7 @@ import { debounced } from 'utils/universal';
 const port = process.env.PORT || 1212;
 
 /**
- * Enable development tools for REACT
+ * Enable development tools for REACT and REDUX
  *
  * @returns
  */
@@ -20,6 +21,10 @@ function installExtensions() {
   const forceDownload = !!process.env.UPGRADE_EXTENSIONS;
   return Promise.all([
     installExtension(REACT_DEVELOPER_TOOLS, {
+      loadExtensionOptions: { allowFileAccess: true },
+      forceDownload: forceDownload,
+    }),
+    installExtension(REDUX_DEVTOOLS, {
       loadExtensionOptions: { allowFileAccess: true },
       forceDownload: forceDownload,
     }),

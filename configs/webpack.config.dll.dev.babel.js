@@ -8,14 +8,9 @@ import { merge } from 'webpack-merge';
 
 import baseConfig from './webpack.config.base.babel';
 import devConfig from './webpack.config.base.dev.babel';
-import packageJson from '../package.json';
+import { dependencies } from '../package.json';
 
 const dllPath = path.resolve(process.cwd(), 'dll');
-const dependencies = Object.keys(packageJson.dependencies).filter(
-  (d) => d !== '@aptabase/electron'
-);
-dependencies.push('@aptabase/electron/main');
-dependencies.push('@aptabase/electron/renderer');
 
 export default merge(baseConfig, devConfig, {
   context: process.cwd(),
@@ -27,7 +22,7 @@ export default merge(baseConfig, devConfig, {
   externals: ['fsevents', 'crypto-browserify'],
 
   entry: {
-    renderer: dependencies,
+    renderer: Object.keys(dependencies || {}),
   },
 
   output: {

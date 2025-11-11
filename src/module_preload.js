@@ -14,6 +14,7 @@ import * as jsxRuntime from 'react/jsx-runtime';
 import * as jsxDevRuntime from 'react/jsx-dev-runtime';
 import * as ReactDOM from 'react-dom';
 import * as ReactDOMClient from 'react-dom/client';
+import * as ReactDOMServer from 'react-dom/server';
 import cache from '@emotion/cache';
 import * as react from '@emotion/react';
 import styled from '@emotion/styled';
@@ -24,7 +25,7 @@ import ThemeController from 'components/ThemeController';
 import Panel from 'components/Panel';
 import Button from 'components/Button';
 import Tooltip from 'components/Tooltip';
-import { TextField, MultilineTextField } from 'components/TextField';
+import TextField from 'components/TextField';
 import Switch from 'components/Switch';
 import Select from 'components/Select';
 import Icon from 'components/Icon';
@@ -47,7 +48,7 @@ global.NEXUS = {
   walletVersion: APP_VERSION,
   libraries: {
     React: { ...React, jsxDevRuntime, jsxRuntime, default: ReactDefault },
-    ReactDOM: { ...ReactDOM, client: ReactDOMClient },
+    ReactDOM: { ...ReactDOM, client: ReactDOMClient, server: ReactDOMServer },
     emotion: { react, styled, cache },
   },
   components: {
@@ -66,7 +67,6 @@ global.NEXUS = {
     HorizontalTab,
     VerticalTab,
     TextField,
-    MultilineTextField,
     ThemeController,
     Tooltip,
   },

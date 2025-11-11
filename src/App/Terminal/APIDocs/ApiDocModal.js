@@ -6,7 +6,7 @@ import ReactMarkdown from 'react-markdown';
 //Internal
 import ControlledModal from 'components/ControlledModal';
 import Button from 'components/Button';
-import { NativeLink } from 'components/Link';
+import Link from 'components/Link';
 
 //DOCS
 import Overview from './API/OVERVIEW.MD';
@@ -148,7 +148,8 @@ class APIDocModal extends Component {
                 // TODO: Links to places outside of the loaded MD do not work
                 a: ({ href, ...rest }) => {
                   return (
-                    <NativeLink
+                    <Link
+                      as="a"
                       href={href}
                       onClick={(evt) => {
                         evt.preventDefault();

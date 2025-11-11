@@ -37,105 +37,48 @@ const presetEnv = [
   },
 ];
 
-const presetTypescript = ['@babel/preset-typescript', {}];
-const presetReact = [
-  '@babel/preset-react',
-  { development, runtime: 'automatic' },
-];
-// The preset includes two plugins:
-// - jotai/babel/plugin-react-refresh to enable hot reaload for atoms
-// - jotai/babel/plugin-debug-label to automatically adds debug labels to atoms
-const presetJotai = 'jotai/babel/preset';
-
 const devPlugins = [];
+
 const prodPlugins = ['babel-plugin-dev-expression'];
 const development = process.env.NODE_ENV === 'development';
 
 export const rendererBabelConfig = ({ hot } = {}) => {
-  const plugins = [
-    ['@emotion', { sourceMap: development }],
-    ...stage0Preset,
-    ...(development ? devPlugins : [...prodPlugins, ...reactOptimizePreset]),
-  ];
-  if (hot) {
-    plugins.unshift('react-refresh/babel');
-  }
+  const config = {
+    plugins: [
+      ['@emotion', { sourceMap: development }],
+      ...stage0Preset,
+      ...(development ? devPlugins : [...prodPlugins, ...reactOptimizePreset]),
+    ],
+    presets: [
+      presetEnv,
+      ['@babel/preset-react', { development, runtime: 'automatic' }],
+    ],
+  };
 
-  return [
-    {
-      test: /\.js?$/,
-      exclude: /node_modules/,
-      use: {
-        loader: 'babel-loader',
-        options: {
-          cacheDirectory: true,
-          plugins,
-          presets: [presetEnv, presetJotai],
-        },
-      },
-    },
-    {
-      test: /\.jsx?$/,
-      exclude: /node_modules/,
-      use: {
-        loader: 'babel-loader',
-        options: {
-          cacheDirectory: true,
-          plugins,
-          presets: [presetEnv, presetReact, presetJotai],
-        },
-      },
-    },
-    {
-      test: /\.ts?$/,
-      exclude: /node_modules/,
-      use: {
-        loader: 'babel-loader',
-        options: {
-          cacheDirectory: true,
-          plugins,
-          presets: [presetEnv, presetTypescript, presetJotai],
-        },
-      },
-    },
-    {
-      test: /\.tsx?$/,
-      exclude: /node_modules/,
-      use: {
-        loader: 'babel-loader',
-        options: {
-          cacheDirectory: true,
-          plugins,
-          presets: [presetEnv, presetTypescript, presetReact, presetJotai],
-        },
-      },
-    },
-  ];
+  if (hot) {
+    config.plugins.unshift('react-refresh/babel');
+  }
+  return config;
 };
 
-export const mainBabelConfig = () => [
-  {
-    test: /\.js?$/,
-    exclude: /node_modules/,
-    use: {
-      loader: 'babel-loader',
-      options: {
-        cacheDirectory: true,
-        plugins: [...stage0Preset, ...(development ? devPlugins : prodPlugins)],
-        presets: [presetEnv],
-      },
+const mainBabelConfig = () => ({
+  plugins: [...stage0Preset, ...(development ? devPlugins : prodPlugins)],
+  presets: [presetEnv],
+});
+
+const loaderConfig = (options) => ({
+  test: /\.js$/,
+  exclude: /node_modules/,
+  use: {
+    loader: 'babel-loader',
+    options: {
+      cacheDirectory: true,
+      ...options,
     },
   },
-  {
-    test: /\.ts?$/,
-    exclude: /node_modules/,
-    use: {
-      loader: 'babel-loader',
-      options: {
-        cacheDirectory: true,
-        plugins: [...stage0Preset, ...(development ? devPlugins : prodPlugins)],
-        presets: [presetEnv, presetTypescript],
-      },
-    },
-  },
-];
+});
+
+export const babelLoaderMain = () => loaderConfig(mainBabelConfig());
+
+export const babelLoaderRenderer = (hot) =>
+  loaderConfig(rendererBabelConfig(hot));
