@@ -6,26 +6,6 @@ This is an Electron and React based interface to Nexus. It is an example of what
 
 If you would like to learn more about Nexus we encourage you to visit the [Nexus Website.](https://nexus.io/)
 
-## Mining Support
-
-The Nexus Wallet includes built-in CPU mining capabilities through the embedded Nexus Core:
-
-- **CPU Mining**: Mine on the Prime and Hash channels using your computer's processor
-- **Mining Configuration**: Enable/disable mining in Settings > Core > Embedded Core Settings
-- **Pool Mining**: Configure IP whitelist for mining to pools
-- **Mining Statistics**: View real-time mining difficulty stats on the Overview page
-- **Mining Channels**: 
-  - Prime Channel - Uses CPU for prime number calculations
-  - Hash Channel - Uses CPU for hashing operations
-
-To enable mining:
-1. Go to Settings > Core > Embedded Core Settings
-2. Enable the "Enable mining" toggle
-3. (Optional) Configure IP whitelist for pool mining
-4. Mining will start automatically with the core
-
-**Note**: Mining and staking are unavailable when Lite mode or Multi-user mode is enabled.
-
 ## Develop your modules for Nexus Wallet
 
 See [Developer's Guide to Nexus Wallet Module](docs/Modules).
