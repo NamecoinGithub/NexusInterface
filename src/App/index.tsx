@@ -21,6 +21,7 @@ import Settings from './Settings';
 import Terminal from './Terminal';
 import UserPage from './UserPage';
 import Modules from './Modules';
+import Mining from './Mining';
 import AppBackground from './AppBackground';
 
 const AppLayout = styled.div({
@@ -61,6 +62,7 @@ export default function App() {
                   <Route path="Send" element={<Send />} />
                   <Route path="Transactions" element={<Transactions />} />
                   <Route path="AddressBook" element={<AddressBook />} />
+                  <Route path="Mining" element={<Mining />} />
                   <Route path="Settings/*" element={<Settings />} />
                   <Route path="Terminal/*" element={<Terminal />} />
                   <Route path="User/*" element={<UserPage />} />

@@ -200,7 +200,11 @@ function BasicSettings() {
         label={__('Enable mining')}
         subLabel={
           <div>
-            <div>{__('Enable/Disable mining to the wallet.')}</div>
+            <div>
+              {__(
+                'Enable/Disable CPU mining on Prime and Hash channels. Mining allows you to earn NXS by contributing computational power to secure the Nexus blockchain.'
+              )}
+            </div>
             {!!(liteMode || multiUser) && (
               <div>
                 {__('Disabled when either Lite mode or Multi-user mode is on')}
@@ -223,7 +227,7 @@ function BasicSettings() {
           indent={1}
           label={__('Mining IP Whitelist')}
           subLabel={__(
-            'IP/Ports allowed to mine to. Separate by <b>;</b> . Wildcards supported only in IP',
+            'IP addresses and ports allowed for pool mining connections. Separate entries with <b>;</b> (semicolon). Wildcards (*) are supported in IP addresses. Leave empty for solo mining.',
             undefined,
             {
               b: (txt) => <b>{txt}</b>,
