@@ -1,3 +1,23 @@
+# 3.1.6 (2025.11.11)
+
+[Release Link](https://github.com/Nexusoft/NexusInterface/releases/tag/v3.1.6)
+
+#### Additions
+
+- Enhanced CPU Mining Documentation and Features
+- Improved mining settings visibility and user experience
+- Updated mining statistics display on Overview page
+
+#### Adjustments
+
+- Clarified mining capabilities in README
+- Enhanced mining configuration documentation
+- Improved mining feature descriptions in Settings
+
+#### Fixes
+
+- None
+
 # 3.1.5 (2024.12.06)
 
 [Release Link](https://github.com/Nexusoft/NexusInterface/releases/tag/v3.1.5)
