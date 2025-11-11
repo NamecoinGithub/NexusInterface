@@ -8,9 +8,12 @@ import Slider from 'components/Slider';
 import Icon from 'components/Icon';
 import { callAPI } from 'lib/api';
 import { showNotification } from 'lib/ui';
-import { openErrorDialog } from 'lib/dialog';
+import { openErrorDialog, confirmPin } from 'lib/dialog';
 import { ledgerInfoQuery } from 'lib/ledger';
 import { loggedInAtom, activeSessionIdAtom, userStatusQuery } from 'lib/session';
+import { store } from 'lib/store';
+import { settingsAtom, updateSettings } from 'lib/settings';
+import { restartCore } from 'lib/core';
 import UT from 'lib/usageTracking';
 
 import workIcon from 'icons/work.svg';
@@ -128,16 +131,67 @@ const ButtonGroup = styled.div({
   gap: '1em',
 });
 
+const WarningBanner = styled.div(({ theme }) => ({
+  background: theme.mixer(0.15),
+  border: `2px solid ${theme.danger}`,
+  borderRadius: '4px',
+  padding: '1.5em',
+  marginBottom: '1.5em',
+  display: 'flex',
+  flexDirection: 'column',
+  gap: '1em',
+}));
+
+const WarningTitle = styled.div(({ theme }) => ({
+  fontSize: '1.2em',
+  fontWeight: 'bold',
+  color: theme.danger,
+  display: 'flex',
+  alignItems: 'center',
+  gap: '0.5em',
+}));
+
+const WarningContent = styled.div(({ theme }) => ({
+  color: theme.mixer(0.75),
+  lineHeight: '1.6',
+}));
+
+const WarningList = styled.ul(({ theme }) => ({
+  margin: '0.5em 0',
+  paddingLeft: '2em',
+  color: theme.mixer(0.75),
+}));
+
+const WarningActions = styled.div({
+  display: 'flex',
+  gap: '1em',
+  marginTop: '0.5em',
+});
+
 export default function Mining() {
   const [isMining, setIsMining] = useState(false);
   const [cores, setCores] = useState(1);
   const [maxCores, setMaxCores] = useState(1);
   const [loading, setLoading] = useState(false);
+  const [configuringSettings, setConfiguringSettings] = useState(false);
 
   const ledgerInfo = ledgerInfoQuery.use();
   const sessionId = useAtomValue(activeSessionIdAtom);
   const isLoggedIn = useAtomValue(loggedInAtom);
   const userStatus = useAtomValue(userStatusQuery.valueAtom);
+  const settings = useAtomValue(settingsAtom);
+
+  // Check for incompatible core settings
+  const hasIncompatibleSettings = 
+    settings.liteMode || settings.multiUser || !settings.enableMining;
+
+  const getConfigurationIssues = () => {
+    const issues = [];
+    if (settings.liteMode) issues.push(__('Lite mode is enabled'));
+    if (settings.multiUser) issues.push(__('Multi-user mode is enabled'));
+    if (!settings.enableMining) issues.push(__('Mining is disabled in core settings'));
+    return issues;
+  };
 
   // Get CPU core count on mount
   useEffect(() => {
@@ -163,19 +217,51 @@ export default function Mining() {
     }
   }, [userStatus]);
 
+  // Auto-refresh statistics every 30 seconds while mining
+  useEffect(() => {
+    if (!isMining) return;
+
+    const interval = setInterval(() => {
+      ledgerInfoQuery.refetch();
+    }, 30000); // 30 seconds
+
+    return () => clearInterval(interval);
+  }, [isMining]);
+
   const startMining = async () => {
     if (!isLoggedIn) {
       showNotification(__('Please log in to start mining'), 'error');
       return;
     }
 
+    // Check for incompatible settings
+    if (hasIncompatibleSettings) {
+      showNotification(
+        __('Please configure mining settings first'),
+        'error'
+      );
+      return;
+    }
+
     setLoading(true);
     try {
+      // Request PIN authentication
+      const pin = await confirmPin({
+        note: __('Enter your PIN to start mining'),
+      });
+
+      if (!pin) {
+        showNotification(__('Mining start cancelled'), 'info');
+        setLoading(false);
+        return;
+      }
+
       // Unlock session with mining enabled
       await callAPI('sessions/unlock/local', {
+        pin,
         mining: true,
         notifications: true,
-        staking: true, // Keep staking enabled
+        staking: userStatus?.unlocked?.staking || false, // Preserve staking state
         session: sessionId || undefined,
       });
 
@@ -199,11 +285,23 @@ export default function Mining() {
 
     setLoading(true);
     try {
-      // Unlock session with mining disabled but keep staking
+      // Request PIN authentication
+      const pin = await confirmPin({
+        note: __('Enter your PIN to stop mining'),
+      });
+
+      if (!pin) {
+        showNotification(__('Mining stop cancelled'), 'info');
+        setLoading(false);
+        return;
+      }
+
+      // Unlock session with mining disabled but preserve staking
       await callAPI('sessions/unlock/local', {
+        pin,
         mining: false,
         notifications: true,
-        staking: true, // Keep staking enabled
+        staking: userStatus?.unlocked?.staking || false, // Preserve staking state
         session: sessionId || undefined,
       });
 
@@ -228,6 +326,41 @@ export default function Mining() {
     // This is a UI placeholder for future functionality
   };
 
+  const configureSettings = async () => {
+    setConfiguringSettings(true);
+    try {
+      // Update settings to enable mining
+      updateSettings({
+        enableMining: true,
+        liteMode: false,
+        multiUser: false,
+      });
+
+      showNotification(
+        __('Settings updated. Restarting core...'),
+        'info'
+      );
+
+      // Restart core to apply changes
+      await restartCore();
+
+      showNotification(
+        __('Core restarted successfully. Mining is now available.'),
+        'success'
+      );
+      UT.SendEvent('Mining', 'ConfigureSettings');
+    } catch (err: any) {
+      console.error('Failed to configure settings:', err);
+      openErrorDialog({
+        message: __('Failed to configure settings: %{error}', {
+          error: err.message || 'Unknown error',
+        }),
+      });
+    } finally {
+      setConfiguringSettings(false);
+    }
+  };
+
   useEffect(() => {
     UT.SendScreen('Mining');
   }, []);
@@ -238,6 +371,44 @@ export default function Mining() {
         <MiningIcon icon={workIcon} />
         {__('Mining Control')}
       </MiningHeader>
+
+      {hasIncompatibleSettings && (
+        <WarningBanner>
+          <WarningTitle>
+            <Icon icon={workIcon} />
+            {__('Mining Configuration Required')}
+          </WarningTitle>
+          <WarningContent>
+            {__('Mining cannot be started due to the following configuration issues:')}
+            <WarningList>
+              {getConfigurationIssues().map((issue, idx) => (
+                <li key={idx}>{issue}</li>
+              ))}
+            </WarningList>
+            {__('Click the button below to automatically configure the correct settings and restart the core.')}
+          </WarningContent>
+          <WarningActions>
+            <Button
+              skin="primary"
+              onClick={configureSettings}
+              disabled={configuringSettings}
+            >
+              {configuringSettings 
+                ? __('Configuring...') 
+                : __('Configure Mining Settings')}
+            </Button>
+            <Button
+              skin="default"
+              onClick={() => {
+                // Navigate to Settings/Core page
+                window.location.hash = '#/settings/core';
+              }}
+            >
+              {__('Go to Core Settings')}
+            </Button>
+          </WarningActions>
+        </WarningBanner>
+      )}
 
       <ControlPanel title={__('Mining Controls')}>
         <ControlRow>
@@ -330,12 +501,36 @@ export default function Mining() {
           <StatCard>
             <StatIcon icon={workIcon} />
             <StatContent>
-              <StatLabel>{__('Mining Channel')}</StatLabel>
+              <StatLabel>{__('Mining Status')}</StatLabel>
               <StatValue>
-                {isMining ? __('Prime & Hash') : __('Inactive')}
+                {isMining ? __('Active') : __('Inactive')}
               </StatValue>
             </StatContent>
           </StatCard>
+
+          {ledgerInfo?.prime?.hashrate && (
+            <StatCard>
+              <StatIcon icon={mathIcon} />
+              <StatContent>
+                <StatLabel>{__('Prime Hashrate')}</StatLabel>
+                <StatValue>
+                  {ledgerInfo.prime.hashrate.toFixed(2)} {__('H/s')}
+                </StatValue>
+              </StatContent>
+            </StatCard>
+          )}
+
+          {ledgerInfo?.hash?.hashrate && (
+            <StatCard>
+              <StatIcon icon={hashIcon} />
+              <StatContent>
+                <StatLabel>{__('Hash Hashrate')}</StatLabel>
+                <StatValue>
+                  {ledgerInfo.hash.hashrate.toFixed(2)} {__('H/s')}
+                </StatValue>
+              </StatContent>
+            </StatCard>
+          )}
         </StatsGrid>
       </StatsPanel>
 
