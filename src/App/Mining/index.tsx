@@ -136,10 +136,10 @@ export default function Mining() {
   const [cores, setCores] = useState(1);
   const [maxCores, setMaxCores] = useState(1);
   const [loading, setLoading] = useState(false);
-  const [miningStats, setMiningStats] = useState(null);
+  const [miningStats, setMiningStats] = useState<any>(null);
 
-  const ledgerInfo = useSelector((state) => state.core.ledgerInfo);
-  const session = useSelector((state) => state.user?.session);
+  const ledgerInfo = useSelector((state: any) => state.core.ledgerInfo);
+  const session = useSelector((state: any) => state.user?.session);
   const isLoggedIn = !!session;
 
   // Get CPU core count on mount
@@ -192,7 +192,7 @@ export default function Mining() {
       setIsMining(true);
       showNotification(__('Mining started successfully'), 'success');
       UT.SendEvent('Mining', 'Start');
-    } catch (err) {
+    } catch (err: any) {
       console.error('Failed to start mining:', err);
       openErrorDialog({
         message: __('Failed to start mining: %{error}', {
@@ -220,7 +220,7 @@ export default function Mining() {
       setIsMining(false);
       showNotification(__('Mining stopped successfully'), 'success');
       UT.SendEvent('Mining', 'Stop');
-    } catch (err) {
+    } catch (err: any) {
       console.error('Failed to stop mining:', err);
       openErrorDialog({
         message: __('Failed to stop mining: %{error}', {
@@ -232,7 +232,7 @@ export default function Mining() {
     }
   };
 
-  const handleCoresChange = (value) => {
+  const handleCoresChange = (value: number) => {
     setCores(value);
     // Note: The Nexus Core doesn't currently support dynamic thread count changes
     // This is a UI placeholder for future functionality
