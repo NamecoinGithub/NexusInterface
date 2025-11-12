@@ -43,6 +43,7 @@ enum ConnectionState {
 interface MinerConfig {
   host: string;
   port: number;
+  fallbackPort: number; // Fallback port if primary port fails (0 = auto)
   channel: number; // 1 for Prime channel, 2 for Hash channel
   timeout: number; // Connection timeout in seconds
   maxReconnectDelay: number; // Maximum delay between reconnect attempts in ms
@@ -75,17 +76,21 @@ export class PrimeMiner extends EventEmitter {
   private blocksAccepted: number = 0;
   private blocksRejected: number = 0;
   private channelConfirmed: boolean = false;
+  private currentPort: number;
+  private primaryPortFailed: boolean = false;
 
   constructor(config: Partial<MinerConfig> = {}) {
     super();
     this.config = {
       host: config.host || '127.0.0.1',
       port: config.port || 9325,
+      fallbackPort: config.fallbackPort ?? 0, // Default to port 0 (auto)
       channel: config.channel || 1, // Default to Prime channel
       timeout: config.timeout || 30,
       maxReconnectDelay: config.maxReconnectDelay || 60000, // 60 seconds
       minReconnectDelay: config.minReconnectDelay || 1000, // 1 second
     };
+    this.currentPort = this.config.port;
     this.reconnectDelay = this.config.minReconnectDelay;
   }
 
@@ -123,11 +128,13 @@ export class PrimeMiner extends EventEmitter {
       blocksAccepted: this.blocksAccepted,
       blocksRejected: this.blocksRejected,
       channel: this.config.channel,
+      port: this.currentPort,
     };
   }
 
   /**
    * Connect to the mining server
+   * Implements auto port fallback: tries primary port first, falls back to port 0 on failure
    */
   private connect(): void {
     if (this.socket) {
@@ -136,7 +143,7 @@ export class PrimeMiner extends EventEmitter {
 
     this.setState(ConnectionState.CONNECTING);
     log.info(
-      `[Miner] Connecting to ${this.config.host}:${this.config.port}...`
+      `[Miner] Connecting to ${this.config.host}:${this.currentPort}...`
     );
 
     this.socket = new Socket();
@@ -149,7 +156,7 @@ export class PrimeMiner extends EventEmitter {
     this.socket.on('close', this.onClose.bind(this));
     this.socket.on('timeout', this.onTimeout.bind(this));
 
-    this.socket.connect(this.config.port, this.config.host);
+    this.socket.connect(this.currentPort, this.config.host);
   }
 
   /**
@@ -159,6 +166,7 @@ export class PrimeMiner extends EventEmitter {
     log.info('[Miner] Connected to mining server');
     this.connected = true;
     this.reconnectDelay = this.config.minReconnectDelay; // Reset backoff
+    this.primaryPortFailed = false; // Reset port fallback on successful connection
     this.emit('connected');
 
     // Start channel handshake sequence
@@ -350,9 +358,20 @@ export class PrimeMiner extends EventEmitter {
 
   /**
    * Handle connection error
+   * Implements auto port fallback logic
    */
   private onError(error: Error): void {
     log.error('[Miner] Connection error:', error.message);
+    
+    // Try fallback port if primary port failed and fallback is configured
+    if (!this.primaryPortFailed && 
+        this.currentPort === this.config.port && 
+        this.config.fallbackPort !== this.config.port) {
+      log.info(`[Miner] Primary port ${this.config.port} failed, trying fallback port ${this.config.fallbackPort}`);
+      this.primaryPortFailed = true;
+      this.currentPort = this.config.fallbackPort;
+    }
+    
     this.handleConnectionError(error);
   }
 

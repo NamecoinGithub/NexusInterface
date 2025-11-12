@@ -10,7 +10,7 @@ import { callAPI } from 'lib/api';
 import { showNotification } from 'lib/ui';
 import { openErrorDialog } from 'lib/dialog';
 import { ledgerInfoQuery } from 'lib/ledger';
-import { loggedInAtom, activeSessionIdAtom, userStatusQuery } from 'lib/session';
+import { loggedInAtom } from 'lib/session';
 import { useMiner } from 'lib/useMiner';
 import UT from 'lib/usageTracking';
 
@@ -153,19 +153,68 @@ const ConnectionStatus = styled.div(({ theme }) => ({
   alignItems: 'center',
 }));
 
+const PaymentAddressPanel = styled(Panel)(({ theme }) => ({
+  marginBottom: '1.5em',
+  padding: '1.5em',
+  background: theme.mixer(0.1),
+}));
+
+const GenesisHash = styled.div(({ theme }) => ({
+  fontFamily: 'monospace',
+  fontSize: '0.95em',
+  color: theme.primary,
+  padding: '0.75em',
+  background: theme.mixer(0.05),
+  borderRadius: '4px',
+  wordBreak: 'break-all',
+  marginTop: '0.75em',
+  border: `1px solid ${theme.mixer(0.2)}`,
+}));
+
+const InfoText = styled.div(({ theme }) => ({
+  fontSize: '0.9em',
+  color: theme.mixer(0.6),
+  lineHeight: '1.5',
+  marginTop: '0.75em',
+}));
+
+const ConfigInfo = styled.div(({ theme }) => ({
+  display: 'grid',
+  gridTemplateColumns: 'auto 1fr',
+  gap: '0.5em 1em',
+  fontSize: '0.9em',
+  marginTop: '0.75em',
+  padding: '0.75em',
+  background: theme.mixer(0.05),
+  borderRadius: '4px',
+}));
+
+const ConfigLabel = styled.div(({ theme }) => ({
+  color: theme.mixer(0.5),
+  fontWeight: 'bold',
+}));
+
+const ConfigValue = styled.div(({ theme }) => ({
+  color: theme.mixer(0.75),
+  fontFamily: 'monospace',
+}));
+
 export default function Mining() {
   const [isMining, setIsMining] = useState(false);
   const [cores, setCores] = useState(1);
   const [maxCores, setMaxCores] = useState(1);
-  const [loading, setLoading] = useState(false);
 
   const ledgerInfo = ledgerInfoQuery.use();
-  const sessionId = useAtomValue(activeSessionIdAtom);
   const isLoggedIn = useAtomValue(loggedInAtom);
-  const userStatus = useAtomValue(userStatusQuery.valueAtom);
 
-  // Use the miner hook to manage CPU mining
-  const { isRunning: minerRunning, state: minerState, stats: minerStats, error: minerError } = useMiner(isMining);
+  // Use the miner hook to manage CPU mining with hardcoded configuration
+  const { 
+    isRunning: minerRunning, 
+    state: minerState, 
+    stats: minerStats, 
+    error: minerError,
+    genesisHash 
+  } = useMiner(isMining);
 
   // Get CPU core count on mount
   useEffect(() => {
@@ -184,29 +233,19 @@ export default function Mining() {
     getCPUCores();
   }, []);
 
-  // Check current mining status
-  useEffect(() => {
-    if (userStatus?.unlocked) {
-      setIsMining(userStatus.unlocked.mining || false);
-    }
-  }, [userStatus]);
-
   const startMining = async () => {
     if (!isLoggedIn) {
       showNotification(__('Please log in to start mining'), 'error');
       return;
     }
 
-    setLoading(true);
-    try {
-      // Unlock session with mining enabled
-      await callAPI('sessions/unlock/local', {
-        mining: true,
-        notifications: true,
-        staking: true, // Keep staking enabled
-        session: sessionId || undefined,
-      });
+    if (!genesisHash) {
+      showNotification(__('Genesis hash not available. Please ensure you are logged in.'), 'error');
+      return;
+    }
 
+    try {
+      // No PIN required - just start the miner directly
       setIsMining(true);
       showNotification(__('Mining started successfully'), 'success');
       UT.SendEvent('Mining', 'Start');
@@ -217,24 +256,14 @@ export default function Mining() {
           error: err.message || 'Unknown error',
         }),
       });
-    } finally {
-      setLoading(false);
     }
   };
 
   const stopMining = async () => {
     if (!isLoggedIn) return;
 
-    setLoading(true);
     try {
-      // Unlock session with mining disabled but keep staking
-      await callAPI('sessions/unlock/local', {
-        mining: false,
-        notifications: true,
-        staking: true, // Keep staking enabled
-        session: sessionId || undefined,
-      });
-
+      // No PIN required - just stop the miner directly
       setIsMining(false);
       showNotification(__('Mining stopped successfully'), 'success');
       UT.SendEvent('Mining', 'Stop');
@@ -245,8 +274,6 @@ export default function Mining() {
           error: err.message || 'Unknown error',
         }),
       });
-    } finally {
-      setLoading(false);
     }
   };
 
@@ -267,6 +294,35 @@ export default function Mining() {
         {__('Mining Control')}
       </MiningHeader>
 
+      {/* Payment Address Section - Shows where mining rewards go */}
+      <PaymentAddressPanel title={__('Payment Address')}>
+        <SubLabel>
+          {__('Mining rewards will be sent to your wallet genesis address (immutable during mining session)')}
+        </SubLabel>
+        {genesisHash ? (
+          <>
+            <GenesisHash>{genesisHash}</GenesisHash>
+            <ConfigInfo>
+              <ConfigLabel>{__('Mining Server:')}</ConfigLabel>
+              <ConfigValue>127.0.0.1:{minerStats.port}</ConfigValue>
+              
+              <ConfigLabel>{__('Channel:')}</ConfigLabel>
+              <ConfigValue>Prime (1)</ConfigValue>
+              
+              <ConfigLabel>{__('Port Fallback:')}</ConfigLabel>
+              <ConfigValue>Auto (0)</ConfigValue>
+            </ConfigInfo>
+            <InfoText>
+              {__('This address is hardcoded from your wallet context. All mining rewards will automatically be credited to this genesis address. No external configuration needed.')}
+            </InfoText>
+          </>
+        ) : (
+          <InfoText>
+            {__('Please log in to see your payment address. You must be logged in to start mining.')}
+          </InfoText>
+        )}
+      </PaymentAddressPanel>
+
       <ControlPanel title={__('Mining Controls')}>
         <ControlRow>
           <Label>
@@ -283,18 +339,18 @@ export default function Mining() {
             <Button
               skin="primary"
               onClick={startMining}
-              disabled={!isLoggedIn || isMining || loading}
+              disabled={!isLoggedIn || isMining}
               style={{ minWidth: '100px' }}
             >
-              {loading && !isMining ? __('Starting...') : __('Start Mining')}
+              {__('Start Mining')}
             </Button>
             <Button
               skin="danger"
               onClick={stopMining}
-              disabled={!isLoggedIn || !isMining || loading}
+              disabled={!isLoggedIn || !isMining}
               style={{ minWidth: '100px' }}
             >
-              {loading && isMining ? __('Stopping...') : __('Stop Mining')}
+              {__('Stop Mining')}
             </Button>
           </ButtonGroup>
         </ControlRow>
@@ -327,11 +383,11 @@ export default function Mining() {
       <StatsPanel title={__('Mining Statistics')}>
         <SubLabel style={{ marginBottom: '1em' }}>
           {__(
-            'Real-time mining difficulty statistics for Prime and Hash channels'
+            'Real-time mining statistics and connection status'
           )}
         </SubLabel>
         
-        {/* Miner connection status */}
+        {/* Enhanced connection status with visual indicators */}
         {isMining && (
           <ConnectionStatus>
             <StatusIndicator 
@@ -351,6 +407,8 @@ export default function Mining() {
             }
             {' • '}
             {__('State')}: {minerState}
+            {' • '}
+            {__('Port')}: {minerStats.port}
           </ConnectionStatus>
         )}
 
@@ -427,14 +485,24 @@ export default function Mining() {
         <div style={{ lineHeight: '1.6' }}>
           <p>
             {__(
-              'The Nexus Wallet supports CPU mining on the Prime and Hash channels through the embedded Nexus Core.'
+              'The Nexus Wallet supports CPU mining on the Prime channel through the embedded Nexus Core with zero configuration required.'
             )}
           </p>
           <p style={{ marginTop: '1em' }}>
             {__(
-              'Mining allows you to earn NXS by contributing computational power to secure the Nexus blockchain. You can mine and stake simultaneously while logged in.'
+              'Mining allows you to earn NXS by contributing computational power to secure the Nexus blockchain. All rewards are automatically sent to your genesis address.'
             )}
           </p>
+          <p style={{ marginTop: '1em' }}>
+            <strong>{__('Key Features:')}</strong>
+          </p>
+          <ul style={{ marginLeft: '1.5em', marginTop: '0.5em' }}>
+            <li>{__('Hardcoded configuration - no external files needed')}</li>
+            <li>{__('Auto port selection with fallback to port 0')}</li>
+            <li>{__('Automatic reconnection with exponential backoff')}</li>
+            <li>{__('Genesis hash hardcoded from wallet context')}</li>
+            <li>{__('No PIN required for mining start/stop')}</li>
+          </ul>
           <p style={{ marginTop: '1em' }}>
             {__(
               'For GPU mining on the Hash channel, please use standalone mining software like NexusMiner.'
