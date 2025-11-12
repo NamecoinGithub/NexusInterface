@@ -135,7 +135,9 @@ export class PrimeMiner extends EventEmitter {
     }
 
     this.setState(ConnectionState.CONNECTING);
-    log.info(`[Miner] Connecting to ${this.config.host}:${this.config.port}...`);
+    log.info(
+      `[Miner] Connecting to ${this.config.host}:${this.config.port}...`
+    );
 
     this.socket = new Socket();
     this.socket.setTimeout(this.config.timeout * 1000);
@@ -165,18 +167,18 @@ export class PrimeMiner extends EventEmitter {
 
   /**
    * Start the channel handshake sequence
-   * 
+   *
    * This is the critical fix for the timeout issue mentioned in the problem statement.
-   * 
+   *
    * The original implementation would send SET_CHANNEL and immediately proceed to
    * request blocks/rewards, causing timeouts because the channel wasn't confirmed.
-   * 
+   *
    * This implementation uses PING as an ordering barrier:
    * 1. Send SET_CHANNEL to the core
    * 2. Send PING immediately after (acts as ordering barrier)
    * 3. Wait for PING response (confirms SET_CHANNEL was processed)
    * 4. Only then proceed to mining operations
-   * 
+   *
    * The PING response proves that all previous commands (including SET_CHANNEL)
    * have been processed by the core, preventing race conditions.
    */
@@ -184,7 +186,9 @@ export class PrimeMiner extends EventEmitter {
     this.setState(ConnectionState.HANDSHAKING);
     this.channelConfirmed = false;
 
-    log.info(`[Miner] Starting handshake - setting channel to ${this.config.channel}`);
+    log.info(
+      `[Miner] Starting handshake - setting channel to ${this.config.channel}`
+    );
 
     // Step 1: Send SET_CHANNEL
     this.sendSetChannel(this.config.channel);
@@ -283,7 +287,7 @@ export class PrimeMiner extends EventEmitter {
 
     // Extract packet data
     const packetData = this.incomingBuffer.slice(5, 5 + length);
-    
+
     // Remove processed packet from buffer
     this.incomingBuffer = this.incomingBuffer.slice(5 + length);
 
@@ -364,11 +368,13 @@ export class PrimeMiner extends EventEmitter {
    * Handle connection close
    */
   private onClose(hadError: boolean): void {
-    log.info(`[Miner] Connection closed ${hadError ? 'with error' : 'cleanly'}`);
+    log.info(
+      `[Miner] Connection closed ${hadError ? 'with error' : 'cleanly'}`
+    );
     this.connected = false;
     this.channelConfirmed = false;
     this.clearTimers();
-    
+
     if (this.shouldReconnect) {
       this.scheduleReconnect();
     } else {
@@ -381,7 +387,7 @@ export class PrimeMiner extends EventEmitter {
    */
   private handleConnectionError(error: Error): void {
     this.emit('error', error);
-    
+
     if (this.socket) {
       this.socket.destroy();
       this.socket = null;
@@ -394,15 +400,15 @@ export class PrimeMiner extends EventEmitter {
 
   /**
    * Schedule reconnection with exponential backoff
-   * 
+   *
    * This implements the auto-reconnect feature mentioned in the problem statement.
-   * 
+   *
    * When the connection drops (due to network issues, core restart, etc.), this
    * method schedules a reconnection attempt with exponential backoff:
    * - First attempt: 1 second delay
    * - Subsequent attempts: delay doubles (2s, 4s, 8s, 16s, 32s, 60s max)
    * - Successful reconnection resets delay back to 1 second
-   * 
+   *
    * This prevents overwhelming the server with rapid reconnection attempts while
    * ensuring the miner eventually reconnects when the server is available.
    */
@@ -411,7 +417,7 @@ export class PrimeMiner extends EventEmitter {
     this.clearTimers();
 
     log.info(`[Miner] Scheduling reconnect in ${this.reconnectDelay}ms`);
-    
+
     this.reconnectTimer = setTimeout(() => {
       this.connect();
     }, this.reconnectDelay);
@@ -465,10 +471,10 @@ export class PrimeMiner extends EventEmitter {
 
     const length = data ? data.length : 0;
     const packet = Buffer.alloc(5 + length);
-    
+
     packet.writeUInt8(header, 0);
     packet.writeUInt32LE(length, 1);
-    
+
     if (data) {
       data.copy(packet, 5);
     }
