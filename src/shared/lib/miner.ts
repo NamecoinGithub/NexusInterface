@@ -165,10 +165,20 @@ export class PrimeMiner extends EventEmitter {
 
   /**
    * Start the channel handshake sequence
-   * 1. Send SET_CHANNEL
-   * 2. Send PING as ordering barrier
-   * 3. Wait for PING response
-   * 4. Mark channel as confirmed
+   * 
+   * This is the critical fix for the timeout issue mentioned in the problem statement.
+   * 
+   * The original implementation would send SET_CHANNEL and immediately proceed to
+   * request blocks/rewards, causing timeouts because the channel wasn't confirmed.
+   * 
+   * This implementation uses PING as an ordering barrier:
+   * 1. Send SET_CHANNEL to the core
+   * 2. Send PING immediately after (acts as ordering barrier)
+   * 3. Wait for PING response (confirms SET_CHANNEL was processed)
+   * 4. Only then proceed to mining operations
+   * 
+   * The PING response proves that all previous commands (including SET_CHANNEL)
+   * have been processed by the core, preventing race conditions.
    */
   private startHandshake(): void {
     this.setState(ConnectionState.HANDSHAKING);
@@ -384,6 +394,17 @@ export class PrimeMiner extends EventEmitter {
 
   /**
    * Schedule reconnection with exponential backoff
+   * 
+   * This implements the auto-reconnect feature mentioned in the problem statement.
+   * 
+   * When the connection drops (due to network issues, core restart, etc.), this
+   * method schedules a reconnection attempt with exponential backoff:
+   * - First attempt: 1 second delay
+   * - Subsequent attempts: delay doubles (2s, 4s, 8s, 16s, 32s, 60s max)
+   * - Successful reconnection resets delay back to 1 second
+   * 
+   * This prevents overwhelming the server with rapid reconnection attempts while
+   * ensuring the miner eventually reconnects when the server is available.
    */
   private scheduleReconnect(): void {
     this.setState(ConnectionState.RECONNECTING);
