@@ -11,6 +11,7 @@ import { showNotification } from 'lib/ui';
 import { openErrorDialog } from 'lib/dialog';
 import { ledgerInfoQuery } from 'lib/ledger';
 import { loggedInAtom, activeSessionIdAtom, userStatusQuery } from 'lib/session';
+import { useMiner } from 'lib/useMiner';
 import UT from 'lib/usageTracking';
 
 import workIcon from 'icons/work.svg';
@@ -128,6 +129,30 @@ const ButtonGroup = styled.div({
   gap: '1em',
 });
 
+const StatusIndicator = styled.div<{ status: 'connected' | 'disconnected' | 'error' }>(
+  ({ theme, status }) => ({
+    display: 'inline-block',
+    width: '12px',
+    height: '12px',
+    borderRadius: '50%',
+    marginRight: '0.5em',
+    backgroundColor:
+      status === 'connected'
+        ? theme.success
+        : status === 'error'
+        ? theme.danger
+        : theme.mixer(0.3),
+  })
+);
+
+const ConnectionStatus = styled.div(({ theme }) => ({
+  fontSize: '0.9em',
+  color: theme.mixer(0.6),
+  marginTop: '0.5em',
+  display: 'flex',
+  alignItems: 'center',
+}));
+
 export default function Mining() {
   const [isMining, setIsMining] = useState(false);
   const [cores, setCores] = useState(1);
@@ -138,6 +163,9 @@ export default function Mining() {
   const sessionId = useAtomValue(activeSessionIdAtom);
   const isLoggedIn = useAtomValue(loggedInAtom);
   const userStatus = useAtomValue(userStatusQuery.valueAtom);
+
+  // Use the miner hook to manage CPU mining
+  const { isRunning: minerRunning, state: minerState, stats: minerStats, error: minerError } = useMiner(isMining);
 
   // Get CPU core count on mount
   useEffect(() => {
@@ -302,6 +330,30 @@ export default function Mining() {
             'Real-time mining difficulty statistics for Prime and Hash channels'
           )}
         </SubLabel>
+        
+        {/* Miner connection status */}
+        {isMining && (
+          <ConnectionStatus>
+            <StatusIndicator 
+              status={
+                minerError 
+                  ? 'error' 
+                  : minerStats.connected 
+                  ? 'connected' 
+                  : 'disconnected'
+              } 
+            />
+            {minerError 
+              ? `${__('Error')}: ${minerError}`
+              : minerStats.connected
+              ? __('Connected to mining server')
+              : __('Connecting to mining server...')
+            }
+            {' • '}
+            {__('State')}: {minerState}
+          </ConnectionStatus>
+        )}
+
         <StatsGrid>
           <StatCard>
             <StatIcon icon={mathIcon} />
@@ -336,6 +388,35 @@ export default function Mining() {
               </StatValue>
             </StatContent>
           </StatCard>
+
+          {/* New stats from miner */}
+          {isMining && (
+            <>
+              <StatCard>
+                <StatIcon icon={workIcon} />
+                <StatContent>
+                  <StatLabel>{__('Block Height')}</StatLabel>
+                  <StatValue>{minerStats.blockHeight || '-'}</StatValue>
+                </StatContent>
+              </StatCard>
+
+              <StatCard>
+                <StatIcon icon={mathIcon} />
+                <StatContent>
+                  <StatLabel>{__('Blocks Accepted')}</StatLabel>
+                  <StatValue>{minerStats.blocksAccepted}</StatValue>
+                </StatContent>
+              </StatCard>
+
+              <StatCard>
+                <StatIcon icon={hashIcon} />
+                <StatContent>
+                  <StatLabel>{__('Blocks Rejected')}</StatLabel>
+                  <StatValue>{minerStats.blocksRejected}</StatValue>
+                </StatContent>
+              </StatCard>
+            </>
+          )}
         </StatsGrid>
       </StatsPanel>
 
