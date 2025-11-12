@@ -214,7 +214,7 @@ export default function Mining() {
     stats: minerStats, 
     error: minerError,
     genesisHash 
-  } = useMiner(isMining);
+  } = useMiner(isMining, { numThreads: cores });
 
   // Get CPU core count on mount
   useEffect(() => {
@@ -278,9 +278,11 @@ export default function Mining() {
   };
 
   const handleCoresChange = (value: number) => {
+    if (isMining) {
+      showNotification(__('Stop mining to change thread count'), 'warning');
+      return;
+    }
     setCores(value);
-    // Note: The Nexus Core doesn't currently support dynamic thread count changes
-    // This is a UI placeholder for future functionality
   };
 
   useEffect(() => {
@@ -360,7 +362,7 @@ export default function Mining() {
             {__('CPU Threads')}
             <SubLabel>
               {__(
-                'Number of CPU threads to use for mining (placeholder for future feature)'
+                'Number of CPU worker threads for mining (requires restart to change)'
               )}
             </SubLabel>
           </Label>
@@ -370,7 +372,7 @@ export default function Mining() {
               max={maxCores}
               value={cores}
               onChange={handleCoresChange}
-              disabled={!isLoggedIn}
+              disabled={!isLoggedIn || isMining}
               style={{ width: '180px' }}
             />
             <CoreCount>
@@ -455,6 +457,26 @@ export default function Mining() {
                 <StatContent>
                   <StatLabel>{__('Block Height')}</StatLabel>
                   <StatValue>{minerStats.blockHeight || '-'}</StatValue>
+                </StatContent>
+              </StatCard>
+
+              <StatCard>
+                <StatIcon icon={mathIcon} />
+                <StatContent>
+                  <StatLabel>{__('Active Workers')}</StatLabel>
+                  <StatValue>{minerStats.numWorkers || 0}</StatValue>
+                </StatContent>
+              </StatCard>
+
+              <StatCard>
+                <StatIcon icon={hashIcon} />
+                <StatContent>
+                  <StatLabel>{__('Hashrate')}</StatLabel>
+                  <StatValue>
+                    {minerStats.hashrate 
+                      ? `${minerStats.hashrate.toFixed(0)} H/s` 
+                      : '-'}
+                  </StatValue>
                 </StatContent>
               </StatCard>
 
