@@ -330,8 +330,10 @@ export class PrimeMiner extends EventEmitter {
         break;
 
       case PacketType.BLOCK_DATA:
-        log.info('[Miner] Received block data');
+        log.info(`[Miner] Received block template (${packet.data.length} bytes)`);
         this.emit('blockData', packet.data);
+        // Emit blockTemplate event for mining workers
+        this.emit('blockTemplate', packet.data);
         break;
 
       case PacketType.GOOD:
