@@ -129,21 +129,21 @@ const ButtonGroup = styled.div({
   gap: '1em',
 });
 
-const StatusIndicator = styled.div<{ status: 'connected' | 'disconnected' | 'error' }>(
-  ({ theme, status }) => ({
-    display: 'inline-block',
-    width: '12px',
-    height: '12px',
-    borderRadius: '50%',
-    marginRight: '0.5em',
-    backgroundColor:
-      status === 'connected'
-        ? theme.success
-        : status === 'error'
+const StatusIndicator = styled.div<{
+  status: 'connected' | 'disconnected' | 'error';
+}>(({ theme, status }) => ({
+  display: 'inline-block',
+  width: '12px',
+  height: '12px',
+  borderRadius: '50%',
+  marginRight: '0.5em',
+  backgroundColor:
+    status === 'connected'
+      ? theme.success
+      : status === 'error'
         ? theme.danger
         : theme.mixer(0.3),
-  })
-);
+}));
 
 const ConnectionStatus = styled.div(({ theme }) => ({
   fontSize: '0.9em',
@@ -208,12 +208,12 @@ export default function Mining() {
   const isLoggedIn = useAtomValue(loggedInAtom);
 
   // Use the miner hook to manage CPU mining with hardcoded configuration
-  const { 
-    isRunning: minerRunning, 
-    state: minerState, 
-    stats: minerStats, 
+  const {
+    isRunning: minerRunning,
+    state: minerState,
+    stats: minerStats,
     error: minerError,
-    genesisHash 
+    genesisHash,
   } = useMiner(isMining, { numThreads: cores });
 
   // Get CPU core count on mount
@@ -240,7 +240,10 @@ export default function Mining() {
     }
 
     if (!genesisHash) {
-      showNotification(__('Genesis hash not available. Please ensure you are logged in.'), 'error');
+      showNotification(
+        __('Genesis hash not available. Please ensure you are logged in.'),
+        'error'
+      );
       return;
     }
 
@@ -299,7 +302,9 @@ export default function Mining() {
       {/* Payment Address Section - Shows where mining rewards go */}
       <PaymentAddressPanel title={__('Payment Address')}>
         <SubLabel>
-          {__('Mining rewards will be sent to your wallet genesis address (immutable during mining session)')}
+          {__(
+            'Mining rewards will be sent to your wallet genesis address (immutable during mining session)'
+          )}
         </SubLabel>
         {genesisHash ? (
           <>
@@ -307,20 +312,24 @@ export default function Mining() {
             <ConfigInfo>
               <ConfigLabel>{__('Mining Server:')}</ConfigLabel>
               <ConfigValue>127.0.0.1:{minerStats.port}</ConfigValue>
-              
+
               <ConfigLabel>{__('Channel:')}</ConfigLabel>
               <ConfigValue>Prime (1)</ConfigValue>
-              
+
               <ConfigLabel>{__('Port Fallback:')}</ConfigLabel>
               <ConfigValue>Auto (0)</ConfigValue>
             </ConfigInfo>
             <InfoText>
-              {__('This address is hardcoded from your wallet context. All mining rewards will automatically be credited to this genesis address. No external configuration needed.')}
+              {__(
+                'Configuration loaded from miner.conf file. All mining rewards will automatically be credited to this genesis address.'
+              )}
             </InfoText>
           </>
         ) : (
           <InfoText>
-            {__('Please log in to see your payment address. You must be logged in to start mining.')}
+            {__(
+              'Please log in to see your payment address. You must be logged in to start mining.'
+            )}
           </InfoText>
         )}
       </PaymentAddressPanel>
@@ -384,29 +393,26 @@ export default function Mining() {
 
       <StatsPanel title={__('Mining Statistics')}>
         <SubLabel style={{ marginBottom: '1em' }}>
-          {__(
-            'Real-time mining statistics and connection status'
-          )}
+          {__('Real-time mining statistics and connection status')}
         </SubLabel>
-        
+
         {/* Enhanced connection status with visual indicators */}
         {isMining && (
           <ConnectionStatus>
-            <StatusIndicator 
+            <StatusIndicator
               status={
-                minerError 
-                  ? 'error' 
-                  : minerStats.connected 
-                  ? 'connected' 
-                  : 'disconnected'
-              } 
+                minerError
+                  ? 'error'
+                  : minerStats.connected
+                    ? 'connected'
+                    : 'disconnected'
+              }
             />
-            {minerError 
+            {minerError
               ? `${__('Error')}: ${minerError}`
               : minerStats.connected
-              ? __('Connected to mining server')
-              : __('Connecting to mining server...')
-            }
+                ? __('Connected to mining server')
+                : __('Connecting to mining server...')}
             {' • '}
             {__('State')}: {minerState}
             {' • '}
@@ -473,8 +479,8 @@ export default function Mining() {
                 <StatContent>
                   <StatLabel>{__('Hashrate')}</StatLabel>
                   <StatValue>
-                    {minerStats.hashrate 
-                      ? `${minerStats.hashrate.toFixed(0)} H/s` 
+                    {minerStats.hashrate
+                      ? `${minerStats.hashrate.toFixed(0)} H/s`
                       : '-'}
                   </StatValue>
                 </StatContent>
@@ -519,10 +525,14 @@ export default function Mining() {
             <strong>{__('Key Features:')}</strong>
           </p>
           <ul style={{ marginLeft: '1.5em', marginTop: '0.5em' }}>
-            <li>{__('Hardcoded configuration - no external files needed')}</li>
-            <li>{__('Auto port selection with fallback to port 0')}</li>
+            <li>
+              {__('Configuration from miner.conf with sensible defaults')}
+            </li>
+            <li>{__('Auto port selection with fallback support')}</li>
             <li>{__('Automatic reconnection with exponential backoff')}</li>
-            <li>{__('Genesis hash hardcoded from wallet context')}</li>
+            <li>{__('Genesis hash validation against Nexus Node')}</li>
+            <li>{__('Optimized worker thread allocation')}</li>
+            <li>{__('Verbose stats for debugging and monitoring')}</li>
             <li>{__('No PIN required for mining start/stop')}</li>
           </ul>
           <p style={{ marginTop: '1em' }}>
