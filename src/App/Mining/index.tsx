@@ -315,7 +315,7 @@ export default function Mining() {
               <ConfigValue>Auto (0)</ConfigValue>
             </ConfigInfo>
             <InfoText>
-              {__('This address is hardcoded from your wallet context. All mining rewards will automatically be credited to this genesis address. No external configuration needed.')}
+              {__('Configuration loaded from miner.conf file. All mining rewards will automatically be credited to this genesis address.')}
             </InfoText>
           </>
         ) : (
@@ -519,10 +519,12 @@ export default function Mining() {
             <strong>{__('Key Features:')}</strong>
           </p>
           <ul style={{ marginLeft: '1.5em', marginTop: '0.5em' }}>
-            <li>{__('Hardcoded configuration - no external files needed')}</li>
-            <li>{__('Auto port selection with fallback to port 0')}</li>
+            <li>{__('Configuration from miner.conf with sensible defaults')}</li>
+            <li>{__('Auto port selection with fallback support')}</li>
             <li>{__('Automatic reconnection with exponential backoff')}</li>
-            <li>{__('Genesis hash hardcoded from wallet context')}</li>
+            <li>{__('Genesis hash validation against Nexus Node')}</li>
+            <li>{__('Optimized worker thread allocation')}</li>
+            <li>{__('Verbose stats for debugging and monitoring')}</li>
             <li>{__('No PIN required for mining start/stop')}</li>
           </ul>
           <p style={{ marginTop: '1em' }}>

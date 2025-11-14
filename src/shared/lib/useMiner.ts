@@ -3,11 +3,12 @@ import { useAtomValue } from 'jotai';
 import { PrimeMiner } from './miner';
 import { MiningWorkerPool } from './MiningWorker';
 import { userGenesisAtom } from './session';
+import { getMinerConfig } from './minerConfig';
 import log from 'electron-log';
 
 /**
  * Configuration for CPU Prime mining
- * All parameters are hardcoded - no external config files needed
+ * Parameters can be overridden from miner.conf file
  */
 interface MinerHookConfig {
   genesisHash?: string; // Mining payment address (from wallet)
@@ -21,9 +22,10 @@ interface MinerHookConfig {
 /**
  * React hook to manage CPU Prime miner state and lifecycle
  * Features:
- * - Hardcoded configuration from wallet atoms (genesis hash)
- * - Auto port selection (primary → fallback port 0)
- * - Hardcoded channel (Prime = 1)
+ * - Configuration from miner.conf file with fallback to defaults
+ * - Genesis hash from wallet context or config file
+ * - Auto port selection (primary → fallback)
+ * - Configurable channel (Prime/Hash)
  * - Event-driven architecture
  * - No PIN flow required for start/stop
  * - Worker pool management for actual CPU mining
@@ -45,34 +47,44 @@ export function useMiner(enabled: boolean = false, config: MinerHookConfig = {})
   });
   const [error, setError] = useState<string | null>(null);
   
-  // Get genesis hash from wallet context (hardcoded payment address)
+  // Get genesis hash from wallet context or config file
   const walletGenesis = useAtomValue(userGenesisAtom);
-  const genesisHash = config.genesisHash || walletGenesis;
+  
+  // Load miner configuration from file
+  const fileConfig = getMinerConfig();
+  
+  // Priority: hook config > file config > wallet genesis
+  const genesisHash = config.genesisHash || fileConfig.genesisHash || walletGenesis;
 
   // Initialize miner instance and worker pool
   useEffect(() => {
     if (!minerRef.current) {
-      // Hardcoded configuration - no external config files needed
+      // Merge configuration from file and hook parameters
+      // Hook parameters take precedence over file config
       const minerConfig = {
-        host: config.host || '127.0.0.1',
-        port: config.port || 9325, // Primary port
-        fallbackPort: config.fallbackPort ?? 0, // Auto fallback port
-        channel: config.channel || 1, // Prime channel (hardcoded)
-        timeout: 30,
+        host: config.host || fileConfig.walletIp,
+        port: config.port || fileConfig.port,
+        fallbackPort: config.fallbackPort ?? fileConfig.fallbackPort,
+        channel: config.channel || fileConfig.channel,
+        timeout: fileConfig.timeout,
+        maxReconnectDelay: fileConfig.maxReconnectDelay,
+        minReconnectDelay: fileConfig.minReconnectDelay,
       };
       
-      log.info('[useMiner] Initializing miner with hardcoded config:', {
+      log.info('[useMiner] Initializing miner with config from miner.conf:', {
         ...minerConfig,
         genesisHash: genesisHash ? `${genesisHash.substring(0, 16)}...` : 'not set',
+        validateGenesis: fileConfig.validateGenesis,
+        miningMode: fileConfig.miningMode,
       });
       
       minerRef.current = new PrimeMiner(minerConfig);
 
-      // Initialize worker pool
-      const numThreads = config.numThreads || 1;
+      // Initialize worker pool with config from file
+      const numThreads = config.numThreads || fileConfig.workerThreads;
       workerPoolRef.current = new MiningWorkerPool({ 
         numThreads,
-        logHashrate: true 
+        logHashrate: fileConfig.logHashrate,
       });
 
       // Set up miner event listeners
