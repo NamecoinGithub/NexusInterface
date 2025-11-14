@@ -30,7 +30,10 @@ interface MinerHookConfig {
  * - No PIN flow required for start/stop
  * - Worker pool management for actual CPU mining
  */
-export function useMiner(enabled: boolean = false, config: MinerHookConfig = {}) {
+export function useMiner(
+  enabled: boolean = false,
+  config: MinerHookConfig = {}
+) {
   const minerRef = useRef<PrimeMiner | null>(null);
   const workerPoolRef = useRef<MiningWorkerPool | null>(null);
   const [isRunning, setIsRunning] = useState(false);
@@ -46,15 +49,16 @@ export function useMiner(enabled: boolean = false, config: MinerHookConfig = {})
     numWorkers: 0,
   });
   const [error, setError] = useState<string | null>(null);
-  
+
   // Get genesis hash from wallet context or config file
   const walletGenesis = useAtomValue(userGenesisAtom);
-  
+
   // Load miner configuration from file
   const fileConfig = getMinerConfig();
-  
+
   // Priority: hook config > file config > wallet genesis
-  const genesisHash = config.genesisHash || fileConfig.genesisHash || walletGenesis;
+  const genesisHash =
+    config.genesisHash || fileConfig.genesisHash || walletGenesis;
 
   // Initialize miner instance and worker pool
   useEffect(() => {
@@ -70,19 +74,21 @@ export function useMiner(enabled: boolean = false, config: MinerHookConfig = {})
         maxReconnectDelay: fileConfig.maxReconnectDelay,
         minReconnectDelay: fileConfig.minReconnectDelay,
       };
-      
+
       log.info('[useMiner] Initializing miner with config from miner.conf:', {
         ...minerConfig,
-        genesisHash: genesisHash ? `${genesisHash.substring(0, 16)}...` : 'not set',
+        genesisHash: genesisHash
+          ? `${genesisHash.substring(0, 16)}...`
+          : 'not set',
         validateGenesis: fileConfig.validateGenesis,
         miningMode: fileConfig.miningMode,
       });
-      
+
       minerRef.current = new PrimeMiner(minerConfig);
 
       // Initialize worker pool with config from file
       const numThreads = config.numThreads || fileConfig.workerThreads;
-      workerPoolRef.current = new MiningWorkerPool({ 
+      workerPoolRef.current = new MiningWorkerPool({
         numThreads,
         logHashrate: fileConfig.logHashrate,
       });
@@ -137,15 +143,18 @@ export function useMiner(enabled: boolean = false, config: MinerHookConfig = {})
 
       // Set up worker pool event listeners
       if (workerPoolRef.current) {
-        workerPoolRef.current.on('solution', (solution: { merkleRoot: Buffer; nonce: bigint }) => {
-          log.info('[useMiner] Worker found solution, submitting to core');
-          if (minerRef.current) {
-            minerRef.current.submitBlock(solution.merkleRoot, solution.nonce);
+        workerPoolRef.current.on(
+          'solution',
+          (solution: { merkleRoot: Buffer; nonce: bigint }) => {
+            log.info('[useMiner] Worker found solution, submitting to core');
+            if (minerRef.current) {
+              minerRef.current.submitBlock(solution.merkleRoot, solution.nonce);
+            }
           }
-        });
+        );
 
         workerPoolRef.current.on('hashrate', (hashrateData: any) => {
-          setStats(prev => ({
+          setStats((prev) => ({
             ...prev,
             hashrate: hashrateData.current,
           }));
@@ -169,7 +178,14 @@ export function useMiner(enabled: boolean = false, config: MinerHookConfig = {})
         minerRef.current = null;
       }
     };
-  }, [config.host, config.port, config.fallbackPort, config.channel, config.numThreads, genesisHash]);
+  }, [
+    config.host,
+    config.port,
+    config.fallbackPort,
+    config.channel,
+    config.numThreads,
+    genesisHash,
+  ]);
 
   // Update stats from miner and worker pool
   const updateStats = useCallback(() => {
@@ -179,7 +195,7 @@ export function useMiner(enabled: boolean = false, config: MinerHookConfig = {})
         hashrate: 0,
         numWorkers: 0,
       };
-      
+
       setStats({
         blockHeight: minerStats.blockHeight,
         blocksAccepted: minerStats.blocksAccepted,
@@ -200,13 +216,13 @@ export function useMiner(enabled: boolean = false, config: MinerHookConfig = {})
     const startMining = async () => {
       if (enabled && !isRunning) {
         log.info('[useMiner] Starting miner and workers...');
-        
+
         // Start worker pool first
         await workerPoolRef.current!.start();
-        
+
         // Then start LLP connection
         minerRef.current!.start();
-        
+
         setIsRunning(true);
         updateStats();
       }
@@ -215,24 +231,24 @@ export function useMiner(enabled: boolean = false, config: MinerHookConfig = {})
     const stopMining = async () => {
       if (!enabled && isRunning) {
         log.info('[useMiner] Stopping miner and workers...');
-        
+
         // Stop LLP connection first
         minerRef.current!.stop();
-        
+
         // Then stop workers
         await workerPoolRef.current!.stop();
-        
+
         setIsRunning(false);
         updateStats();
       }
     };
 
-    startMining().catch(err => {
+    startMining().catch((err) => {
       log.error('[useMiner] Failed to start mining:', err);
       setError(err.message);
     });
 
-    stopMining().catch(err => {
+    stopMining().catch((err) => {
       log.error('[useMiner] Failed to stop mining:', err);
       setError(err.message);
     });

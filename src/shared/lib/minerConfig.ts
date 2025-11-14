@@ -4,7 +4,7 @@ import log from 'electron-log';
 
 /**
  * NexusMiner Configuration
- * 
+ *
  * This module loads and validates miner.conf configuration file.
  * It provides default values for all settings to ensure backward compatibility.
  */
@@ -78,7 +78,7 @@ const DEFAULT_CONFIG: MinerConfiguration = {
  */
 function parseConfFile(content: string): Record<string, string> {
   const config: Record<string, string> = {};
-  
+
   const lines = content.split('\n');
   for (const line of lines) {
     // Remove comments
@@ -126,7 +126,7 @@ export function loadMinerConfig(configPath?: string): MinerConfiguration {
     } else {
       // Look for miner.conf in configs directory
       confPath = path.join(__dirname, '../../..', 'configs', 'miner.conf');
-      
+
       // In production build, adjust path
       if (!fs.existsSync(confPath)) {
         confPath = path.join(process.cwd(), 'configs', 'miner.conf');
@@ -135,7 +135,9 @@ export function loadMinerConfig(configPath?: string): MinerConfiguration {
 
     // Check if config file exists
     if (!fs.existsSync(confPath)) {
-      log.info(`[MinerConfig] Config file not found at ${confPath}, using defaults`);
+      log.info(
+        `[MinerConfig] Config file not found at ${confPath}, using defaults`
+      );
       return config;
     }
 
@@ -202,11 +204,15 @@ export function loadMinerConfig(configPath?: string): MinerConfiguration {
  */
 function validateConfig(config: MinerConfiguration): void {
   if (config.channel !== 1 && config.channel !== 2) {
-    throw new Error(`Invalid channel: ${config.channel}. Must be 1 (Prime) or 2 (Hash)`);
+    throw new Error(
+      `Invalid channel: ${config.channel}. Must be 1 (Prime) or 2 (Hash)`
+    );
   }
 
   if (config.workerThreads < 1) {
-    throw new Error(`Invalid worker_threads: ${config.workerThreads}. Must be >= 1`);
+    throw new Error(
+      `Invalid worker_threads: ${config.workerThreads}. Must be >= 1`
+    );
   }
 
   if (config.port < 1 || config.port > 65535) {
@@ -218,16 +224,26 @@ function validateConfig(config: MinerConfiguration): void {
   }
 
   if (config.miningMode !== 'solo' && config.miningMode !== 'pool') {
-    throw new Error(`Invalid mining_mode: ${config.miningMode}. Must be 'solo' or 'pool'`);
+    throw new Error(
+      `Invalid mining_mode: ${config.miningMode}. Must be 'solo' or 'pool'`
+    );
   }
 
-  if (config.threadPriority !== 'low' && config.threadPriority !== 'normal' && config.threadPriority !== 'high') {
-    throw new Error(`Invalid thread_priority: ${config.threadPriority}. Must be 'low', 'normal', or 'high'`);
+  if (
+    config.threadPriority !== 'low' &&
+    config.threadPriority !== 'normal' &&
+    config.threadPriority !== 'high'
+  ) {
+    throw new Error(
+      `Invalid thread_priority: ${config.threadPriority}. Must be 'low', 'normal', or 'high'`
+    );
   }
 
   const validLogLevels = ['debug', 'info', 'warn', 'error'];
   if (!validLogLevels.includes(config.logLevel)) {
-    throw new Error(`Invalid log_level: ${config.logLevel}. Must be one of: ${validLogLevels.join(', ')}`);
+    throw new Error(
+      `Invalid log_level: ${config.logLevel}. Must be one of: ${validLogLevels.join(', ')}`
+    );
   }
 }
 
