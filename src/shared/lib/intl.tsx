@@ -213,12 +213,15 @@ export const formatCurrency = (
     maxDecimalDigits = 0;
   }
   const digits = ensureSignificantDigit(maxDecimalDigits, num);
-  return new Intl.NumberFormat(locale, {
-    style: 'currency',
-    currency,
+  const isUSDT = currency === 'USDT';
+  const formatOptions: Intl.NumberFormatOptions = {
+    style: isUSDT ? 'decimal' : 'currency',
+    currency: isUSDT ? undefined : currency,
     minimumFractionDigits: 0,
     maximumFractionDigits: digits,
-  }).format(num);
+  };
+  const result = new Intl.NumberFormat(locale, formatOptions).format(num);
+  return isUSDT ? `${result} USDT` : result;
 };
 
 export const formatPercent = (num: number, maxDecimalDigits: number) => {

@@ -8,12 +8,10 @@ import AutoLaunch from 'auto-launch';
 import { updateSettings, settingsAtom } from 'lib/settings';
 import SettingsField from 'components/SettingsField';
 import Button from 'components/Button';
-import Select from 'components/Select';
 import Switch from 'components/Switch';
 import Icon from 'components/Icon';
 import { confirm } from 'lib/dialog';
 import * as form from 'lib/form';
-import fiatCurrencies from 'data/currencies';
 import warningIcon from 'icons/warning.svg';
 import {
   checkForUpdates,
@@ -230,15 +228,6 @@ export default function SettingsApp() {
             }
             updateSettings({ sendUsageData: checked });
           }}
-        />
-      </SettingsField>
-
-      <SettingsField label={__('Base currency')}>
-        <Select
-          value={settings.fiatCurrency}
-          onChange={updateHandlers('fiatCurrency')}
-          options={fiatCurrencies}
-          style={{ maxWidth: 260 }}
         />
       </SettingsField>
 
