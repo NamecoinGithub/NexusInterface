@@ -1,9 +1,9 @@
 import styled from '@emotion/styled';
 import {
   Children,
-  cloneElement,
   ReactElement,
   ReactNode,
+  RefObject,
   useRef,
   useState,
 } from 'react';
@@ -57,7 +57,7 @@ const Separator = styled.div(({ theme }) => ({
   borderBottom: `1px solid ${theme.mixer(0.125)}`,
 }));
 
-function getDropdownStyle(controlElem?: HTMLElement) {
+function getDropdownStyle(controlElem: HTMLElement | null) {
   if (!controlElem) return {};
   const rect = controlElem.getBoundingClientRect();
   return {
@@ -67,17 +67,22 @@ function getDropdownStyle(controlElem?: HTMLElement) {
   };
 }
 
+export interface ControlProps {
+  open?: boolean;
+  openDropdown?: () => void;
+  closeDropdown: () => void;
+  ref?: RefObject<HTMLElement | null>;
+}
+
 export default function Dropdown({
   children,
   dropdown,
 }: {
-  children:
-    | ReactElement
-    | ((props: { openDropdown: () => void }) => ReactElement);
-  dropdown: ReactNode | ((props: { closeDropdown: () => void }) => ReactNode);
+  children: ReactElement | ((props: ControlProps) => ReactElement);
+  dropdown: ReactNode | ((props: ControlProps) => ReactNode);
 }) {
   const [open, setOpen] = useState(false);
-  const controlRef = useRef<HTMLElement>();
+  const controlRef = useRef<HTMLElement>(null);
 
   const openDropdown = () => {
     setOpen(true);
@@ -87,28 +92,29 @@ export default function Dropdown({
     setOpen(false);
   };
 
-  const controlProps = {
+  const controlProps: ControlProps = {
     open,
     openDropdown,
     closeDropdown,
+    ref: controlRef,
   };
 
-  const dropdownProps = {
+  const dropdownProps: ControlProps = {
     closeDropdown,
+    ref: controlRef,
   };
 
   const control =
     typeof children === 'function'
       ? children(controlProps)
       : Children.only(children);
-  const clonedControl = cloneElement(control, { ref: controlRef });
 
   const dropdownContent =
     typeof dropdown === 'function' ? dropdown(dropdownProps) : dropdown;
 
   return (
     <>
-      {clonedControl}
+      {control}
       {open && (
         <Overlay onBackgroundClick={closeDropdown}>
           <DropdownComponent style={getDropdownStyle(controlRef.current)}>

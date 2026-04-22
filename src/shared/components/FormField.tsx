@@ -91,7 +91,7 @@ export type FormFieldProps = Omit<
   ComponentProps<typeof FormFieldComponent>,
   'children'
 > & {
-  label: string;
+  label: ReactNode;
   capitalizeLabel?: boolean;
   connectLabel?: boolean;
   children: ReactElement | ((id: string) => ReactNode);
@@ -114,6 +114,7 @@ export default function FormField({
     }
     if (connectLabel) {
       return cloneElement(Children.only(children), {
+        // @ts-ignore
         id: inputId,
       });
     }

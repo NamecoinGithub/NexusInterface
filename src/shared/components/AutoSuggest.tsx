@@ -96,7 +96,7 @@ const Suggestion = memo(function ({
   activeIndex: number | null;
   suggestion: SuggestionType;
   onSelect: (value: string) => void;
-  inputRef: RefObject<HTMLInputElement | undefined>;
+  inputRef: RefObject<HTMLInputElement | null>;
   activate: (index: number) => void;
 }) {
   const handleSelect = () => {
@@ -183,21 +183,18 @@ const defaultFilterSuggestions = memoize(
   }
 );
 
-export interface AutoSuggestProps
+export interface AutoSuggestProps<T extends SuggestionType>
   extends Omit<ComponentProps<typeof AutoSuggestComponent>, 'onSelect'> {
-  filterSuggestions?: (
-    suggestions: SuggestionType[],
-    inputValue: any
-  ) => SuggestionType[];
+  filterSuggestions?: (suggestions: T[], inputValue: any) => SuggestionType[];
   suggestOn?: 'focus' | 'change';
-  suggestions: SuggestionType[];
+  suggestions: T[];
   onSelect: (value: string) => void;
   inputProps?: TextFieldProps;
   keyControl?: boolean;
   emptyFiller?: ReactNode;
 }
 
-export default function AutoSuggest({
+export default function AutoSuggest<T extends SuggestionType>({
   filterSuggestions = defaultFilterSuggestions,
   suggestOn = 'focus',
   suggestions,
@@ -206,7 +203,7 @@ export default function AutoSuggest({
   keyControl = true,
   emptyFiller,
   ...rest
-}: AutoSuggestProps) {
+}: AutoSuggestProps<T>) {
   const [open, setOpen] = useState(false);
   const [activeIndex, setActiveIndex] = useState<number | null>(null);
   const currentSuggestions = filterSuggestions(suggestions, inputProps?.value);

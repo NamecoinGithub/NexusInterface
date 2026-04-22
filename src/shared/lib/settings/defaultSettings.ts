@@ -16,6 +16,9 @@ const defaultPassword = crypto
   .update('pass')
   .digest('hex');
 
+export type OverviewDisplay = 'standard' | 'none' | 'miner';
+export type AddressStyle = 'segmented' | 'raw' | 'truncateMiddle';
+
 export type Settings = {
   // App
   locale: Locale;
@@ -30,7 +33,7 @@ export type Settings = {
   devMode: boolean;
   verifyModuleSource: boolean;
   fakeTransactions: boolean;
-  overviewDisplay: 'standard' | 'none' | 'miner';
+  overviewDisplay: OverviewDisplay;
   hideOverviewBalances: boolean;
   displayFiatBalance: boolean;
 
@@ -64,7 +67,7 @@ export type Settings = {
 
   // Style
   renderGlobe: boolean;
-  addressStyle: 'segmented' | 'raw' | 'truncateMiddle';
+  addressStyle: AddressStyle;
 
   // Modules
   disabledModules: string[];

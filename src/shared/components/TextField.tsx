@@ -257,7 +257,7 @@ const MultilineInput = (
     ref?: ForwardedRef<HTMLTextAreaElement>;
   }
 ) => {
-  const inputRef = useRef<HTMLTextAreaElement>();
+  const inputRef = useRef<HTMLTextAreaElement>(null);
 
   useEffect(() => {
     const inputElem = inputRef.current;
@@ -312,7 +312,7 @@ function GenericTextField(
   } = props;
 
   const [focus, setFocus] = useState(false);
-  const inputRef = useRef<HTMLInputElement | HTMLTextAreaElement>();
+  const inputRef = useRef<HTMLInputElement | HTMLTextAreaElement>(null);
   useEffect(() => {
     // Somehow React's autoFocus doesn't work, so handle it manually
     if (autoFocus && inputRef.current) {

@@ -15,11 +15,12 @@ import RomanianFlag from './flags/ro.png';
 import NorwegianFlag from './flags/no.png';
 import SerbianFlag from './flags/rs.png';
 import USUKFlag from './flags/US-UK.png';
+import { Locale } from 'lib/intl';
 
 type LanguageInfo = {
-  code: string,
-  flag: string,
-  name: string,
+  code: Locale;
+  flag: string;
+  name: string;
 };
 
 /**

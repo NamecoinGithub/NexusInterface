@@ -239,6 +239,11 @@ export interface StakeInfo {
   new: boolean;
   staking: boolean;
   change: boolean;
+  pooled?: boolean;
+  requested?: number;
+  expires?: number;
+  onhold?: boolean;
+  holdtime?: number;
 }
 
 export interface QueryParams {
@@ -276,29 +281,29 @@ export type ContractOP =
   | 'FEE'
   | 'LEGACY';
 
+export type FromOrTo = {
+  address: string;
+  name: string;
+  local: boolean;
+  mine: boolean;
+  type: string;
+  namespace?: string;
+};
+
 export interface Contract {
   id: number;
   OP: ContractOP;
   for: string;
   txid: string;
   contract: number;
-  from: {
-    address: string;
-    name: string;
-    local: boolean;
-    mine: boolean;
-    type: string;
-  };
-  to: {
-    address: string;
-    name: string;
-    local: boolean;
-    mine: boolean;
-    type: string;
-  };
+  from: FromOrTo;
+  to: FromOrTo;
   amount: number;
   token: string;
   ticker?: string;
+  trustkey?: string;
+  name?: string;
+  address?: string;
 }
 
 export interface Transaction {
@@ -326,6 +331,11 @@ export interface Account extends NxsObject {
   token: string;
   ticker?: string;
   name?: string;
+  unclaimed?: number;
+  unconfirmed?: number;
+  stake?: number;
+  immature?: number;
+  data?: string;
 }
 
 export interface NexusBalance {
@@ -357,6 +367,8 @@ export interface Token extends NxsObject {
   maxsupply: number;
   token: string;
   ticker?: string;
+  unclaimed?: number;
+  unconfirmed?: number;
 }
 
 export interface NameRecord extends NxsObject {
@@ -365,6 +377,8 @@ export interface NameRecord extends NxsObject {
   local: boolean;
   namespace?: string;
   mine: boolean;
+  user?: string;
+  global?: boolean;
 }
 
 export interface NameEvent extends NxsObject {
@@ -373,15 +387,41 @@ export interface NameEvent extends NxsObject {
   local: boolean;
   mine: boolean;
   action: string;
+  checksum?: string;
+  namespace?: string;
 }
 
 export interface Namespace extends NxsObject {
   namespace: string;
 }
 
+export interface NamespaceEvent extends NxsObject {
+  register: string;
+  name: string;
+  local: boolean;
+  mine: boolean;
+  action: string;
+  checksum?: string;
+}
+
 export interface Asset extends NxsObject {
   name?: string;
   data: any;
+  [key: string]: any;
+}
+
+export interface AssetSchemaItem {
+  name: string;
+  type: string;
+  value: any;
+  mutable: boolean;
+  maxlength?: number;
+}
+
+export interface AssetHistoryEvent extends NxsObject {
+  address: string;
+  name: string;
+  action: 'CREATE' | 'MODIFY' | 'TRANSFER' | 'CLAIM';
   [key: string]: any;
 }
 
@@ -589,6 +629,12 @@ async function callAPI<
   }
 >(endpoint: 'finance/get/any', customParams: TParams): Promise<Account>;
 async function callAPI<
+  TParams extends {
+    name?: string;
+    address?: string;
+  }
+>(endpoint: 'finance/get/token', customParams: TParams): Promise<Token>;
+async function callAPI<
   TParams extends QueryParams & {
     verbose?: string;
     name?: string;
@@ -616,6 +662,18 @@ async function callAPI<
   endpoint: 'finance/create/account',
   customParams: TParams
 ): Promise<OperationResultWithAddress>;
+async function callAPI<
+  TParams extends {
+    pin: string;
+    name?: string;
+    data?: any;
+    suppply: number;
+    decimals: number;
+  }
+>(
+  endpoint: 'finance/create/token',
+  customParams: TParams
+): Promise<OperationResultWithAddress>;
 async function callAPI(endpoint: 'finance/get/stakeinfo'): Promise<StakeInfo>;
 async function callAPI(
   endpoint: 'finance/get/balances'
@@ -628,6 +686,83 @@ async function callAPI<TParams extends QueryParams>(
   endpoint: 'finance/list/any',
   customParams?: TParams
 ): Promise<Account[]>;
+
+async function callAPI<
+  TParams extends {
+    name?: string;
+    address?: string;
+  }
+>(endpoint: 'names/get/name', customParams?: TParams): Promise<NameRecord>;
+async function callAPI<
+  TParams extends {
+    name?: string;
+    address?: string;
+  }
+>(endpoint: 'names/get/inactive', customParams?: TParams): Promise<NameRecord>;
+async function callAPI<
+  TParams extends {
+    address: string;
+  }
+>(
+  endpoint: 'names/reverse/lookup',
+  customParams?: TParams
+): Promise<NameRecord>;
+async function callAPI<
+  TParams extends {
+    address: string;
+  }
+>(endpoint: 'names/history/name', customParams?: TParams): Promise<NameEvent[]>;
+async function callAPI<
+  TParams extends {
+    address: string;
+  }
+>(
+  endpoint: 'names/history/namespace',
+  customParams?: TParams
+): Promise<NamespaceEvent[]>;
+// TODO: double check if these params are correct
+async function callAPI<
+  TParams extends {
+    address?: string;
+    name?: string;
+    pin: string;
+    username?: string;
+    destination?: string;
+  }
+>(
+  endpoint: 'names/transfer/name',
+  customParams?: TParams
+): Promise<OperationResultWithAddress>;
+// TODO: double check if these params are correct
+async function callAPI<
+  TParams extends {
+    address?: string;
+    namespace?: string;
+    pin: string;
+    username?: string;
+    destination?: string;
+  }
+>(
+  endpoint: 'names/transfer/namespace',
+  customParams?: TParams
+): Promise<OperationResultWithAddress>;
+
+async function callAPI<
+  TParams extends {
+    address: string;
+  }
+>(
+  endpoint: 'assets/get/schema',
+  customParams?: TParams
+): Promise<AssetSchemaItem[]>;
+async function callAPI<
+  TParams extends {
+    address: string;
+  }
+>(
+  endpoint: 'assets/history/asset',
+  customParams?: TParams
+): Promise<AssetHistoryEvent[]>;
 
 async function callAPI(
   endpoint: string,
@@ -694,6 +829,7 @@ async function listAll<TParams extends QueryParams>(
   endpoint: 'names/list/namespaces',
   customParams?: TParams
 ): Promise<Namespace[]>;
+
 async function listAll<TParams extends QueryParams>(
   endpoint: 'assets/list/assets',
   customParams?: TParams

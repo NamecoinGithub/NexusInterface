@@ -195,9 +195,8 @@ Form.AutoSuggest = function ({
   config,
   validate,
   inputProps,
-  onSelect,
   ...rest
-}: ComponentProps<typeof AutoSuggest> & FormComponentProps) {
+}: Omit<ComponentProps<typeof AutoSuggest>, 'onSelect'> & FormComponentProps) {
   const { input, meta } = useField(name, { validate, ...config });
   return (
     <AutoSuggest

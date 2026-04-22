@@ -27,7 +27,7 @@ export const openInfoDialog = (props?: InfoDialogProps) =>
 export function confirm(
   options: Omit<ConfirmDialogProps, 'callbackYes' | 'callbackNo'>
 ) {
-  return new Promise((resolve, reject) => {
+  return new Promise<boolean>((resolve, reject) => {
     try {
       openConfirmDialog({
         ...options,
