@@ -112,7 +112,7 @@ NONE
 
 `blocks` : The current block height of this node.
 
-`synchronizing` : Flag indicating whether this node is currently syncrhonizing.  Not included if private=true
+`synchronizing` : Flag indicating whether this node is currently synchronizing.  Not included if private=true
 
 `synccomplete` : The percentage of the total blocks downloaded
 
@@ -122,7 +122,7 @@ NONE
 
 `connections` : Number of peer connections.
 
-`eids` : Array of LISP Endpoint Idendifiers (EID's) for this node.  Not included unless this node is using LISP.
+`eids` : Array of LISP Endpoint Identifiers (EID's) for this node.  Not included unless this node is using LISP.
 
 
 ****

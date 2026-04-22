@@ -47,7 +47,7 @@ function exportAddressBook(addressBook) {
   UT.ExportAddressBook();
 
   const rows = []; //Set up a blank array for each row
-  let csvContent = 'data:text/csv;charset=utf-8,'; //Set formating
+  let csvContent = 'data:text/csv;charset=utf-8,'; //Set formatting
   //This is so we can have named columns in the export, this will be row 1
   let NameEntry = [
     'AccountName', //a
