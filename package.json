@@ -190,6 +190,7 @@
     "@babel/preset-typescript": "^7.26.0",
     "@babel/register": "^7.25.9",
     "@emotion/babel-plugin": "^11.13.5",
+    "@noble/hashes": "1.7.1",
     "@pmmmwh/react-refresh-webpack-plugin": "^0.5.15",
     "@types/auto-launch": "^5.0.5",
     "@types/color": "^4.2.0",
@@ -286,6 +287,7 @@
   },
   "overrides": {
     "react": "$react",
-    "react-dom": "$react-dom"
+    "react-dom": "$react-dom",
+    "@noble/hashes": "1.7.1"
   }
 }
