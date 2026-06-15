@@ -105,8 +105,24 @@ const SwitchInput = styled.input(({ theme }) => {
   };
 });
 
-const Switch = (props: ComponentProps<typeof SwitchInput>) => (
-  <SwitchInput type="checkbox" checked={!!props.value} {...props} />
+const Switch = ({
+  value,
+  onCheckedChange,
+  ...props
+}: Omit<ComponentProps<typeof SwitchInput>, 'value'> & {
+  value?: boolean;
+  onCheckedChange?: (value: boolean) => void;
+}) => (
+  <SwitchInput
+    type="checkbox"
+    value={value?.toString()}
+    checked={!!value}
+    {...props}
+    onChange={(evt) => {
+      onCheckedChange?.(evt.target.checked);
+      props.onChange?.(evt);
+    }}
+  />
 );
 
 export default Switch;

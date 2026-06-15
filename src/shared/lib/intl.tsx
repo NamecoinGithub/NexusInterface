@@ -24,9 +24,11 @@ export type Locale =
   | 'pt'
   | 'ru'
   | 'sr'
-  | 'zh-cn';
+  | 'zh-cn'
+  | 'ro'
+  | 'hu';
 
-const locales: Locale[] = [
+export const locales: Locale[] = [
   'en',
   'ar',
   'de',
@@ -42,6 +44,8 @@ const locales: Locale[] = [
   'ru',
   'sr',
   'zh-cn',
+  'ro',
+  'hu',
 ];
 
 function loadDict(locale: Locale) {
@@ -209,12 +213,15 @@ export const formatCurrency = (
     maxDecimalDigits = 0;
   }
   const digits = ensureSignificantDigit(maxDecimalDigits, num);
-  return new Intl.NumberFormat(locale, {
-    style: 'currency',
-    currency,
+  const isUSDT = currency === 'USDT';
+  const formatOptions: Intl.NumberFormatOptions = {
+    style: isUSDT ? 'decimal' : 'currency',
+    currency: isUSDT ? undefined : currency,
     minimumFractionDigits: 0,
     maximumFractionDigits: digits,
-  }).format(num);
+  };
+  const result = new Intl.NumberFormat(locale, formatOptions).format(num);
+  return isUSDT ? `${result} USDT` : result;
 };
 
 export const formatPercent = (num: number, maxDecimalDigits: number) => {
@@ -255,7 +262,7 @@ const toRelativeTime = (timestamp: number) => {
 
 export const formatRelativeTime = (
   timestamp: number,
-  options: Intl.RelativeTimeFormatOptions
+  options?: Intl.RelativeTimeFormatOptions
 ) =>
   new Intl.RelativeTimeFormat(locale, {
     style: 'long',

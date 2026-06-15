@@ -2,7 +2,6 @@ import axios from 'axios';
 import { atom } from 'jotai';
 import { ledgerInfoQuery } from 'lib/ledger';
 import jotaiQuery from 'utils/jotaiQuery';
-import { settingAtoms } from 'lib/settings';
 import { tryParsingJson } from 'utils/json';
 import { CurrencyTicker } from 'data/currencies';
 
@@ -23,20 +22,27 @@ type MarketDataCache = Array<
   }
 >;
 
-async function fetchMarketData(fiatCurrency: CurrencyTicker) {
+async function fetchMarketData() {
   try {
+    const fiatCurrency = 'USDT';
     // Cache the result so that it won't have to reach the server again on UI refreshes
     const cache = readCache();
-    const cachedData = findMarketData(cache, fiatCurrency);
+    const cachedData = findMarketData(cache, fiatCurrency as CurrencyTicker);
     let marketData: MarketData | undefined = undefined;
     if (cachedData) {
       marketData = cachedData;
     } else {
       const { data } = await axios.get(
-        `https://nexus-wallet-server-nndj.onrender.com/market-data?base_currency=${fiatCurrency}`
+        `https://api.dex-trade.com/v1/public/ticker?pair=NXSUSDT`
       );
-      marketData = { ...data, currency: fiatCurrency } as MarketData;
-      addToCache(cache, marketData);
+      if (data?.status && data?.data) {
+        marketData = {
+          price: Number(data.data.last),
+          changePct24Hr: Number(data.data['percent_сhange'] || data.data.percent_change || 0),
+          currency: fiatCurrency as CurrencyTicker,
+        };
+        addToCache(cache, marketData);
+      }
     }
 
     return marketData;
@@ -77,9 +83,9 @@ function addToCache(cache: MarketDataCache, marketData: MarketData) {
 }
 
 export const marketDataQuery = jotaiQuery<MarketData | undefined>({
-  getQueryConfig: (get) => ({
-    queryKey: ['marketData', get(settingAtoms.fiatCurrency)],
-    queryFn: () => fetchMarketData(get(settingAtoms.fiatCurrency)),
+  getQueryConfig: () => ({
+    queryKey: ['marketData', 'USDT'],
+    queryFn: () => fetchMarketData(),
     retry: 2,
     retryDelay: 5000,
     staleTime: 3600000, // 1 hour
@@ -87,13 +93,13 @@ export const marketDataQuery = jotaiQuery<MarketData | undefined>({
     refetchOnReconnect: 'always',
     placeholderData: (previousData) => previousData,
   }),
-  refetchTriggers: [settingAtoms.fiatCurrency],
 });
 
 export const marketCapAtom = atom((get) => {
-  const price = get(marketDataQuery.valueAtom)?.price;
+  const marketData = get(marketDataQuery.valueAtom);
+  const price = marketData?.price;
   if (!price) return null;
-  const supply = get(ledgerInfoQuery.valueAtom)?.supply.total;
+  const supply = get(ledgerInfoQuery.valueAtom)?.supply?.total;
   if (!supply) return null;
   return price * supply;
 });

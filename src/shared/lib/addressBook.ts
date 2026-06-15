@@ -86,7 +86,7 @@ subscribe(addressBookAtom, (addressBook) => {
   }, 0);
 });
 
-export const lookupAddress = (address: string) => {
+export const lookupAddress = (address?: string) => {
   const addressBook = store.get(addressBookAtom);
   for (const contact of Object.values(addressBook)) {
     const match =

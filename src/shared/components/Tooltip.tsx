@@ -197,7 +197,7 @@ export interface TooltipTriggerProps
   align?: TooltipAlign;
   skin?: TooltipSkin;
   tooltip?: React.ReactNode;
-  children: React.ReactElement;
+  children?: React.ReactNode;
   style?: React.CSSProperties;
 }
 
