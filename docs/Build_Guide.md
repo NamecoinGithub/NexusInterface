@@ -33,7 +33,7 @@ Run command `npm run package-platform*`
 - replace `platform` with your desired platform
   Platforms: `win`, `darwin`(macOS), `linux`
   This will build the project and place the build in the `release` folder. The file format will depend on the provided formats in the `package.json`
-- Mac OSX should use `npm run package-mac`
+- macOS should use `npm run package-mac`
 
 ### FAQ
 
