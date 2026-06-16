@@ -33,7 +33,7 @@ Run command `npm run package-platform*`
 - replace `platform` with your desired platform
   Platforms: `win`, `darwin`(macOS), `linux`
   This will build the project and place the build in the `release` folder. The file format will depend on the provided formats in the `package.json`
-- macOS should use `npm run package-mac`
+- macOS should use `npm run package-mac`; this repository sets `mac.identity` to `null`, so notarization is skipped unless you override the signing configuration.
 
 ### FAQ
 
