@@ -280,7 +280,7 @@
     "unzip-stream": "^0.3.4",
     "zod": "^3.24.1"
   },
-  "devEngines": {
+  "engines": {
     "node": ">=16.x",
     "npm": ">=8.x"
   },
