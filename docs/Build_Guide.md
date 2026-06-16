@@ -21,6 +21,12 @@ Clone Repo into a empty folder and open that folder in your editor
 
 Run the command `npm install`
 
+For a reproducible install that exactly matches the committed `package-lock.json`
+(recommended for release builds and CI), run `npm ci` instead. `npm ci` will fail
+fast if the lockfile is out of sync rather than silently resolving newer
+transitive dependencies, which has caused build breaks in `electron-builder` in
+the past.
+
 ### Step 4 (Development)
 
 Run command `npm run build-dll`

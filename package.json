@@ -215,7 +215,7 @@
     "csv-parse": "^5.6.0",
     "csv-stringify": "^6.5.2",
     "electron": "^26.6.10",
-    "electron-builder": "^26.0.8",
+    "electron-builder": "26.13.1",
     "electron-devtools-installer": "^4.0.0",
     "electron-notarize": "^1.2.2",
     "express": "^4.21.2",
@@ -286,6 +286,7 @@
   },
   "overrides": {
     "react": "$react",
-    "react-dom": "$react-dom"
+    "react-dom": "$react-dom",
+    "@noble/hashes": "1.7.1"
   }
 }
