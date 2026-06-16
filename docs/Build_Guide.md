@@ -31,13 +31,13 @@ Run command `npm run dev`
 Run command `npm run package-platform*`
 
 - replace `platform` with your desired platform
-  Platforms: `win`, `darwin`(Mac OSX), `linux`
+  Platforms: `win`, `darwin`(macOS), `linux`
   This will build the project and place the build in the `release` folder. The file format will depend on the provided formats in the `package.json`
 - Mac OSX should use `npm run package-mac`
 
 ### FAQ
 
-- If you compile a replacement Nexus NODE and otherwise keep the upstream NexusInterface unchanged, replace the bundled core binary in `assets/<platform>/cores/` before packaging:
+- If you compile a replacement Nexus core daemon and otherwise keep the upstream NexusInterface unchanged, replace the bundled core binary in `assets/<platform>/cores/` before packaging:
   - Linux x64: `assets/linux/cores/nexus-linux-x64`
   - macOS x64: `assets/darwin/cores/nexus-darwin-x64`
   - Windows x64: `assets/win32/cores/nexus-win32-x64.exe`
