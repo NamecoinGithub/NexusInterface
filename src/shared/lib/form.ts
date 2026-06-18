@@ -67,7 +67,7 @@ export const numericOnly = (value: unknown) =>
  * VALIDATE FUNCTIONS
  */
 
-type Validator = (
+export type Validator = (
   value: any,
   allValues: Record<string, any>,
   meta: FieldState<any> | undefined

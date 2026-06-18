@@ -7,16 +7,16 @@ import Icon, { SvgIcon } from './Icon';
 const NavLinkVerticalTab = VerticalTab.withComponent(NavLink);
 
 const RouterVerticalTab = ({
-  link,
+  to,
   icon,
   text,
   ...rest
 }: Omit<ComponentProps<typeof NavLinkVerticalTab>, 'to'> & {
-  link: string;
+  to: string;
   icon?: SvgIcon;
   text: ReactNode;
 }) => (
-  <NavLinkVerticalTab to={link} {...rest}>
+  <NavLinkVerticalTab to={to} {...rest}>
     {!!icon && <Icon className="mr0_4" icon={icon} />}
     {text}
   </NavLinkVerticalTab>

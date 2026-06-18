@@ -314,19 +314,15 @@ export default class Globe extends Component {
     );
 
     if (selfIndex < 0) {
-      fetch('http://www.geoplugin.net/json.gp')
+      fetch('http://ip-api.com/json/?fields=450')
         .then((response) => response.json())
         .then((data) => {
-          let self = new Point(
-            parseFloat(data.geoplugin_latitude),
-            parseFloat(data.geoplugin_longitude),
-            {
-              color: new Color(this.props.pillarColor).negate().hex(),
-              name: data.geoplugin_timezone,
-              type: 'SELF',
-              peerConnections: 1.5,
-            }
-          );
+          let self = new Point(parseFloat(data.lat), parseFloat(data.lon), {
+            color: new Color(this.props.pillarColor).negate().hex(),
+            name: data.timezone,
+            type: 'SELF',
+            peerConnections: 1.5,
+          });
           this.pointRegistry.push(self);
           this.allPoints.add(self.pillar);
           this.arcRegister();

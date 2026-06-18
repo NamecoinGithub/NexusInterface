@@ -18,7 +18,7 @@ import BitcoinSign from './BTC.svg';
 import DongSign from './VND.svg';
 import BahtSign from './THB.svg';
 
-export default function currencyIcon(ISOValue: CurrencyTicker) {
+export default function currencyIcon(ISOValue: string) {
   switch (ISOValue) {
     case 'BTC':
       return BitcoinSign;

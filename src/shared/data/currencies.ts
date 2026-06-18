@@ -31,7 +31,7 @@ const fiatCurrencies = [
   { value: 'AED', display: 'United Arab Emirates Dirham (AED)' },
   { value: 'USD', display: 'United States Dollar (USD)' },
   { value: 'VND', display: 'Vietnamese Dong (VND)' },
-] as const;
+];
 
 export default fiatCurrencies;
 

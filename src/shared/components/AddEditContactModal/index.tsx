@@ -76,21 +76,17 @@ const validateEmail = (value?: string) =>
     ? __('Invalid email')
     : undefined;
 
+export interface AddEditContactModalProps {
+  contact?: Contact;
+}
+
 export default function AddEditContactModal({
-  edit,
   contact,
-}:
-  | {
-      edit?: false;
-      contact?: undefined;
-    }
-  | {
-      edit: true;
-      contact: Contact;
-    }) {
+}: AddEditContactModalProps) {
   const inputRef = useRef<HTMLInputElement>(null);
   const addressBook = useAtomValue(addressBookAtom);
   const oldName = contact?.name;
+  const isEditing = !!contact;
 
   useEffect(() => {
     // Not sure why but calling focus directly doesn't work
@@ -101,7 +97,7 @@ export default function AddEditContactModal({
 
   const nameUnique = (value: string) =>
     addressBook?.[value] &&
-    (!edit || value !== oldName) &&
+    (!isEditing || value !== oldName) &&
     __('A contact with the same name already exists.');
 
   return (
@@ -109,12 +105,14 @@ export default function AddEditContactModal({
       {(closeModal) => (
         <>
           <ControlledModal.Header>
-            {edit ? __('Edit contact') : __('Create new contact')}
+            {isEditing ? __('Edit contact') : __('Create new contact')}
           </ControlledModal.Header>
           <ControlledModal.Body>
             <Form
-              name={edit ? `editContact:${contact.name}` : 'createContact'}
-              initialValues={edit ? getInitialValues(contact) : initialContact}
+              name={isEditing ? `editContact:${contact.name}` : 'createContact'}
+              initialValues={
+                isEditing ? getInitialValues(contact) : initialContact
+              }
               validate={({ mine, notMine }) => {
                 if (!mine?.length && !notMine?.length) {
                   return {
@@ -135,16 +133,16 @@ export default function AddEditContactModal({
                   const { mine, notMine, ...tempContact } = values;
                   const contact: Contact = { ...tempContact, addresses };
 
-                  if (edit) {
+                  if (isEditing) {
                     updateContact(oldName!, contact);
                   } else {
                     addNewContact(contact);
                   }
                 },
                 onSuccess: () => {
-                  UT.AddAddressBookEntry(!!edit);
+                  UT.AddAddressBookEntry(!!isEditing);
                   closeModal();
-                  if (edit) {
+                  if (isEditing) {
                     showNotification(__('Contact has been updated'), 'success');
                   } else {
                     showNotification(
@@ -246,7 +244,7 @@ export default function AddEditContactModal({
                   />
                 </div>
                 <Form.SubmitButton skin="primary">
-                  {edit ? __('Save changes') : __('Create')}
+                  {isEditing ? __('Save changes') : __('Create')}
                 </Form.SubmitButton>
               </div>
             </Form>
