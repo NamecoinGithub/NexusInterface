@@ -26,7 +26,8 @@ export const startCore = async () => {
 
   // Check if core exists
   if (!(await ipcRenderer.invoke('check-core-exists'))) {
-    throw new Error('Core not found');
+    const status = await ipcRenderer.invoke('core-binary-status');
+    throw new Error(status?.error || 'Nexus Core binary not found');
   }
 
   // Load config

@@ -48,6 +48,7 @@ export type Settings = {
   avatarMode: boolean;
   ipMineWhitelist: string;
   coreDataDir: string;
+  embeddedCoreBinaryPath: string;
   testnetIteration: number;
   privateTestnet: boolean;
   allowAdvancedCoreOptions: boolean;
@@ -130,6 +131,7 @@ export const defaultSettings: Settings = {
   avatarMode: true,
   ipMineWhitelist: '',
   coreDataDir: defaultCoreDataDir,
+  embeddedCoreBinaryPath: '',
   testnetIteration: 0,
   privateTestnet: false,
   allowAdvancedCoreOptions: false,

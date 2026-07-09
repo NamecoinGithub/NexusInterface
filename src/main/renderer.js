@@ -53,6 +53,7 @@ export async function createWindow(settings) {
     backgroundColor: '#171719',
     show: false,
     webPreferences: {
+      // TODO: Move renderer Node access behind preload/IPC, then enable contextIsolation and disable webviewTag.
       nodeIntegration: true,
       contextIsolation: false,
       webviewTag: true,

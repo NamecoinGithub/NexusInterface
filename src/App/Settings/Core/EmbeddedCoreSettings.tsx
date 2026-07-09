@@ -60,6 +60,16 @@ export default function EmbeddedCoreSettings() {
         <Form.TextField name="coreDataDir" />
       </SettingsField>
 
+      <SettingsField
+        connectLabel
+        label={__('Core Binary Path')}
+        subLabel={__(
+          'Optional path to a Nexus Core binary to use instead of the bundled binary'
+        )}
+      >
+        <Form.TextField name="embeddedCoreBinaryPath" />
+      </SettingsField>
+
       <TestnetSettings />
 
       <PortSettings />
