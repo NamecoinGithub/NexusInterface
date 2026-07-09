@@ -26,10 +26,16 @@ export async function openVirtualKeyboard(options) {
     autoHideMenuBar: true,
     fullscreenable: false,
     webPreferences: {
-      // TODO: Move keyboard IPC access behind preload, then enable contextIsolation.
-      nodeIntegration: true,
+      preload: path.resolve(
+        __dirname,
+        process.env.NODE_ENV === 'development'
+          ? '../src/keyboard/preload.js'
+          : 'keyboard_preload.prod.js'
+      ),
+      nodeIntegration: false,
       enableRemoteModule: false,
-      contextIsolation: false,
+      contextIsolation: true,
+      sandbox: true,
     },
   });
 

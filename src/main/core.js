@@ -17,6 +17,7 @@ const bundledCoreBinaryPath = path.join(
 );
 const coreBinaryOverrideEnv =
   process.env.NEXUS_CORE_BINARY_PATH || process.env.NEXUS_CORE_BINARY;
+const windowsExecutableExtension = '.exe';
 
 const exec = (command, options = {}) =>
   new Promise((resolve, reject) => {
@@ -29,12 +30,33 @@ const exec = (command, options = {}) =>
     });
   });
 
+function normalizeConfiguredBinaryPath(configuredPath) {
+  let normalizedPath = configuredPath.trim();
+
+  if (
+    (normalizedPath.startsWith('"') && normalizedPath.endsWith('"')) ||
+    (normalizedPath.startsWith("'") && normalizedPath.endsWith("'"))
+  ) {
+    normalizedPath = normalizedPath.slice(1, -1).trim();
+  }
+
+  if (normalizedPath === '~' || normalizedPath.startsWith(`~${path.sep}`)) {
+    const homeDir =
+      process.platform === 'win32' ? process.env.USERPROFILE : process.env.HOME;
+    if (homeDir) {
+      normalizedPath = path.join(homeDir, normalizedPath.slice(2));
+    }
+  }
+
+  return normalizedPath ? path.normalize(normalizedPath) : '';
+}
+
 function getConfiguredCoreBinaryPath() {
   const settings = loadSettingsFromFile();
   const configuredPath =
     coreBinaryOverrideEnv || settings.embeddedCoreBinaryPath || '';
 
-  return configuredPath.trim() || bundledCoreBinaryPath;
+  return normalizeConfiguredBinaryPath(configuredPath) || bundledCoreBinaryPath;
 }
 
 function getCoreBinaryName(binaryPath = getConfiguredCoreBinaryPath()) {
@@ -50,8 +72,48 @@ function getCoreBinaryStatus() {
     ? 'settings'
     : 'bundled assets';
 
+  if (!path.isAbsolute(coreBinaryPath)) {
+    return {
+      exists: false,
+      executable: false,
+      path: coreBinaryPath,
+      name: getCoreBinaryName(coreBinaryPath),
+      source,
+      error: `Nexus Core binary path must be absolute: ${coreBinaryPath}`,
+    };
+  }
+
   try {
-    fs.accessSync(coreBinaryPath, fs.constants.X_OK);
+    const stats = fs.statSync(coreBinaryPath);
+    if (!stats.isFile()) {
+      return {
+        exists: true,
+        executable: false,
+        path: coreBinaryPath,
+        name: getCoreBinaryName(coreBinaryPath),
+        source,
+        error: `Nexus Core binary path must point to a file: ${coreBinaryPath}`,
+      };
+    }
+
+    if (
+      process.platform === 'win32' &&
+      path.extname(coreBinaryPath).toLowerCase() !== windowsExecutableExtension
+    ) {
+      return {
+        exists: true,
+        executable: false,
+        path: coreBinaryPath,
+        name: getCoreBinaryName(coreBinaryPath),
+        source,
+        error: `Nexus Core binary must be a .exe file on Windows: ${coreBinaryPath}`,
+      };
+    }
+
+    fs.accessSync(
+      coreBinaryPath,
+      process.platform === 'win32' ? fs.constants.F_OK : fs.constants.X_OK
+    );
     return {
       exists: true,
       executable: true,
@@ -65,6 +127,8 @@ function getCoreBinaryStatus() {
         ? usingOverride
           ? `Configured Nexus Core binary was not found: ${coreBinaryPath}`
           : `No bundled Nexus Core binary was found for ${process.platform}/${process.arch}. Expected: ${coreBinaryPath}. Set NEXUS_CORE_BINARY_PATH or Core Binary Path to use an external binary.`
+        : process.platform === 'win32'
+        ? `Nexus Core binary is not accessible: ${coreBinaryPath}`
         : `Nexus Core binary is not executable: ${coreBinaryPath}`;
 
     return {
@@ -76,6 +140,50 @@ function getCoreBinaryStatus() {
       error,
     };
   }
+}
+
+function commandMatchesCore(command, coreBinaryPath, resolvedCoreBinaryName) {
+  const normalizedCommand = path.normalize(command);
+  return (
+    normalizedCommand.includes(coreBinaryPath) ||
+    normalizedCommand.includes(path.normalize(coreBinaryPath)) ||
+    normalizedCommand.includes(`${path.sep}${resolvedCoreBinaryName}`) ||
+    normalizedCommand.split(/\s+/).some((part) => {
+      const unquotedPart = part.replace(/^["']|["']$/g, '');
+      return path.basename(unquotedPart) === resolvedCoreBinaryName;
+    })
+  );
+}
+
+function findCorePIDInProcessList(
+  processList,
+  coreBinaryPath,
+  resolvedCoreBinaryName
+) {
+  const matchingProcess = processList
+    .toString()
+    .split('\n')
+    .map((output) => {
+      const match = output.match(/^\s*(\d+)\s+(.+)$/);
+      if (!match) return null;
+
+      return {
+        pid: Number(match[1]),
+        command: match[2],
+      };
+    })
+    .find(
+      (processInfo) =>
+        processInfo &&
+        processInfo.pid > 1 &&
+        commandMatchesCore(
+          processInfo.command,
+          coreBinaryPath,
+          resolvedCoreBinaryName
+        )
+    );
+
+  return matchingProcess ? matchingProcess.pid : null;
 }
 
 function getExecutableCoreBinary() {
@@ -120,49 +228,30 @@ async function getCorePID() {
   let PID;
 
   if (process.platform == 'win32') {
-    PID = (
-      await exec(
-        `tasklist /NH /v /fi "IMAGENAME eq ${resolvedCoreBinaryName}" /fo CSV`,
-        { env: modEnv }
-      )
-    )
-      .toString()
-      .split(',')[1];
-    PID = PID && Number(PID.replace(/"/gm, ''));
-  } else if (process.platform == 'darwin') {
-    PID = (
-      await exec('ps -A', {
-        env: modEnv,
-      })
-    )
+    const taskList = await exec(
+      `tasklist /NH /v /fi "IMAGENAME eq ${resolvedCoreBinaryName}" /fo CSV`,
+      { env: modEnv }
+    );
+    const matchingProcess = taskList
       .toString()
       .split('\n')
-      .find((output) => output.includes(coreBinaryPath));
-
+      .find((output) => output.includes(`"${resolvedCoreBinaryName}"`));
     PID =
-      PID &&
-      Number(
-        PID.trim()
-          .split(' ')[0]
-          .toString()
-          .replace(/^\s+|\s+$/gm, '')
-      );
+      matchingProcess &&
+      Number(matchingProcess.split('","')[1]?.replace(/"/gm, ''));
   } else {
-    PID = (
-      await exec('ps -o pid --no-headers -p 1 -C ${Nexus_Daemon}', {
-        env: modEnv,
-      })
-    )
-      .toString()
-      .split('\n')[1];
-    PID =
-      PID &&
-      Number(
-        PID.replace(/^\s*/gm, '')
-          .split(' ')[0]
-          .toString()
-          .replace(/^\s+|\s+$/gm, '')
-      );
+    PID = findCorePIDInProcessList(
+      await exec(
+        process.platform == 'darwin'
+          ? 'ps -axo pid=,comm=,args='
+          : 'ps -eo pid=,comm=,args=',
+        {
+          env: modEnv,
+        }
+      ),
+      coreBinaryPath,
+      resolvedCoreBinaryName
+    );
   }
 
   if (!PID || Number.isNaN(PID) || PID < 2) {
@@ -217,6 +306,11 @@ export function startCore(params) {
  */
 export async function killCoreProcess() {
   const corePID = await getCorePID();
+  if (!corePID) {
+    log.info('Core Manager: No Nexus Core process found to kill');
+    return false;
+  }
+
   log.info('Core Manager: Killing process ' + corePID);
   const env = { ...process.env, KILL_PID: corePID };
   if (process.platform == 'win32') {
@@ -224,6 +318,7 @@ export async function killCoreProcess() {
   } else {
     await exec('kill -9 $KILL_PID', { env });
   }
+  return true;
 }
 
 /**

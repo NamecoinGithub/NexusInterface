@@ -31,6 +31,95 @@ initialize('A-US-0744437796'); // This doesn't send anything so it is safe to fi
 
 log.initialize();
 
+const allowedOpenDialogProperties = new Set([
+  'openFile',
+  'openDirectory',
+  'multiSelections',
+  'showHiddenFiles',
+  'createDirectory',
+  'promptToCreate',
+  'noResolveAliases',
+  'treatPackageAsDirectory',
+  'dontAddToRecent',
+]);
+
+function ensureString(value, fieldName) {
+  if (typeof value !== 'string') {
+    throw new TypeError(`${fieldName} must be a string`);
+  }
+  return value;
+}
+
+function ensureStringArray(value, fieldName) {
+  if (!Array.isArray(value) || value.some((item) => typeof item !== 'string')) {
+    throw new TypeError(`${fieldName} must be an array of strings`);
+  }
+  return value;
+}
+
+function sanitizeDialogFilters(filters) {
+  if (filters === undefined) return undefined;
+  const filterList = Array.isArray(filters) ? filters : [filters];
+  if (filterList.some((filter) => !filter || typeof filter !== 'object')) {
+    throw new TypeError('Dialog filters must be an array');
+  }
+  return filterList.map((filter) => ({
+    name: ensureString(filter?.name, 'Dialog filter name'),
+    extensions: ensureStringArray(
+      filter?.extensions,
+      'Dialog filter extensions'
+    ),
+  }));
+}
+
+function sanitizeOpenDialogOptions(options = {}) {
+  if (!options || typeof options !== 'object' || Array.isArray(options)) {
+    throw new TypeError('Open dialog options must be an object');
+  }
+  return {
+    title:
+      options.title === undefined
+        ? undefined
+        : ensureString(options.title, 'Dialog title'),
+    defaultPath:
+      options.defaultPath === undefined
+        ? undefined
+        : ensureString(options.defaultPath, 'Dialog defaultPath'),
+    buttonLabel:
+      options.buttonLabel === undefined
+        ? undefined
+        : ensureString(options.buttonLabel, 'Dialog buttonLabel'),
+    properties: (options.properties || []).filter((property) =>
+      allowedOpenDialogProperties.has(property)
+    ),
+    filters: sanitizeDialogFilters(options.filters),
+  };
+}
+
+function sanitizeSaveDialogOptions(options = {}) {
+  const sanitized = sanitizeOpenDialogOptions(options);
+  delete sanitized.properties;
+  return sanitized;
+}
+
+function sanitizeKeyboardOptions(options = {}) {
+  if (!options || typeof options !== 'object' || Array.isArray(options)) {
+    throw new TypeError('Keyboard options must be an object');
+  }
+  return {
+    ...options,
+    defaultText:
+      options.defaultText === undefined
+        ? ''
+        : ensureString(options.defaultText, 'Keyboard defaultText'),
+    placeholder:
+      options.placeholder === undefined
+        ? ''
+        : ensureString(options.placeholder, 'Keyboard placeholder'),
+    maskable: !!options.maskable,
+  };
+}
+
 // Temporarily add this because there are some errors in autoUpdater.checkForUpdates
 // cannot be caught (net::ERR_HTTP_RESPONSE_CODE_FAILURE).
 // This should be removed when the issue is resolved.
@@ -53,10 +142,10 @@ ipcMain.handle('exit-app', () => {
 ipcMain.handle('hide-window', () => mainWindow.hide());
 ipcMain.handle('hide-dock', () => app.dock.hide());
 ipcMain.handle('show-open-dialog', (event, options) =>
-  dialog.showOpenDialogSync(mainWindow, options)
+  dialog.showOpenDialogSync(mainWindow, sanitizeOpenDialogOptions(options))
 );
 ipcMain.handle('show-save-dialog', async (event, options) =>
-  dialog.showSaveDialogSync(mainWindow, options)
+  dialog.showSaveDialogSync(mainWindow, sanitizeSaveDialogOptions(options))
 );
 ipcMain.handle('popup-context-menu', (event, menuTemplate, webContentsId) =>
   popupContextMenu(menuTemplate, webContentsId)
@@ -65,7 +154,7 @@ ipcMain.handle('set-app-menu', (event, menuTemplate) => {
   setApplicationMenu(menuTemplate);
 });
 ipcMain.handle('open-virtual-keyboard', (event, ...args) => {
-  openVirtualKeyboard(...args);
+  openVirtualKeyboard(sanitizeKeyboardOptions(args[0]));
 });
 
 // File server
@@ -77,11 +166,13 @@ ipcMain.handle('serve-module-files', (event, ...args) =>
 ipcMain.handle('check-core-exists', async () => await coreBinaryExists());
 ipcMain.handle('core-binary-status', async () => await coreBinaryStatus());
 ipcMain.handle('check-core-running', async () => await isCoreRunning());
-ipcMain.handle('start-core', (event, ...args) => startCore(...args));
+ipcMain.handle('start-core', (event, params) =>
+  startCore(ensureStringArray(params, 'Core parameters'))
+);
 ipcMain.handle('kill-core-process', async () => await killCoreProcess());
 ipcMain.handle(
   'execute-core-command',
-  async (event, command) => await executeCommand(command)
+  async (event, command) => await executeCommand(ensureString(command, 'Command'))
 );
 
 // Auto update

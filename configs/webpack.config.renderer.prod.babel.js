@@ -14,6 +14,7 @@ export default merge(baseRendererConfig, prodConfig, {
   entry: {
     'renderer.prod': './src/index.js',
     'keyboard.prod': './src/keyboard/index.tsx',
+    'keyboard_preload.prod': './src/keyboard/preload.js',
   },
 
   output: {
