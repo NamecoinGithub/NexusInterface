@@ -50,7 +50,10 @@ const appPathNames = new Set([
 ]);
 
 const isPlainObject = (value) =>
-  !!value && typeof value === 'object' && !Array.isArray(value);
+  !!value &&
+  typeof value === 'object' &&
+  !Array.isArray(value) &&
+  Object.getPrototypeOf(value) === Object.prototype;
 
 const sanitizeDialogOptions = (options) => {
   if (options === undefined) return undefined;
@@ -141,7 +144,7 @@ ipcMain.handle('check-core-exists', async () => await coreBinaryExists());
 ipcMain.handle('core-binary-status', async () => await coreBinaryStatus());
 ipcMain.handle('check-core-running', async () => await isCoreRunning());
 ipcMain.handle('start-core', (event, params) =>
-  startCore(sanitizeStringArray(params, 'Core parameters'))
+  startCore(sanitizeStringArray(params, 'core parameters'))
 );
 ipcMain.handle('kill-core-process', async () => await killCoreProcess());
 ipcMain.handle(

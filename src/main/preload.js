@@ -35,6 +35,7 @@ const eventChannels = new Set([
 ]);
 
 const menuClickPrefix = 'menu-click:';
+const menuClickChannelPattern = /^menu-click:[A-Za-z0-9_.:-]+$/;
 
 function assertChannel(channel, channels) {
   if (typeof channel !== 'string' || !channels.has(channel)) {
@@ -43,7 +44,10 @@ function assertChannel(channel, channels) {
 }
 
 function isAllowedEventChannel(channel) {
-  return eventChannels.has(channel) || channel.startsWith(menuClickPrefix);
+  return (
+    eventChannels.has(channel) ||
+    (channel.startsWith(menuClickPrefix) && menuClickChannelPattern.test(channel))
+  );
 }
 
 const ipc = {
