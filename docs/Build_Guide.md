@@ -10,8 +10,8 @@
 Install the following
 
 - Code editor of choice (VSCode)
-- Node.js (min v16.x)
-- NPM (min v8.x)
+- Node.js (min v22.12.0)
+- NPM (min v10.9.0)
 
 ### Step 2
 
@@ -19,13 +19,11 @@ Clone Repo into a empty folder and open that folder in your editor
 
 ### Step 3
 
-Run the command `npm install`
+Run the command `npm ci`
 
-For a reproducible install that exactly matches the committed `package-lock.json`
-(recommended for release builds and CI), run `npm ci` instead. `npm ci` will fail
-fast if the lockfile is out of sync rather than silently resolving newer
-transitive dependencies, which has caused build breaks in `electron-builder` in
-the past.
+This repository uses `npm ci` for local release checks and CI. It will fail fast
+if `package.json` and `package-lock.json` are out of sync rather than silently
+resolving newer transitive dependencies.
 
 ### Step 4 (Development)
 

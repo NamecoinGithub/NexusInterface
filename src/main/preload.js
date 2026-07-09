@@ -1,5 +1,4 @@
-import { contextBridge, ipcRenderer, clipboard, shell } from 'electron';
-import { trackEvent } from '@aptabase/electron/renderer';
+import { contextBridge, ipcRenderer } from 'electron';
 
 const invokeChannels = new Set([
   'is-force-quit',
@@ -24,6 +23,10 @@ const invokeChannels = new Set([
   'set-allow-prerelease',
   'migrate-to-mainnet',
   'proxy-request',
+  'clipboard-write-text',
+  'shell-open-external',
+  'shell-open-path',
+  'aptabase-track-event',
 ]);
 
 const sendSyncChannels = new Set(['get-path', 'get-file-server-domain']);
@@ -94,7 +97,7 @@ contextBridge.exposeInMainWorld('nexusElectron', {
       if (typeof text !== 'string') {
         throw new Error('Clipboard text must be a string');
       }
-      clipboard.writeText(text);
+      return ipcRenderer.invoke('clipboard-write-text', text);
     },
   },
   shell: {
@@ -111,7 +114,13 @@ contextBridge.exposeInMainWorld('nexusElectron', {
       if (!['http:', 'https:', 'mailto:'].includes(parsed.protocol)) {
         throw new Error(`External URL protocol is not allowed: ${parsed.protocol}`);
       }
-      return shell.openExternal(parsed.toString());
+      return ipcRenderer.invoke('shell-open-external', parsed.toString());
+    },
+    openPath(targetPath) {
+      if (typeof targetPath !== 'string' || !targetPath.trim()) {
+        throw new Error('Shell path must be a non-empty string');
+      }
+      return ipcRenderer.invoke('shell-open-path', targetPath);
     },
   },
   aptabase: {
@@ -119,7 +128,7 @@ contextBridge.exposeInMainWorld('nexusElectron', {
       if (typeof eventName !== 'string') {
         throw new Error('Aptabase event name must be a string');
       }
-      return trackEvent(eventName, props);
+      return ipcRenderer.invoke('aptabase-track-event', eventName, props);
     },
   },
 });

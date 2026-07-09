@@ -1,7 +1,7 @@
-import { app, ipcMain, dialog, webContents } from 'electron';
+import { app, ipcMain, clipboard, dialog, shell, webContents } from 'electron';
 import { autoUpdater } from 'electron-updater';
 import log from 'electron-log';
-import { initialize } from '@aptabase/electron/main';
+import { initialize, trackEvent } from '@aptabase/electron/main';
 
 import { loadSettingsFromFile } from 'lib/settings/universal';
 import {
@@ -301,6 +301,28 @@ function sanitizeProxyRequest(url, config = {}) {
   return [requestURL, config];
 }
 
+function sanitizeExternalURL(url) {
+  const requestURL = ensureNonEmptyString(url, 'External URL');
+  let parsedURL;
+  try {
+    parsedURL = new URL(requestURL);
+  } catch (err) {
+    throw new Error(`Invalid external URL: ${requestURL}`);
+  }
+  if (!['http:', 'https:', 'mailto:'].includes(parsedURL.protocol)) {
+    throw new Error(`Unsupported external URL protocol: ${parsedURL.protocol}`);
+  }
+  return parsedURL.toString();
+}
+
+function sanitizeTrackEventProps(props) {
+  if (props === undefined) return undefined;
+  if (!props || typeof props !== 'object' || Array.isArray(props)) {
+    throw new TypeError('Aptabase event props must be an object');
+  }
+  return props;
+}
+
 // Temporarily add this because there are some errors in autoUpdater.checkForUpdates
 // cannot be caught (net::ERR_HTTP_RESPONSE_CODE_FAILURE).
 // This should be removed when the issue is resolved.
@@ -371,6 +393,23 @@ ipcMain.handle('set-allow-prerelease', (event, value) =>
   setAllowPrerelease(ensureBoolean(value, 'allowPrerelease'))
 );
 ipcMain.handle('migrate-to-mainnet', () => migrateToMainnet());
+
+// Renderer bridge helpers
+ipcMain.handle('clipboard-write-text', (event, text) => {
+  clipboard.writeText(ensureString(text, 'Clipboard text'));
+});
+ipcMain.handle('shell-open-external', (event, url) =>
+  shell.openExternal(sanitizeExternalURL(url))
+);
+ipcMain.handle('shell-open-path', (event, targetPath) =>
+  shell.openPath(ensureNonEmptyString(targetPath, 'Shell path'))
+);
+ipcMain.handle('aptabase-track-event', (event, eventName, props) =>
+  trackEvent(
+    ensureNonEmptyString(eventName, 'Aptabase event name'),
+    sanitizeTrackEventProps(props)
+  )
+);
 
 // Sync message handlers
 ipcMain.on('get-path', (event, name) => {
