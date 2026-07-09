@@ -18,6 +18,16 @@ const bundledCoreBinaryPath = path.join(
 const coreBinaryOverrideEnv =
   process.env.NEXUS_CORE_BINARY_PATH || process.env.NEXUS_CORE_BINARY;
 
+function normalizeConfiguredCoreBinaryPath(configuredPath) {
+  const trimmedPath = String(configuredPath || '').trim();
+  if (!trimmedPath) {
+    return bundledCoreBinaryPath;
+  }
+
+  // Accept paths copied from shells or dialogs with a matching quote pair.
+  return trimmedPath.replace(/^(['"])(.*)\1$/, '$2');
+}
+
 const exec = (command, options = {}) =>
   new Promise((resolve, reject) => {
     child_process.exec(command, options, (err, stdout, stderr) => {
@@ -34,11 +44,29 @@ function getConfiguredCoreBinaryPath() {
   const configuredPath =
     coreBinaryOverrideEnv || settings.embeddedCoreBinaryPath || '';
 
-  return configuredPath.trim() || bundledCoreBinaryPath;
+  return normalizeConfiguredCoreBinaryPath(configuredPath);
 }
 
 function getCoreBinaryName(binaryPath = getConfiguredCoreBinaryPath()) {
   return path.basename(binaryPath);
+}
+
+function getCoreBinaryError(coreBinaryPath, usingOverride, err) {
+  if (err.code === 'ENOENT') {
+    return usingOverride
+      ? `Configured Nexus Core binary was not found: ${coreBinaryPath}`
+      : `No bundled Nexus Core binary was found for ${process.platform}/${process.arch}. Expected: ${coreBinaryPath}. Set NEXUS_CORE_BINARY_PATH or Core Binary Path to use an external binary.`;
+  }
+  if (err.code === 'ENOTDIR') {
+    return `Nexus Core binary path contains a non-directory component: ${coreBinaryPath}`;
+  }
+  if (err.code === 'EISDIR') {
+    return `Nexus Core binary path points to a directory, not a file: ${coreBinaryPath}`;
+  }
+  if (err.code === 'EACCES') {
+    return `Nexus Core binary is not executable: ${coreBinaryPath}`;
+  }
+  return `Nexus Core binary is invalid: ${coreBinaryPath} (${err.message})`;
 }
 
 function getCoreBinaryStatus() {
@@ -51,31 +79,88 @@ function getCoreBinaryStatus() {
     : 'bundled assets';
 
   try {
-    fs.accessSync(coreBinaryPath, fs.constants.X_OK);
+    if (usingOverride && !path.isAbsolute(coreBinaryPath)) {
+      throw new Error('Configured Nexus Core binary path must be absolute.');
+    }
+
+    const stat = fs.statSync(coreBinaryPath);
+    if (!stat.isFile()) {
+      const err = new Error('Nexus Core binary path points to a directory.');
+      err.code = 'EISDIR';
+      throw err;
+    }
+
+    const realPath = fs.realpathSync(coreBinaryPath);
+    if (
+      process.platform === 'win32' &&
+      path.extname(realPath).toLowerCase() !== '.exe'
+    ) {
+      throw new Error(
+        'Configured Nexus Core binary path must point to a .exe file on Windows.'
+      );
+    }
+
+    if (process.platform !== 'win32') {
+      fs.accessSync(coreBinaryPath, fs.constants.X_OK);
+    }
+
     return {
       exists: true,
       executable: true,
       path: coreBinaryPath,
+      realPath,
       name: getCoreBinaryName(coreBinaryPath),
       source,
     };
   } catch (err) {
-    const error =
-      err.code === 'ENOENT'
-        ? usingOverride
-          ? `Configured Nexus Core binary was not found: ${coreBinaryPath}`
-          : `No bundled Nexus Core binary was found for ${process.platform}/${process.arch}. Expected: ${coreBinaryPath}. Set NEXUS_CORE_BINARY_PATH or Core Binary Path to use an external binary.`
-        : `Nexus Core binary is not executable: ${coreBinaryPath}`;
-
     return {
       exists: false,
       executable: false,
       path: coreBinaryPath,
       name: getCoreBinaryName(coreBinaryPath),
       source,
-      error,
+      error: getCoreBinaryError(coreBinaryPath, usingOverride, err),
     };
   }
+}
+
+function lineMatchesCoreProcess(line, status) {
+  const normalizedLine = line.replace(/\\/g, '/');
+  const binaryPath = status.path.replace(/\\/g, '/');
+  const realPath = status.realPath && status.realPath.replace(/\\/g, '/');
+  const escapedBinaryPath = escapeRegexSpecialChars(binaryPath);
+  const escapedRealPath = realPath && escapeRegexSpecialChars(realPath);
+  const escapedName = escapeRegexSpecialChars(status.name);
+  const binaryPathPattern = new RegExp(
+    `(?:^|\\s|")${escapedBinaryPath}(?:\\s|$|")`
+  );
+  const realPathPattern =
+    escapedRealPath &&
+    new RegExp(`(?:^|\\s|")${escapedRealPath}(?:\\s|$|")`);
+  const namePattern = new RegExp(`(?:^|\\s|/)${escapedName}(?:\\s|$)`);
+
+  return (
+    binaryPathPattern.test(normalizedLine) ||
+    (realPathPattern && realPathPattern.test(normalizedLine)) ||
+    (status.source === 'bundled assets' && namePattern.test(normalizedLine))
+  );
+}
+
+function escapeRegexSpecialChars(value) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function getPidFromProcessList(stdout, status) {
+  const match = stdout
+    .toString()
+    .split('\n')
+    .map((line) => line.trim())
+    .find((line) => line && lineMatchesCoreProcess(line, status));
+
+  const pidStr =
+    match && match.split(/\s+/).find((part) => part && /^\d+$/.test(part));
+  const pid = pidStr && Number(pidStr);
+  return pid && !Number.isNaN(pid) ? pid : null;
 }
 
 function getExecutableCoreBinary() {
@@ -114,8 +199,8 @@ export function coreBinaryStatus() {
  * @memberof Core
  */
 async function getCorePID() {
-  const { path: coreBinaryPath, name: resolvedCoreBinaryName } =
-    getExecutableCoreBinary();
+  const status = getExecutableCoreBinary();
+  const { path: coreBinaryPath, name: resolvedCoreBinaryName } = status;
   const modEnv = { ...process.env, Nexus_Daemon: resolvedCoreBinaryName };
   let PID;
 
@@ -130,39 +215,19 @@ async function getCorePID() {
       .split(',')[1];
     PID = PID && Number(PID.replace(/"/gm, ''));
   } else if (process.platform == 'darwin') {
-    PID = (
-      await exec('ps -A', {
+    PID = getPidFromProcessList(
+      await exec('ps -Ao pid=,comm=,args=', {
         env: modEnv,
-      })
-    )
-      .toString()
-      .split('\n')
-      .find((output) => output.includes(coreBinaryPath));
-
-    PID =
-      PID &&
-      Number(
-        PID.trim()
-          .split(' ')[0]
-          .toString()
-          .replace(/^\s+|\s+$/gm, '')
-      );
+      }),
+      status
+    );
   } else {
-    PID = (
-      await exec('ps -o pid --no-headers -p 1 -C ${Nexus_Daemon}', {
+    PID = getPidFromProcessList(
+      await exec('ps -eo pid=,comm=,args=', {
         env: modEnv,
-      })
-    )
-      .toString()
-      .split('\n')[1];
-    PID =
-      PID &&
-      Number(
-        PID.replace(/^\s*/gm, '')
-          .split(' ')[0]
-          .toString()
-          .replace(/^\s+|\s+$/gm, '')
-      );
+      }),
+      status
+    );
   }
 
   if (!PID || Number.isNaN(PID) || PID < 2) {
@@ -217,13 +282,24 @@ export function startCore(params) {
  */
 export async function killCoreProcess() {
   const corePID = await getCorePID();
+  if (!corePID) {
+    log.info('Core Manager: No running core process found to kill');
+    return false;
+  }
+
   log.info('Core Manager: Killing process ' + corePID);
   const env = { ...process.env, KILL_PID: corePID };
-  if (process.platform == 'win32') {
-    await exec(`taskkill /F /PID ${corePID}`, { env });
-  } else {
-    await exec('kill -9 $KILL_PID', { env });
+  try {
+    if (process.platform == 'win32') {
+      await exec(`taskkill /F /PID ${corePID}`, { env });
+    } else {
+      await exec('kill -9 $KILL_PID', { env });
+    }
+  } catch (err) {
+    log.error('Core Manager: Failed to kill process ' + corePID, err);
+    throw err;
   }
+  return true;
 }
 
 /**
