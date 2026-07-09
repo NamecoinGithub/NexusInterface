@@ -95,7 +95,16 @@ contextBridge.exposeInMainWorld('nexusElectron', {
       if (typeof url !== 'string') {
         throw new Error('External URL must be a string');
       }
-      return shell.openExternal(url);
+      let parsed;
+      try {
+        parsed = new URL(url);
+      } catch {
+        throw new Error('External URL must be a valid absolute URL');
+      }
+      if (!['http:', 'https:', 'mailto:'].includes(parsed.protocol)) {
+        throw new Error(`External URL protocol is not allowed: ${parsed.protocol}`);
+      }
+      return shell.openExternal(parsed.toString());
     },
   },
   aptabase: {
