@@ -182,9 +182,7 @@ ipcMain.handle(
 );
 
 // Auto update
-ipcMain.handle('check-for-updates', (event, ...args) =>
-  autoUpdater.checkForUpdates(...args)
-);
+ipcMain.handle('check-for-updates', () => autoUpdater.checkForUpdates());
 ipcMain.handle('quit-and-install-update', (event, ...args) =>
   autoUpdater.quitAndInstall(
     sanitizeOptionalBoolean(args[0], 'isSilent'),

@@ -27,6 +27,7 @@ const invokeChannels = new Set([
 ]);
 
 const sendSyncChannels = new Set(['get-path', 'get-file-server-domain']);
+// Keep this list synchronized with main IPC event relays.
 const eventChannels = new Set([
   'window-close',
   'usage-tracking-error-relay',
