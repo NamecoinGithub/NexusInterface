@@ -54,9 +54,29 @@ export const ipcRenderer = {
     assertListener(listener);
     return bridge.ipc.once(channel, listener);
   },
-  off: (_channel: string, subscription: any) => {
-    if (subscription && typeof subscription.unsubscribe === 'function') {
-      subscription.unsubscribe();
+  off: (channel: string, listenerOrSubscription: any) => {
+    if (
+      typeof channel === 'string' &&
+      channel &&
+      typeof listenerOrSubscription === 'function'
+    ) {
+      const byListener = subscriptionsByChannel.get(channel);
+      const unsubscribe = byListener?.get(listenerOrSubscription);
+      if (unsubscribe) {
+        unsubscribe();
+        byListener?.delete(listenerOrSubscription);
+        if (byListener && byListener.size === 0) {
+          subscriptionsByChannel.delete(channel);
+        }
+      }
+      return;
+    }
+
+    if (
+      listenerOrSubscription &&
+      typeof listenerOrSubscription.unsubscribe === 'function'
+    ) {
+      listenerOrSubscription.unsubscribe();
     }
   },
 };
