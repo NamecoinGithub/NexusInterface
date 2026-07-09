@@ -117,7 +117,10 @@ async function browseCoreBinary() {
           : undefined,
     });
   } catch (err: any) {
-    openErrorDialog({ message: err?.message || String(err) });
+    openErrorDialog({
+      message:
+        __('Failed to open file picker') + ': ' + (err?.message || String(err)),
+    });
     return;
   }
 

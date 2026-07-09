@@ -24,7 +24,7 @@ function normalizeConfiguredCoreBinaryPath(configuredPath) {
     return bundledCoreBinaryPath;
   }
 
-  return trimmedPath.replace(/^["']|["']$/g, '');
+  return trimmedPath.replace(/^(['"])(.*)\1$/, '$2');
 }
 
 const exec = (command, options = {}) =>
@@ -127,10 +127,9 @@ function lineMatchesCoreProcess(line, status) {
   const normalizedLine = line.replace(/\\/g, '/');
   const binaryPath = status.path.replace(/\\/g, '/');
   const realPath = status.realPath && status.realPath.replace(/\\/g, '/');
-  const escapedBinaryPath = binaryPath.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  const escapedRealPath =
-    realPath && realPath.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  const escapedName = status.name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const escapedBinaryPath = escapeRegexSpecialChars(binaryPath);
+  const escapedRealPath = realPath && escapeRegexSpecialChars(realPath);
+  const escapedName = escapeRegexSpecialChars(status.name);
   const binaryPathPattern = new RegExp(
     `(?:^|\\s|")${escapedBinaryPath}(?:\\s|$|")`
   );
@@ -146,6 +145,10 @@ function lineMatchesCoreProcess(line, status) {
   );
 }
 
+function escapeRegexSpecialChars(value) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
 function getPidFromProcessList(stdout, status) {
   const match = stdout
     .toString()
@@ -153,7 +156,9 @@ function getPidFromProcessList(stdout, status) {
     .map((line) => line.trim())
     .find((line) => line && lineMatchesCoreProcess(line, status));
 
-  const pid = match && Number(match.split(/\s+/)[0]);
+  const pidStr =
+    match && match.split(/\s+/).find((part) => part && /^\d+$/.test(part));
+  const pid = pidStr && Number(pidStr);
   return pid && !Number.isNaN(pid) ? pid : null;
 }
 
