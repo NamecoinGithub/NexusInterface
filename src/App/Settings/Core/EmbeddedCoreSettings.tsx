@@ -106,14 +106,20 @@ export default function EmbeddedCoreSettings() {
 }
 
 async function browseCoreBinary() {
-  const paths = await ipcRenderer.invoke('show-open-dialog', {
-    title: __('Select Nexus Core binary'),
-    properties: ['openFile'],
-    filters:
-      process.platform === 'win32'
-        ? [{ name: 'Windows executable', extensions: ['exe'] }]
-        : undefined,
-  });
+  let paths;
+  try {
+    paths = await ipcRenderer.invoke('show-open-dialog', {
+      title: __('Select Nexus Core binary'),
+      properties: ['openFile'],
+      filters:
+        process.platform === 'win32'
+          ? [{ name: 'Windows executable', extensions: ['exe'] }]
+          : undefined,
+    });
+  } catch (err: any) {
+    openErrorDialog({ message: err?.message || String(err) });
+    return;
+  }
 
   if (paths && paths[0]) {
     updateSettings({ embeddedCoreBinaryPath: paths[0] });

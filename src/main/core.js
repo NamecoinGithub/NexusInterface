@@ -127,11 +127,22 @@ function lineMatchesCoreProcess(line, status) {
   const normalizedLine = line.replace(/\\/g, '/');
   const binaryPath = status.path.replace(/\\/g, '/');
   const realPath = status.realPath && status.realPath.replace(/\\/g, '/');
+  const escapedBinaryPath = binaryPath.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const escapedRealPath =
+    realPath && realPath.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const escapedName = status.name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const binaryPathPattern = new RegExp(
+    `(?:^|\\s|")${escapedBinaryPath}(?:\\s|$|")`
+  );
+  const realPathPattern =
+    escapedRealPath &&
+    new RegExp(`(?:^|\\s|")${escapedRealPath}(?:\\s|$|")`);
+  const namePattern = new RegExp(`(?:^|\\s|/)${escapedName}(?:\\s|$)`);
 
   return (
-    normalizedLine.includes(binaryPath) ||
-    (realPath && normalizedLine.includes(realPath)) ||
-    (status.source === 'bundled assets' && normalizedLine.includes(status.name))
+    binaryPathPattern.test(normalizedLine) ||
+    (realPathPattern && realPathPattern.test(normalizedLine)) ||
+    (status.source === 'bundled assets' && namePattern.test(normalizedLine))
   );
 }
 
