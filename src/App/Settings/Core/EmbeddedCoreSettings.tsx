@@ -1,4 +1,5 @@
 import path from 'path';
+import { ipcRenderer } from 'electron';
 
 import Form from 'components/Form';
 import SettingsField from 'components/SettingsField';
@@ -67,7 +68,19 @@ export default function EmbeddedCoreSettings() {
           'Optional path to a Nexus Core binary to use instead of the bundled binary'
         )}
       >
-        <Form.TextField name="embeddedCoreBinaryPath" />
+        <div className="flex stretch">
+          <Form.TextField
+            name="embeddedCoreBinaryPath"
+            style={{ flexGrow: 1 }}
+          />
+          <Button
+            fitHeight
+            onClick={browseCoreBinary}
+            style={{ marginLeft: '1em' }}
+          >
+            {__('Browse')}
+          </Button>
+        </div>
       </SettingsField>
 
       <TestnetSettings />
@@ -90,6 +103,21 @@ export default function EmbeddedCoreSettings() {
       <AdvancedOptions />
     </>
   );
+}
+
+async function browseCoreBinary() {
+  const paths = await ipcRenderer.invoke('show-open-dialog', {
+    title: __('Select Nexus Core binary'),
+    properties: ['openFile'],
+    filters:
+      process.platform === 'win32'
+        ? [{ name: 'Windows executable', extensions: ['exe'] }]
+        : undefined,
+  });
+
+  if (paths && paths[0]) {
+    updateSettings({ embeddedCoreBinaryPath: paths[0] });
+  }
 }
 
 function BasicSettings() {
