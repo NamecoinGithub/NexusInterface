@@ -2,6 +2,7 @@ import { app, ipcMain, clipboard, dialog, shell, webContents } from 'electron';
 import { autoUpdater } from 'electron-updater';
 import log from 'electron-log';
 import { initialize, trackEvent } from '@aptabase/electron/main';
+import path from 'path';
 
 import { loadSettingsFromFile } from 'lib/settings/universal';
 import {
@@ -323,6 +324,33 @@ function sanitizeTrackEventProps(props) {
   return props;
 }
 
+function sanitizeShellOpenPath(targetPath) {
+  const requestedPath = ensureNonEmptyString(targetPath, 'Shell path');
+  if (requestedPath.includes('\0') || !path.isAbsolute(requestedPath)) {
+    throw new Error('Shell path must be an absolute local path');
+  }
+
+  const resolvedPath = path.resolve(requestedPath);
+  const allowedRoots = [
+    app.getPath('home'),
+    app.getPath('appData'),
+    app.getPath('userData'),
+    app.getPath('temp'),
+  ].map((rootPath) => path.resolve(rootPath));
+
+  if (
+    !allowedRoots.some(
+      (rootPath) =>
+        resolvedPath === rootPath ||
+        resolvedPath.startsWith(rootPath + path.sep)
+    )
+  ) {
+    throw new Error('Shell path is outside allowed user-controlled directories');
+  }
+
+  return resolvedPath;
+}
+
 // Temporarily add this because there are some errors in autoUpdater.checkForUpdates
 // cannot be caught (net::ERR_HTTP_RESPONSE_CODE_FAILURE).
 // This should be removed when the issue is resolved.
@@ -402,7 +430,7 @@ ipcMain.handle('shell-open-external', (event, url) =>
   shell.openExternal(sanitizeExternalURL(url))
 );
 ipcMain.handle('shell-open-path', (event, targetPath) =>
-  shell.openPath(ensureNonEmptyString(targetPath, 'Shell path'))
+  shell.openPath(sanitizeShellOpenPath(targetPath))
 );
 ipcMain.handle('aptabase-track-event', (event, eventName, props) =>
   trackEvent(
