@@ -18,10 +18,22 @@ const bundledCoreBinaryPath = path.join(
 const coreBinaryOverrideEnv =
   process.env.NEXUS_CORE_BINARY_PATH || process.env.NEXUS_CORE_BINARY;
 const windowsExecutableExtension = '.exe';
+const windowsTasklistPidIndex = 1;
 
 const exec = (command, options = {}) =>
   new Promise((resolve, reject) => {
     child_process.exec(command, options, (err, stdout, stderr) => {
+      if (err) {
+        reject(err);
+      } else {
+        resolve(stdout);
+      }
+    });
+  });
+
+const execFile = (file, args, options = {}) =>
+  new Promise((resolve, reject) => {
+    child_process.execFile(file, args, options, (err, stdout, stderr) => {
       if (err) {
         reject(err);
       } else {
@@ -164,7 +176,7 @@ function commandMatchesCore(
     normalizedCommand.includes(` ${normalizedCoreBinaryPath} `) ||
     normalizedCommand.includes(` "${normalizedCoreBinaryPath}"`) ||
     possibleExecutableParts.some((part) => {
-      const unquotedPart = part.replace(/^["']|["']$/g, '');
+      const unquotedPart = part.replace(/^(['"])(.*)\1$/, '$2');
       return path.basename(unquotedPart) === resolvedCoreBinaryName;
     })
   );
@@ -270,9 +282,9 @@ async function getCorePID() {
   let PID;
 
   if (process.platform == 'win32') {
-    const escapedCoreBinaryName = resolvedCoreBinaryName.replace(/"/g, '""');
-    const taskList = await exec(
-      `tasklist /NH /v /fi "IMAGENAME eq ${escapedCoreBinaryName}" /fo CSV`,
+    const taskList = await execFile(
+      'tasklist',
+      ['/NH', '/v', '/fi', `IMAGENAME eq ${resolvedCoreBinaryName}`, '/fo', 'CSV'],
       { env: modEnv }
     );
     const matchingProcess = taskList
@@ -281,7 +293,11 @@ async function getCorePID() {
       .find((output) => output.includes(`"${resolvedCoreBinaryName}"`));
     if (matchingProcess) {
       const fields = parseWindowsCSVLine(matchingProcess);
-      PID = fields.length > 1 ? Number(fields[1]) : null;
+      // tasklist CSV fields are "Image Name","PID",... so PID is column 1.
+      PID =
+        fields.length > windowsTasklistPidIndex
+          ? Number(fields[windowsTasklistPidIndex])
+          : null;
     }
   } else {
     PID = findCorePIDInProcessList(

@@ -233,7 +233,10 @@ function sanitizeMenuTemplate(template) {
         'Menu accelerator'
       );
     }
-    if (item.role !== undefined && allowedMenuRoles.has(item.role)) {
+    if (item.role !== undefined && !allowedMenuRoles.has(item.role)) {
+      throw new TypeError(`Unsupported menu role: ${item.role}`);
+    }
+    if (item.role !== undefined) {
       sanitized.role = item.role;
     }
     if (item.enabled !== undefined) {
@@ -246,7 +249,10 @@ function sanitizeMenuTemplate(template) {
       sanitized.checked = !!item.checked;
     }
     if (item.click !== undefined) {
-      sanitized.click = !!item.click;
+      if (typeof item.click !== 'boolean') {
+        throw new TypeError('Menu click marker must be a boolean');
+      }
+      sanitized.click = item.click;
     }
     if (item.submenu !== undefined) {
       sanitized.submenu = sanitizeMenuTemplate(item.submenu);

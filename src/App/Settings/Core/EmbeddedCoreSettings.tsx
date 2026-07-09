@@ -103,7 +103,7 @@ function CoreBinaryPathField() {
       properties: ['openFile'],
       filters:
         process.platform === 'win32'
-          ? [{ name: __('Windows executable'), extensions: ['exe'] }]
+          ? [{ name: 'Windows executable', extensions: ['exe'] }]
           : undefined,
     });
 
