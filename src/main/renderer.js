@@ -57,7 +57,7 @@ export async function createWindow(settings) {
         process.env.NODE_ENV === 'development'
           ? path.resolve(process.cwd(), 'build', 'main_preload.dev.js')
           : path.resolve(__dirname, 'main_preload.prod.js'),
-      nodeIntegration: false,
+      nodeIntegration: true,
       contextIsolation: true,
       webviewTag: true,
       enableRemoteModule: false,

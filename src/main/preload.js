@@ -32,6 +32,12 @@ const eventChannels = new Set([
   'usage-tracking-error-relay',
   'keyboard-input-change',
   'keyboard-closed',
+  'updater:error',
+  'updater:checking-for-update',
+  'updater:update-available',
+  'updater:update-not-available',
+  'updater:download-progress',
+  'updater:update-downloaded',
 ]);
 
 const menuClickPrefix = 'menu-click:';

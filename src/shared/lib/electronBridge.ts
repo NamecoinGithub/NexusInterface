@@ -83,6 +83,9 @@ export const ipcRenderer = {
 
 export const clipboard = bridge.clipboard;
 export const shell = bridge.shell;
+export const app = {
+  getPath: (name: string) => ipcRenderer.sendSync('get-path', name),
+};
 
 export type WebviewTag = HTMLWebViewElement & {
   send(channel: string, ...args: any[]): void;

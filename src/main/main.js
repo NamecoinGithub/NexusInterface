@@ -103,6 +103,21 @@ const sanitizeVirtualKeyboardOptions = (options) => {
   return options;
 };
 
+const sanitizeOptionalBoolean = (value, name) => {
+  if (value === undefined) return undefined;
+  if (typeof value !== 'boolean') {
+    throw new Error(`${name} must be a boolean`);
+  }
+  return value;
+};
+
+const sanitizeBoolean = (value, name) => {
+  if (typeof value !== 'boolean') {
+    throw new Error(`${name} must be a boolean`);
+  }
+  return value;
+};
+
 // Temporarily add this because there are some errors in autoUpdater.checkForUpdates
 // cannot be caught (net::ERR_HTTP_RESPONSE_CODE_FAILURE).
 // This should be removed when the issue is resolved.
@@ -172,12 +187,12 @@ ipcMain.handle('check-for-updates', (event, ...args) =>
 );
 ipcMain.handle('quit-and-install-update', (event, ...args) =>
   autoUpdater.quitAndInstall(
-    args[0] === undefined ? undefined : Boolean(args[0]),
-    args[1] === undefined ? undefined : Boolean(args[1])
+    sanitizeOptionalBoolean(args[0], 'isSilent'),
+    sanitizeOptionalBoolean(args[1], 'isForceRunAfter')
   )
 );
 ipcMain.handle('set-allow-prerelease', (event, value) =>
-  setAllowPrerelease(Boolean(value))
+  setAllowPrerelease(sanitizeBoolean(value, 'allowPrerelease'))
 );
 ipcMain.handle('migrate-to-mainnet', (event, value) => migrateToMainnet());
 
