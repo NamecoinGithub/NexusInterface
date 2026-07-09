@@ -76,7 +76,9 @@ const sanitizeWebContentsId = (webContentsId) => {
 };
 
 const sanitizeStringArray = (value, name) => {
-  if (!Array.isArray(value) || value.some((item) => typeof item !== 'string')) {
+  const isStringArray =
+    Array.isArray(value) && value.every((item) => typeof item === 'string');
+  if (!isStringArray) {
     throw new Error(`${name} must be an array of strings`);
   }
   return value;
@@ -167,6 +169,7 @@ ipcMain.handle('migrate-to-mainnet', (event, value) => migrateToMainnet());
 // Sync message handlers
 ipcMain.on('get-path', (event, name) => {
   if (typeof name !== 'string' || !appPathNames.has(name)) {
+    log.warn(`Rejected invalid get-path IPC request: ${String(name)}`);
     event.returnValue = undefined;
     return;
   }
