@@ -35,7 +35,7 @@ const eventChannels = new Set([
 ]);
 
 const menuClickPrefix = 'menu-click:';
-const menuClickChannelPattern = /^menu-click:[A-Za-z0-9_.:-]+$/;
+const menuClickChannelPattern = /^menu-click:[A-Za-z0-9_.-]+$/;
 
 function assertChannel(channel, channels) {
   if (typeof channel !== 'string' || !channels.has(channel)) {
@@ -66,9 +66,8 @@ const ipc = {
     if (typeof listener !== 'function') {
       throw new Error('IPC listener must be a function');
     }
-    const wrapped = (_event, ...args) => listener(_event, ...args);
-    ipcRenderer.on(channel, wrapped);
-    return () => ipcRenderer.off(channel, wrapped);
+    ipcRenderer.on(channel, listener);
+    return () => ipcRenderer.off(channel, listener);
   },
   once(channel, listener) {
     if (typeof channel !== 'string' || !isAllowedEventChannel(channel)) {

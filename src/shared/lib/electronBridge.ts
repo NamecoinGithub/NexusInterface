@@ -1,4 +1,15 @@
-type Listener = (event: unknown, ...args: any[]) => void;
+type ElectronBridgeListener = (event: unknown, ...args: any[]) => void;
+
+export interface MenuItemConstructorOptions {
+  label?: string;
+  accelerator?: string;
+  role?: string;
+  type?: string;
+  id?: string;
+  enabled?: boolean;
+  click?: (...args: any[]) => void;
+  submenu?: MenuItemConstructorOptions[];
+}
 
 const bridge = (window as any).nexusElectron;
 
@@ -7,14 +18,25 @@ if (!bridge) {
 }
 
 export const ipcRenderer = {
-  invoke: (channel: string, ...args: any[]) => bridge.ipc.invoke(channel, ...args),
-  sendSync: (channel: string, ...args: any[]) =>
-    bridge.ipc.sendSync(channel, ...args),
-  on: (channel: string, listener: Listener) => {
+  invoke: (channel: string, ...args: any[]) => {
+    assertChannel(channel);
+    return bridge.ipc.invoke(channel, ...args);
+  },
+  sendSync: (channel: string, ...args: any[]) => {
+    assertChannel(channel);
+    return bridge.ipc.sendSync(channel, ...args);
+  },
+  on: (channel: string, listener: ElectronBridgeListener) => {
+    assertChannel(channel);
+    assertListener(listener);
     const unsubscribe = bridge.ipc.on(channel, listener);
     return { channel, listener, unsubscribe };
   },
-  once: (channel: string, listener: Listener) => bridge.ipc.once(channel, listener),
+  once: (channel: string, listener: ElectronBridgeListener) => {
+    assertChannel(channel);
+    assertListener(listener);
+    return bridge.ipc.once(channel, listener);
+  },
   off: (_channel: string, subscription: any) => {
     if (subscription && typeof subscription.unsubscribe === 'function') {
       subscription.unsubscribe();
@@ -38,4 +60,14 @@ export type IpcMessageEvent = {
   args: any[];
 };
 
-export type MenuItemConstructorOptions = any;
+function assertChannel(channel: string) {
+  if (typeof channel !== 'string' || !channel) {
+    throw new Error('IPC channel must be a non-empty string');
+  }
+}
+
+function assertListener(listener: ElectronBridgeListener) {
+  if (typeof listener !== 'function') {
+    throw new Error('IPC listener must be a function');
+  }
+}

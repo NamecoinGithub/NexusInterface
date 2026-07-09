@@ -1,4 +1,4 @@
-import { app, ipcMain, dialog } from 'electron';
+import { app, ipcMain, dialog, webContents } from 'electron';
 import { autoUpdater } from 'electron-updater';
 import log from 'electron-log';
 import { initialize } from '@aptabase/electron/main';
@@ -53,7 +53,8 @@ const isPlainObject = (value) =>
   !!value &&
   typeof value === 'object' &&
   !Array.isArray(value) &&
-  Object.getPrototypeOf(value) === Object.prototype;
+  (Object.getPrototypeOf(value) === Object.prototype ||
+    Object.getPrototypeOf(value) === null);
 
 const sanitizeDialogOptions = (options) => {
   if (options === undefined) return undefined;
@@ -74,6 +75,14 @@ const sanitizeWebContentsId = (webContentsId) => {
   if (webContentsId === undefined) return undefined;
   if (!Number.isInteger(webContentsId) || webContentsId < 1) {
     throw new Error('webContentsId must be a positive integer');
+  }
+  const targetWebContents = webContents.fromId(webContentsId);
+  if (
+    !targetWebContents ||
+    targetWebContents.isDestroyed() ||
+    targetWebContents.getOwnerBrowserWindow() !== mainWindow
+  ) {
+    throw new Error('webContentsId does not belong to the main window');
   }
   return webContentsId;
 };
@@ -162,7 +171,10 @@ ipcMain.handle('check-for-updates', (event, ...args) =>
   autoUpdater.checkForUpdates(...args)
 );
 ipcMain.handle('quit-and-install-update', (event, ...args) =>
-  autoUpdater.quitAndInstall(...args)
+  autoUpdater.quitAndInstall(
+    args[0] === undefined ? undefined : Boolean(args[0]),
+    args[1] === undefined ? undefined : Boolean(args[1])
+  )
 );
 ipcMain.handle('set-allow-prerelease', (event, value) =>
   setAllowPrerelease(Boolean(value))
@@ -172,7 +184,7 @@ ipcMain.handle('migrate-to-mainnet', (event, value) => migrateToMainnet());
 // Sync message handlers
 ipcMain.on('get-path', (event, name) => {
   if (typeof name !== 'string' || !appPathNames.has(name)) {
-    log.warn(`Rejected invalid get-path IPC request: ${String(name)}`);
+    log.warn('Rejected invalid get-path IPC request');
     event.returnValue = undefined;
     return;
   }
