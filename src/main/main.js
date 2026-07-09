@@ -65,8 +65,8 @@ const sanitizeDialogOptions = (options) => {
 };
 
 const sanitizeMenuTemplate = (menuTemplate) => {
-  if (!Array.isArray(menuTemplate) && !isPlainObject(menuTemplate)) {
-    throw new Error('Menu template must be an object or array');
+  if (!Array.isArray(menuTemplate)) {
+    throw new Error('Menu template must be an array');
   }
   return menuTemplate;
 };
