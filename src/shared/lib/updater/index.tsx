@@ -38,7 +38,7 @@ export function setAllowPrerelease(value: boolean) {
 
 export function migrateToMainnet() {
   updateSettings({ allowPrerelease: true });
-  ipcRenderer.invoke('migrate-to-mainnet', null);
+  ipcRenderer.invoke('migrate-to-mainnet');
 }
 
 /**
