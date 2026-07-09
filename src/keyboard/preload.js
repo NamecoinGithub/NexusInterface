@@ -1,36 +1,32 @@
-const { contextBridge, ipcRenderer } = require('electron');
+import { contextBridge, ipcRenderer } from 'electron';
 
-function sanitizeOptions(options) {
-  if (!options || typeof options !== 'object' || Array.isArray(options)) {
-    return {
-      theme: undefined,
-      defaultText: '',
-      maskable: false,
-      placeholder: '',
-    };
+function validateOptions(options) {
+  if (
+    !options ||
+    typeof options !== 'object' ||
+    typeof options.defaultText !== 'string' ||
+    typeof options.maskable !== 'boolean' ||
+    typeof options.placeholder !== 'string'
+  ) {
+    throw new Error('Invalid virtual keyboard options');
   }
-
-  return {
-    ...options,
-    defaultText:
-      typeof options.defaultText === 'string' ? options.defaultText : '',
-    maskable: !!options.maskable,
-    placeholder:
-      typeof options.placeholder === 'string' ? options.placeholder : '',
-  };
+  return options;
 }
 
 contextBridge.exposeInMainWorld('virtualKeyboard', {
-  onOptions(callback) {
+  onOptions(listener) {
+    if (typeof listener !== 'function') {
+      throw new Error('Keyboard options listener must be a function');
+    }
     ipcRenderer.once('options', (_event, options) =>
-      callback(sanitizeOptions(options))
+      listener(validateOptions(options))
     );
   },
-  sendInputChange(text) {
-    ipcRenderer.send(
-      'keyboard-input-change',
-      typeof text === 'string' ? text : ''
-    );
+  inputChanged(text) {
+    if (typeof text !== 'string') {
+      throw new Error('Keyboard input must be a string');
+    }
+    ipcRenderer.send('keyboard-input-change', text);
   },
   close() {
     ipcRenderer.send('close-keyboard');

@@ -26,12 +26,10 @@ export async function openVirtualKeyboard(options) {
     autoHideMenuBar: true,
     fullscreenable: false,
     webPreferences: {
-      preload: path.resolve(
-        __dirname,
+      preload:
         process.env.NODE_ENV === 'development'
-          ? '../src/keyboard/preload.js'
-          : 'keyboard_preload.prod.js'
-      ),
+          ? path.resolve(process.cwd(), 'build', 'keyboard_preload.dev.js')
+          : path.resolve(__dirname, 'keyboard_preload.prod.js'),
       nodeIntegration: false,
       enableRemoteModule: false,
       contextIsolation: true,

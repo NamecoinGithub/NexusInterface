@@ -19,8 +19,8 @@ interface Options {
 declare global {
   interface Window {
     virtualKeyboard: {
-      onOptions(callback: (options: Options) => void): void;
-      sendInputChange(text: string): void;
+      onOptions(listener: (options: Options) => void): void;
+      inputChanged(text: string): void;
       close(): void;
     };
   }
@@ -112,7 +112,7 @@ export default function App() {
           ]}
           onChange={(text) => {
             setText(text);
-            window.virtualKeyboard.sendInputChange(text);
+            window.virtualKeyboard.inputChanged(text);
           }}
           onKeyPress={(btn) => {
             switch (btn) {

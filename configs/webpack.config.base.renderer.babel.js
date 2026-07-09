@@ -9,9 +9,30 @@ import { merge } from 'webpack-merge';
 import baseConfig from './webpack.config.base.babel';
 
 const intlPath = path.join(process.cwd(), 'src', 'shared', 'lib', 'intl.tsx');
+const electronBridgePath = path.join(
+  process.cwd(),
+  'src',
+  'shared',
+  'lib',
+  'electronBridge.ts'
+);
+const aptabaseRendererPath = path.join(
+  process.cwd(),
+  'src',
+  'shared',
+  'lib',
+  'aptabaseRenderer.ts'
+);
 
 export default merge(baseConfig, {
   target: 'electron-renderer',
+
+  resolve: {
+    alias: {
+      electron: electronBridgePath,
+      '@aptabase/electron/renderer': aptabaseRendererPath,
+    },
+  },
 
   module: {
     rules: [
