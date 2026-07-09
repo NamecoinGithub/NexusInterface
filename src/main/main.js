@@ -1,4 +1,4 @@
-import { app, ipcMain, dialog } from 'electron';
+import { app, ipcMain, dialog, webContents } from 'electron';
 import { autoUpdater } from 'electron-updater';
 import log from 'electron-log';
 import { initialize } from '@aptabase/electron/main';
@@ -260,6 +260,14 @@ function sanitizeWebContentsId(webContentsId) {
   if (webContentsId === undefined || webContentsId === null) return undefined;
   if (!Number.isInteger(webContentsId) || webContentsId < 1) {
     throw new TypeError('webContentsId must be a positive integer');
+  }
+  const target = webContents.fromId(webContentsId);
+  if (
+    !target ||
+    (target.id !== mainWindow?.webContents.id &&
+      target.hostWebContents?.id !== mainWindow?.webContents.id)
+  ) {
+    throw new Error('webContentsId must belong to the main window');
   }
   return webContentsId;
 }

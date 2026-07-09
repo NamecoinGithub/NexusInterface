@@ -155,14 +155,45 @@ function commandMatchesCore(
   resolvedCoreBinaryName
 ) {
   const normalizedCommand = path.normalize(command);
+  const commandParts = normalizedCommand.split(/\s+/);
+  const possibleExecutableParts = commandParts.slice(0, 2);
+
   return (
-    normalizedCommand.includes(normalizedCoreBinaryPath) ||
-    normalizedCommand.includes(`${path.sep}${resolvedCoreBinaryName}`) ||
-    normalizedCommand.split(/\s+/).some((part) => {
+    normalizedCommand === normalizedCoreBinaryPath ||
+    normalizedCommand.startsWith(`${normalizedCoreBinaryPath} `) ||
+    normalizedCommand.includes(` ${normalizedCoreBinaryPath} `) ||
+    normalizedCommand.includes(` "${normalizedCoreBinaryPath}"`) ||
+    possibleExecutableParts.some((part) => {
       const unquotedPart = part.replace(/^["']|["']$/g, '');
       return path.basename(unquotedPart) === resolvedCoreBinaryName;
     })
   );
+}
+
+function parseWindowsCSVLine(line) {
+  const fields = [];
+  let field = '';
+  let insideQuotes = false;
+
+  for (let i = 0; i < line.length; i++) {
+    const char = line[i];
+    const nextChar = line[i + 1];
+
+    if (char === '"' && nextChar === '"') {
+      field += char;
+      i++;
+    } else if (char === '"') {
+      insideQuotes = !insideQuotes;
+    } else if (char === ',' && !insideQuotes) {
+      fields.push(field);
+      field = '';
+    } else {
+      field += char;
+    }
+  }
+
+  fields.push(field);
+  return fields;
 }
 
 function findCorePIDInProcessList(
@@ -239,8 +270,9 @@ async function getCorePID() {
   let PID;
 
   if (process.platform == 'win32') {
+    const escapedCoreBinaryName = resolvedCoreBinaryName.replace(/"/g, '""');
     const taskList = await exec(
-      `tasklist /NH /v /fi "IMAGENAME eq ${resolvedCoreBinaryName}" /fo CSV`,
+      `tasklist /NH /v /fi "IMAGENAME eq ${escapedCoreBinaryName}" /fo CSV`,
       { env: modEnv }
     );
     const matchingProcess = taskList
@@ -249,7 +281,7 @@ async function getCorePID() {
       .find((output) => output.includes(`"${resolvedCoreBinaryName}"`));
     PID =
       matchingProcess &&
-      Number(matchingProcess.split('","')[1]?.replace(/"/gm, ''));
+      Number(parseWindowsCSVLine(matchingProcess)[1]);
   } else {
     PID = findCorePIDInProcessList(
       await exec(
