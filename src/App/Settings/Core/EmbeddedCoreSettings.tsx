@@ -1,5 +1,6 @@
 import path from 'path';
 import { ipcRenderer } from 'electron';
+import { useField } from 'react-final-form';
 
 import Form from 'components/Form';
 import SettingsField from 'components/SettingsField';
@@ -68,19 +69,7 @@ export default function EmbeddedCoreSettings() {
           'Optional path to a Nexus Core binary to use instead of the bundled binary'
         )}
       >
-        <div className="flex stretch">
-          <Form.TextField
-            name="embeddedCoreBinaryPath"
-            style={{ flexGrow: 1 }}
-          />
-          <Button
-            fitHeight
-            onClick={browseCoreBinary}
-            style={{ marginLeft: '1em' }}
-          >
-            {__('Browse')}
-          </Button>
-        </div>
+        <CoreBinaryPathField />
       </SettingsField>
 
       <TestnetSettings />
@@ -105,10 +94,11 @@ export default function EmbeddedCoreSettings() {
   );
 }
 
-async function browseCoreBinary() {
-  let paths;
-  try {
-    paths = await ipcRenderer.invoke('show-open-dialog', {
+function CoreBinaryPathField() {
+  const { input } = useField('embeddedCoreBinaryPath');
+
+  const pickCoreBinary = async () => {
+    const filePaths = await ipcRenderer.invoke('show-open-dialog', {
       title: __('Select Nexus Core binary'),
       properties: ['openFile'],
       filters:
@@ -116,20 +106,26 @@ async function browseCoreBinary() {
           ? [{ name: 'Windows executable', extensions: ['exe'] }]
           : undefined,
     });
-  } catch (err: unknown) {
-    openErrorDialog({
-      message: __('Failed to open file picker') + ': ' + getErrorMessage(err),
-    });
-    return;
-  }
 
-  if (paths && paths[0]) {
-    updateSettings({ embeddedCoreBinaryPath: paths[0] });
-  }
-}
+    if (filePaths?.[0]) {
+      input.onChange(filePaths[0]);
+    }
+  };
 
-function getErrorMessage(err: unknown) {
-  return err instanceof Error ? err.message : String(err);
+  return (
+    <div style={{ display: 'flex', width: '100%' }}>
+      <Form.TextField
+        name="embeddedCoreBinaryPath"
+        style={{ flexGrow: 1 }}
+      />
+      <Button
+        onClick={pickCoreBinary}
+        style={{ height: consts.inputHeightEm + 'em', marginLeft: '0.5em' }}
+      >
+        {__('Browse')}
+      </Button>
+    </div>
+  );
 }
 
 function BasicSettings() {

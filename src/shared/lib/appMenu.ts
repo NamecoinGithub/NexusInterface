@@ -176,7 +176,7 @@ const menuItems = preprocess({
   toggleFullScreen: {
     label: __('Toggle FullScreen'),
     accelerator: 'F11',
-    role: 'togglefullscreen',
+    role: 'toggleFullScreen',
   },
   toggleDevTools: {
     label: __('Toggle Developer Tools'),
