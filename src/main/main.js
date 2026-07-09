@@ -31,6 +31,64 @@ initialize('A-US-0744437796'); // This doesn't send anything so it is safe to fi
 
 log.initialize();
 
+const appPathNames = new Set([
+  'home',
+  'appData',
+  'userData',
+  'sessionData',
+  'temp',
+  'exe',
+  'module',
+  'desktop',
+  'documents',
+  'downloads',
+  'music',
+  'pictures',
+  'videos',
+  'logs',
+  'crashDumps',
+]);
+
+const isPlainObject = (value) =>
+  !!value && typeof value === 'object' && !Array.isArray(value);
+
+const sanitizeDialogOptions = (options) => {
+  if (options === undefined) return undefined;
+  if (!isPlainObject(options)) {
+    throw new Error('Dialog options must be an object');
+  }
+  return options;
+};
+
+const sanitizeMenuTemplate = (menuTemplate) => {
+  if (!Array.isArray(menuTemplate) && !isPlainObject(menuTemplate)) {
+    throw new Error('Menu template must be an object or array');
+  }
+  return menuTemplate;
+};
+
+const sanitizeWebContentsId = (webContentsId) => {
+  if (webContentsId === undefined) return undefined;
+  if (!Number.isInteger(webContentsId) || webContentsId < 1) {
+    throw new Error('webContentsId must be a positive integer');
+  }
+  return webContentsId;
+};
+
+const sanitizeStringArray = (value, name) => {
+  if (!Array.isArray(value) || value.some((item) => typeof item !== 'string')) {
+    throw new Error(`${name} must be an array of strings`);
+  }
+  return value;
+};
+
+const sanitizeVirtualKeyboardOptions = (options) => {
+  if (!isPlainObject(options)) {
+    throw new Error('Virtual keyboard options must be an object');
+  }
+  return options;
+};
+
 // Temporarily add this because there are some errors in autoUpdater.checkForUpdates
 // cannot be caught (net::ERR_HTTP_RESPONSE_CODE_FAILURE).
 // This should be removed when the issue is resolved.
@@ -53,35 +111,45 @@ ipcMain.handle('exit-app', () => {
 ipcMain.handle('hide-window', () => mainWindow.hide());
 ipcMain.handle('hide-dock', () => app.dock.hide());
 ipcMain.handle('show-open-dialog', (event, options) =>
-  dialog.showOpenDialogSync(mainWindow, options)
+  dialog.showOpenDialogSync(mainWindow, sanitizeDialogOptions(options))
 );
 ipcMain.handle('show-save-dialog', async (event, options) =>
-  dialog.showSaveDialogSync(mainWindow, options)
+  dialog.showSaveDialogSync(mainWindow, sanitizeDialogOptions(options))
 );
 ipcMain.handle('popup-context-menu', (event, menuTemplate, webContentsId) =>
-  popupContextMenu(menuTemplate, webContentsId)
+  popupContextMenu(
+    sanitizeMenuTemplate(menuTemplate),
+    sanitizeWebContentsId(webContentsId)
+  )
 );
 ipcMain.handle('set-app-menu', (event, menuTemplate) => {
-  setApplicationMenu(menuTemplate);
+  setApplicationMenu(sanitizeMenuTemplate(menuTemplate));
 });
-ipcMain.handle('open-virtual-keyboard', (event, ...args) => {
-  openVirtualKeyboard(...args);
+ipcMain.handle('open-virtual-keyboard', (event, options) => {
+  openVirtualKeyboard(sanitizeVirtualKeyboardOptions(options));
 });
 
 // File server
-ipcMain.handle('serve-module-files', (event, ...args) =>
-  serveModuleFiles(...args)
+ipcMain.handle('serve-module-files', (event, moduleFiles) =>
+  serveModuleFiles(sanitizeStringArray(moduleFiles, 'moduleFiles'))
 );
 
 // Core
 ipcMain.handle('check-core-exists', async () => await coreBinaryExists());
 ipcMain.handle('core-binary-status', async () => await coreBinaryStatus());
 ipcMain.handle('check-core-running', async () => await isCoreRunning());
-ipcMain.handle('start-core', (event, ...args) => startCore(...args));
+ipcMain.handle('start-core', (event, params) =>
+  startCore(sanitizeStringArray(params, 'Core parameters'))
+);
 ipcMain.handle('kill-core-process', async () => await killCoreProcess());
 ipcMain.handle(
   'execute-core-command',
-  async (event, command) => await executeCommand(command)
+  async (event, command) => {
+    if (typeof command !== 'string') {
+      throw new Error('Core command must be a string');
+    }
+    return await executeCommand(command);
+  }
 );
 
 // Auto update
@@ -92,12 +160,16 @@ ipcMain.handle('quit-and-install-update', (event, ...args) =>
   autoUpdater.quitAndInstall(...args)
 );
 ipcMain.handle('set-allow-prerelease', (event, value) =>
-  setAllowPrerelease(value)
+  setAllowPrerelease(Boolean(value))
 );
 ipcMain.handle('migrate-to-mainnet', (event, value) => migrateToMainnet());
 
 // Sync message handlers
 ipcMain.on('get-path', (event, name) => {
+  if (typeof name !== 'string' || !appPathNames.has(name)) {
+    event.returnValue = undefined;
+    return;
+  }
   event.returnValue = app.getPath(name);
 });
 ipcMain.on('get-file-server-domain', (event) => {
@@ -105,7 +177,15 @@ ipcMain.on('get-file-server-domain', (event) => {
 });
 
 // Modules
-ipcMain.handle('proxy-request', (event, ...params) => proxyRequest(...params));
+ipcMain.handle('proxy-request', (event, url, config) => {
+  if (typeof url !== 'string') {
+    throw new Error('Proxy URL must be a string');
+  }
+  if (config !== undefined && !isPlainObject(config)) {
+    throw new Error('Proxy config must be an object');
+  }
+  return proxyRequest(url, config);
+});
 
 // START RENDERER
 // =============================================================================
