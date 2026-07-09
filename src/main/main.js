@@ -183,16 +183,16 @@ ipcMain.handle(
 
 // Auto update
 ipcMain.handle('check-for-updates', () => autoUpdater.checkForUpdates());
-ipcMain.handle('quit-and-install-update', (event, ...args) =>
+ipcMain.handle('quit-and-install-update', (event, isSilent, isForceRunAfter) =>
   autoUpdater.quitAndInstall(
-    sanitizeOptionalBoolean(args[0], 'isSilent'),
-    sanitizeOptionalBoolean(args[1], 'isForceRunAfter')
+    sanitizeOptionalBoolean(isSilent, 'isSilent'),
+    sanitizeOptionalBoolean(isForceRunAfter, 'isForceRunAfter')
   )
 );
 ipcMain.handle('set-allow-prerelease', (event, value) =>
   setAllowPrerelease(sanitizeBoolean(value, 'allowPrerelease'))
 );
-ipcMain.handle('migrate-to-mainnet', (event, value) => migrateToMainnet());
+ipcMain.handle('migrate-to-mainnet', () => migrateToMainnet());
 
 // Sync message handlers
 ipcMain.on('get-path', (event, name) => {
