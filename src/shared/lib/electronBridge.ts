@@ -17,6 +17,11 @@ if (!bridge) {
   throw new Error('Nexus Electron bridge is not available');
 }
 
+const subscriptionsByChannel = new Map<
+  string,
+  Map<ElectronBridgeListener, () => void>
+>();
+
 export const ipcRenderer = {
   invoke: (channel: string, ...args: any[]) => {
     assertChannel(channel);
@@ -29,7 +34,19 @@ export const ipcRenderer = {
   on: (channel: string, listener: ElectronBridgeListener) => {
     assertChannel(channel);
     assertListener(listener);
+
     const unsubscribe = bridge.ipc.on(channel, listener);
+
+    let byListener = subscriptionsByChannel.get(channel);
+    if (!byListener) {
+      byListener = new Map();
+      subscriptionsByChannel.set(channel, byListener);
+    }
+
+    // Avoid stacking duplicate listeners for the same (channel, listener)
+    byListener.get(listener)?.();
+    byListener.set(listener, unsubscribe);
+
     return { channel, listener, unsubscribe };
   },
   once: (channel: string, listener: ElectronBridgeListener) => {
