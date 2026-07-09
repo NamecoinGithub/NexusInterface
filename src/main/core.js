@@ -24,6 +24,7 @@ function normalizeConfiguredCoreBinaryPath(configuredPath) {
     return bundledCoreBinaryPath;
   }
 
+  // Accept paths copied from shells or dialogs with a matching quote pair.
   return trimmedPath.replace(/^(['"])(.*)\1$/, '$2');
 }
 
@@ -92,7 +93,7 @@ function getCoreBinaryStatus() {
     const realPath = fs.realpathSync(coreBinaryPath);
     if (
       process.platform === 'win32' &&
-      path.extname(coreBinaryPath).toLowerCase() !== '.exe'
+      path.extname(realPath).toLowerCase() !== '.exe'
     ) {
       throw new Error(
         'Configured Nexus Core binary path must point to a .exe file on Windows.'
@@ -288,10 +289,15 @@ export async function killCoreProcess() {
 
   log.info('Core Manager: Killing process ' + corePID);
   const env = { ...process.env, KILL_PID: corePID };
-  if (process.platform == 'win32') {
-    await exec(`taskkill /F /PID ${corePID}`, { env });
-  } else {
-    await exec('kill -9 $KILL_PID', { env });
+  try {
+    if (process.platform == 'win32') {
+      await exec(`taskkill /F /PID ${corePID}`, { env });
+    } else {
+      await exec('kill -9 $KILL_PID', { env });
+    }
+  } catch (err) {
+    log.error('Core Manager: Failed to kill process ' + corePID, err);
+    throw err;
   }
   return true;
 }

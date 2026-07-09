@@ -116,10 +116,9 @@ async function browseCoreBinary() {
           ? [{ name: 'Windows executable', extensions: ['exe'] }]
           : undefined,
     });
-  } catch (err: any) {
+  } catch (err: unknown) {
     openErrorDialog({
-      message:
-        __('Failed to open file picker') + ': ' + (err?.message || String(err)),
+      message: __('Failed to open file picker') + ': ' + getErrorMessage(err),
     });
     return;
   }
@@ -127,6 +126,10 @@ async function browseCoreBinary() {
   if (paths && paths[0]) {
     updateSettings({ embeddedCoreBinaryPath: paths[0] });
   }
+}
+
+function getErrorMessage(err: unknown) {
+  return err instanceof Error ? err.message : String(err);
 }
 
 function BasicSettings() {
