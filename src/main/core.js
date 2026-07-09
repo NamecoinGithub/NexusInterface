@@ -31,6 +31,10 @@ const exec = (command, options = {}) =>
   });
 
 function normalizeConfiguredBinaryPath(configuredPath) {
+  if (typeof configuredPath !== 'string') {
+    return '';
+  }
+
   let normalizedPath = configuredPath.trim();
 
   if (
@@ -40,11 +44,14 @@ function normalizeConfiguredBinaryPath(configuredPath) {
     normalizedPath = normalizedPath.slice(1, -1).trim();
   }
 
-  if (normalizedPath === '~' || normalizedPath.startsWith(`~${path.sep}`)) {
+  if (normalizedPath === '~' || /^~[\\/]/.test(normalizedPath)) {
     const homeDir =
       process.platform === 'win32' ? process.env.USERPROFILE : process.env.HOME;
     if (homeDir) {
-      normalizedPath = path.join(homeDir, normalizedPath.slice(2));
+      normalizedPath =
+        normalizedPath === '~'
+          ? homeDir
+          : path.join(homeDir, normalizedPath.slice(2));
     }
   }
 
@@ -145,7 +152,6 @@ function getCoreBinaryStatus() {
 function commandMatchesCore(command, coreBinaryPath, resolvedCoreBinaryName) {
   const normalizedCommand = path.normalize(command);
   return (
-    normalizedCommand.includes(coreBinaryPath) ||
     normalizedCommand.includes(path.normalize(coreBinaryPath)) ||
     normalizedCommand.includes(`${path.sep}${resolvedCoreBinaryName}`) ||
     normalizedCommand.split(/\s+/).some((part) => {

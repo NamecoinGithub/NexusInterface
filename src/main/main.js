@@ -42,6 +42,67 @@ const allowedOpenDialogProperties = new Set([
   'treatPackageAsDirectory',
   'dontAddToRecent',
 ]);
+const allowedAppPathNames = new Set([
+  'home',
+  'appData',
+  'userData',
+  'sessionData',
+  'temp',
+  'exe',
+  'module',
+  'desktop',
+  'documents',
+  'downloads',
+  'music',
+  'pictures',
+  'videos',
+  'recent',
+  'logs',
+  'crashDumps',
+]);
+const allowedMenuRoles = new Set([
+  'undo',
+  'redo',
+  'cut',
+  'copy',
+  'paste',
+  'pasteAndMatchStyle',
+  'delete',
+  'selectAll',
+  'reload',
+  'forceReload',
+  'toggleDevTools',
+  'resetZoom',
+  'zoomIn',
+  'zoomOut',
+  'toggleSpellChecker',
+  'togglefullscreen',
+  'window',
+  'minimize',
+  'close',
+  'help',
+  'about',
+  'services',
+  'hide',
+  'hideOthers',
+  'unhide',
+  'quit',
+  'showSubstitutions',
+  'toggleSmartQuotes',
+  'toggleSmartDashes',
+  'toggleTextReplacement',
+  'startSpeaking',
+  'stopSpeaking',
+  'front',
+  'zoom',
+  'toggleTabBar',
+  'selectNextTab',
+  'selectPreviousTab',
+  'showAllTabs',
+  'mergeAllWindows',
+  'moveTabToNewWindow',
+  'windowMenu',
+]);
 
 function ensureString(value, fieldName) {
   if (typeof value !== 'string') {
@@ -53,6 +114,25 @@ function ensureString(value, fieldName) {
 function ensureStringArray(value, fieldName) {
   if (!Array.isArray(value) || value.some((item) => typeof item !== 'string')) {
     throw new TypeError(`${fieldName} must be an array of strings`);
+  }
+  return value;
+}
+
+function ensureBoolean(value, fieldName) {
+  if (typeof value !== 'boolean') {
+    throw new TypeError(`${fieldName} must be a boolean`);
+  }
+  return value;
+}
+
+function ensureOptionalBoolean(value, fieldName, defaultValue = false) {
+  if (value === undefined) return defaultValue;
+  return ensureBoolean(value, fieldName);
+}
+
+function ensureObject(value, fieldName) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    throw new TypeError(`${fieldName} must be an object`);
   }
   return value;
 }
@@ -120,6 +200,80 @@ function sanitizeKeyboardOptions(options = {}) {
   };
 }
 
+function sanitizeMenuTemplate(template) {
+  if (!Array.isArray(template)) {
+    throw new TypeError('Menu template must be an array');
+  }
+
+  return template.map((item) => {
+    if (!item || typeof item !== 'object' || Array.isArray(item)) {
+      throw new TypeError('Menu item must be an object');
+    }
+
+    if (item.type === 'separator') {
+      return { type: 'separator' };
+    }
+
+    const sanitized = {};
+    if (item.id !== undefined) sanitized.id = ensureString(item.id, 'Menu id');
+    if (item.label !== undefined) {
+      sanitized.label = ensureString(item.label, 'Menu label');
+    }
+    if (item.accelerator !== undefined) {
+      sanitized.accelerator = ensureString(
+        item.accelerator,
+        'Menu accelerator'
+      );
+    }
+    if (item.role !== undefined && allowedMenuRoles.has(item.role)) {
+      sanitized.role = item.role;
+    }
+    if (item.enabled !== undefined) {
+      sanitized.enabled = !!item.enabled;
+    }
+    if (item.visible !== undefined) {
+      sanitized.visible = !!item.visible;
+    }
+    if (item.checked !== undefined) {
+      sanitized.checked = !!item.checked;
+    }
+    if (item.click !== undefined) {
+      sanitized.click = !!item.click;
+    }
+    if (item.submenu !== undefined) {
+      sanitized.submenu = sanitizeMenuTemplate(item.submenu);
+    }
+
+    return sanitized;
+  });
+}
+
+function sanitizeWebContentsId(webContentsId) {
+  if (webContentsId === undefined || webContentsId === null) return undefined;
+  if (!Number.isInteger(webContentsId) || webContentsId < 1) {
+    throw new TypeError('webContentsId must be a positive integer');
+  }
+  return webContentsId;
+}
+
+function sanitizeAppPathName(name) {
+  const pathName = ensureString(name, 'Path name');
+  if (!allowedAppPathNames.has(pathName)) {
+    throw new Error(`Unsupported app path: ${pathName}`);
+  }
+  return pathName;
+}
+
+function sanitizeProxyRequest(url, config = {}) {
+  ensureString(url, 'Proxy request URL');
+  ensureObject(config, 'Proxy request config');
+  const parsedURL = new URL(url);
+  if (!['http:', 'https:'].includes(parsedURL.protocol)) {
+    throw new Error(`Unsupported proxy request protocol: ${parsedURL.protocol}`);
+  }
+  return [url, config];
+}
+
 // Temporarily add this because there are some errors in autoUpdater.checkForUpdates
 // cannot be caught (net::ERR_HTTP_RESPONSE_CODE_FAILURE).
 // This should be removed when the issue is resolved.
@@ -148,10 +302,13 @@ ipcMain.handle('show-save-dialog', async (event, options) =>
   dialog.showSaveDialogSync(mainWindow, sanitizeSaveDialogOptions(options))
 );
 ipcMain.handle('popup-context-menu', (event, menuTemplate, webContentsId) =>
-  popupContextMenu(menuTemplate, webContentsId)
+  popupContextMenu(
+    sanitizeMenuTemplate(menuTemplate),
+    sanitizeWebContentsId(webContentsId)
+  )
 );
 ipcMain.handle('set-app-menu', (event, menuTemplate) => {
-  setApplicationMenu(menuTemplate);
+  setApplicationMenu(sanitizeMenuTemplate(menuTemplate));
 });
 ipcMain.handle('open-virtual-keyboard', (event, ...args) => {
   openVirtualKeyboard(sanitizeKeyboardOptions(args[0]));
@@ -159,7 +316,7 @@ ipcMain.handle('open-virtual-keyboard', (event, ...args) => {
 
 // File server
 ipcMain.handle('serve-module-files', (event, ...args) =>
-  serveModuleFiles(...args)
+  serveModuleFiles(ensureStringArray(args[0], 'Module files'))
 );
 
 // Core
@@ -176,27 +333,30 @@ ipcMain.handle(
 );
 
 // Auto update
-ipcMain.handle('check-for-updates', (event, ...args) =>
-  autoUpdater.checkForUpdates(...args)
-);
-ipcMain.handle('quit-and-install-update', (event, ...args) =>
-  autoUpdater.quitAndInstall(...args)
+ipcMain.handle('check-for-updates', () => autoUpdater.checkForUpdates());
+ipcMain.handle('quit-and-install-update', (event, isSilent, isForceRunAfter) =>
+  autoUpdater.quitAndInstall(
+    ensureOptionalBoolean(isSilent, 'isSilent'),
+    ensureOptionalBoolean(isForceRunAfter, 'isForceRunAfter')
+  )
 );
 ipcMain.handle('set-allow-prerelease', (event, value) =>
-  setAllowPrerelease(value)
+  setAllowPrerelease(ensureBoolean(value, 'allowPrerelease'))
 );
-ipcMain.handle('migrate-to-mainnet', (event, value) => migrateToMainnet());
+ipcMain.handle('migrate-to-mainnet', () => migrateToMainnet());
 
 // Sync message handlers
 ipcMain.on('get-path', (event, name) => {
-  event.returnValue = app.getPath(name);
+  event.returnValue = app.getPath(sanitizeAppPathName(name));
 });
 ipcMain.on('get-file-server-domain', (event) => {
   event.returnValue = getDomain();
 });
 
 // Modules
-ipcMain.handle('proxy-request', (event, ...params) => proxyRequest(...params));
+ipcMain.handle('proxy-request', (event, url, config) =>
+  proxyRequest(...sanitizeProxyRequest(url, config))
+);
 
 // START RENDERER
 // =============================================================================
