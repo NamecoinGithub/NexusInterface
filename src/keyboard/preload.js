@@ -2,6 +2,7 @@ const { contextBridge, ipcRenderer } = require('electron');
 
 function sanitizeOptions(options) {
   if (!options || typeof options !== 'object' || Array.isArray(options)) {
+    console.warn('Invalid virtual keyboard options received');
     return {
       theme: undefined,
       defaultText: '',

@@ -113,7 +113,7 @@ function CoreBinaryPathField() {
   };
 
   return (
-    <div style={{ display: 'flex', gap: 8, width: '100%' }}>
+    <div style={{ display: 'flex', gap: '0.5em', width: '100%' }}>
       <Form.TextField name="embeddedCoreBinaryPath" />
       <Button
         onClick={pickCoreBinary}

@@ -111,6 +111,14 @@ function ensureString(value, fieldName) {
   return value;
 }
 
+function ensureNonEmptyString(value, fieldName) {
+  const stringValue = ensureString(value, fieldName).trim();
+  if (!stringValue) {
+    throw new TypeError(`${fieldName} must not be empty`);
+  }
+  return stringValue;
+}
+
 function ensureStringArray(value, fieldName) {
   if (!Array.isArray(value) || value.some((item) => typeof item !== 'string')) {
     throw new TypeError(`${fieldName} must be an array of strings`);
@@ -265,13 +273,18 @@ function sanitizeAppPathName(name) {
 }
 
 function sanitizeProxyRequest(url, config = {}) {
-  ensureString(url, 'Proxy request URL');
+  const requestURL = ensureNonEmptyString(url, 'Proxy request URL');
   ensureObject(config, 'Proxy request config');
-  const parsedURL = new URL(url);
+  let parsedURL;
+  try {
+    parsedURL = new URL(requestURL);
+  } catch (err) {
+    throw new Error(`Invalid proxy request URL: ${requestURL}`);
+  }
   if (!['http:', 'https:'].includes(parsedURL.protocol)) {
     throw new Error(`Unsupported proxy request protocol: ${parsedURL.protocol}`);
   }
-  return [url, config];
+  return [requestURL, config];
 }
 
 // Temporarily add this because there are some errors in autoUpdater.checkForUpdates

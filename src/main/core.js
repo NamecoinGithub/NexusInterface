@@ -149,10 +149,14 @@ function getCoreBinaryStatus() {
   }
 }
 
-function commandMatchesCore(command, coreBinaryPath, resolvedCoreBinaryName) {
+function commandMatchesCore(
+  command,
+  normalizedCoreBinaryPath,
+  resolvedCoreBinaryName
+) {
   const normalizedCommand = path.normalize(command);
   return (
-    normalizedCommand.includes(path.normalize(coreBinaryPath)) ||
+    normalizedCommand.includes(normalizedCoreBinaryPath) ||
     normalizedCommand.includes(`${path.sep}${resolvedCoreBinaryName}`) ||
     normalizedCommand.split(/\s+/).some((part) => {
       const unquotedPart = part.replace(/^["']|["']$/g, '');
@@ -166,6 +170,7 @@ function findCorePIDInProcessList(
   coreBinaryPath,
   resolvedCoreBinaryName
 ) {
+  const normalizedCoreBinaryPath = path.normalize(coreBinaryPath);
   const matchingProcess = processList
     .toString()
     .split('\n')
@@ -184,7 +189,7 @@ function findCorePIDInProcessList(
         processInfo.pid > 1 &&
         commandMatchesCore(
           processInfo.command,
-          coreBinaryPath,
+          normalizedCoreBinaryPath,
           resolvedCoreBinaryName
         )
     );
