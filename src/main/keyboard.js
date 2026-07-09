@@ -26,6 +26,7 @@ export async function openVirtualKeyboard(options) {
     autoHideMenuBar: true,
     fullscreenable: false,
     webPreferences: {
+      // TODO: Move keyboard IPC access behind preload, then enable contextIsolation.
       nodeIntegration: true,
       enableRemoteModule: false,
       contextIsolation: false,

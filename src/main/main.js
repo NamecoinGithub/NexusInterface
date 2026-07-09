@@ -7,6 +7,7 @@ import { loadSettingsFromFile } from 'lib/settings/universal';
 import {
   startCore,
   coreBinaryExists,
+  coreBinaryStatus,
   executeCommand,
   isCoreRunning,
   killCoreProcess,
@@ -74,6 +75,7 @@ ipcMain.handle('serve-module-files', (event, ...args) =>
 
 // Core
 ipcMain.handle('check-core-exists', async () => await coreBinaryExists());
+ipcMain.handle('core-binary-status', async () => await coreBinaryStatus());
 ipcMain.handle('check-core-running', async () => await isCoreRunning());
 ipcMain.handle('start-core', (event, ...args) => startCore(...args));
 ipcMain.handle('kill-core-process', async () => await killCoreProcess());

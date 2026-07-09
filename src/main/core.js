@@ -5,13 +5,20 @@ import fs from 'fs';
 import path from 'path';
 
 import { assetsByPlatformDir } from 'consts/paths';
+import { loadSettingsFromFile } from 'lib/settings/universal';
 
 const coreBinaryName = `nexus-${process.platform}-${process.arch}${
   process.platform === 'win32' ? '.exe' : ''
 }`;
-const coreBinaryPath = path.join(assetsByPlatformDir, 'cores', coreBinaryName);
+const bundledCoreBinaryPath = path.join(
+  assetsByPlatformDir,
+  'cores',
+  coreBinaryName
+);
+const coreBinaryOverrideEnv =
+  process.env.NEXUS_CORE_BINARY_PATH || process.env.NEXUS_CORE_BINARY;
 
-const exec = (command, options) =>
+const exec = (command, options = {}) =>
   new Promise((resolve, reject) => {
     child_process.exec(command, options, (err, stdout, stderr) => {
       if (err) {
@@ -22,21 +29,82 @@ const exec = (command, options) =>
     });
   });
 
+function getConfiguredCoreBinaryPath() {
+  const settings = loadSettingsFromFile();
+  const configuredPath =
+    coreBinaryOverrideEnv || settings.embeddedCoreBinaryPath || '';
+
+  return configuredPath.trim() || bundledCoreBinaryPath;
+}
+
+function getCoreBinaryName(binaryPath = getConfiguredCoreBinaryPath()) {
+  return path.basename(binaryPath);
+}
+
+function getCoreBinaryStatus() {
+  const coreBinaryPath = getConfiguredCoreBinaryPath();
+  const usingOverride = coreBinaryPath !== bundledCoreBinaryPath;
+  const source = coreBinaryOverrideEnv
+    ? 'environment'
+    : usingOverride
+    ? 'settings'
+    : 'bundled assets';
+
+  try {
+    fs.accessSync(coreBinaryPath, fs.constants.X_OK);
+    return {
+      exists: true,
+      executable: true,
+      path: coreBinaryPath,
+      name: getCoreBinaryName(coreBinaryPath),
+      source,
+    };
+  } catch (err) {
+    const error =
+      err.code === 'ENOENT'
+        ? usingOverride
+          ? `Configured Nexus Core binary was not found: ${coreBinaryPath}`
+          : `No bundled Nexus Core binary was found for ${process.platform}/${process.arch}. Expected: ${coreBinaryPath}. Set NEXUS_CORE_BINARY_PATH or Core Binary Path to use an external binary.`
+        : `Nexus Core binary is not executable: ${coreBinaryPath}`;
+
+    return {
+      exists: false,
+      executable: false,
+      path: coreBinaryPath,
+      name: getCoreBinaryName(coreBinaryPath),
+      source,
+      error,
+    };
+  }
+}
+
+function getExecutableCoreBinary() {
+  const status = getCoreBinaryStatus();
+  if (!status.exists || !status.executable) {
+    throw new Error(status.error);
+  }
+  return status;
+}
+
 /**
  * Check if core binary file exists
  *
- * @returns {boolean} Does the core exist at coreBinaryPath
+ * @returns {boolean} Does the configured core binary exist and is it executable
  */
 export function coreBinaryExists() {
-  log.info('Checking if core binary exists: ' + coreBinaryPath);
-  try {
-    fs.accessSync(coreBinaryPath);
+  const status = getCoreBinaryStatus();
+  log.info(`Checking if core binary exists: ${status.path} (${status.source})`);
+  if (status.exists && status.executable) {
     log.info('Core binary exists');
     return true;
-  } catch (e) {
-    log.info('Core binary does not exist: ' + coreBinaryPath);
-    return false;
   }
+
+  log.info(status.error);
+  return false;
+}
+
+export function coreBinaryStatus() {
+  return getCoreBinaryStatus();
 }
 
 /**
@@ -46,15 +114,15 @@ export function coreBinaryExists() {
  * @memberof Core
  */
 async function getCorePID() {
-  const modEnv = process.env;
-  modEnv.Nexus_Daemon = coreBinaryName;
+  const { path: coreBinaryPath, name: resolvedCoreBinaryName } =
+    getExecutableCoreBinary();
+  const modEnv = { ...process.env, Nexus_Daemon: resolvedCoreBinaryName };
   let PID;
 
   if (process.platform == 'win32') {
     PID = (
       await exec(
-        `tasklist /NH /v /fi "IMAGENAME eq ${coreBinaryName}" /fo CSV`,
-        [],
+        `tasklist /NH /v /fi "IMAGENAME eq ${resolvedCoreBinaryName}" /fo CSV`,
         { env: modEnv }
       )
     )
@@ -63,7 +131,7 @@ async function getCorePID() {
     PID = PID && Number(PID.replace(/"/gm, ''));
   } else if (process.platform == 'darwin') {
     PID = (
-      await exec('ps -A', [], {
+      await exec('ps -A', {
         env: modEnv,
       })
     )
@@ -81,7 +149,7 @@ async function getCorePID() {
       );
   } else {
     PID = (
-      await exec('ps -o pid --no-headers -p 1 -C ${Nexus_Daemon}', [], {
+      await exec('ps -o pid --no-headers -p 1 -C ${Nexus_Daemon}', {
         env: modEnv,
       })
     )
@@ -120,8 +188,9 @@ export async function isCoreRunning() {
  * @memberof Core
  */
 export function startCore(params) {
+  const { path: coreBinaryPath } = getExecutableCoreBinary();
   log.info('Core Parameters: ' + (params && params.join(' ')));
-  log.info('Core Manager: Starting core');
+  log.info('Core Manager: Starting core: ' + coreBinaryPath);
   try {
     const coreProcess = spawn(coreBinaryPath, params, {
       shell: false,
@@ -149,12 +218,11 @@ export function startCore(params) {
 export async function killCoreProcess() {
   const corePID = await getCorePID();
   log.info('Core Manager: Killing process ' + corePID);
-  const { env } = process;
-  env.KILL_PID = corePID;
+  const env = { ...process.env, KILL_PID: corePID };
   if (process.platform == 'win32') {
-    await exec(`taskkill /F /PID ${corePID}`, [], { env });
+    await exec(`taskkill /F /PID ${corePID}`, { env });
   } else {
-    await exec('kill -9 $KILL_PID', [], { env });
+    await exec('kill -9 $KILL_PID', { env });
   }
 }
 
@@ -165,6 +233,7 @@ export async function killCoreProcess() {
  * @memberof Core
  */
 export async function executeCommand(command) {
+  const { path: coreBinaryPath } = getExecutableCoreBinary();
   try {
     const result = await exec(`"${coreBinaryPath}" -noapiauth ${command}`);
     return result;
