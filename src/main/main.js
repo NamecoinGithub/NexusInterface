@@ -76,7 +76,7 @@ const allowedMenuRoles = new Set([
   'zoomIn',
   'zoomOut',
   'toggleSpellChecker',
-  'togglefullscreen',
+  'toggleFullScreen',
   'window',
   'minimize',
   'close',

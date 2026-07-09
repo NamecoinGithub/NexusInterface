@@ -279,9 +279,10 @@ async function getCorePID() {
       .toString()
       .split('\n')
       .find((output) => output.includes(`"${resolvedCoreBinaryName}"`));
-    PID =
-      matchingProcess &&
-      Number(parseWindowsCSVLine(matchingProcess)[1]);
+    if (matchingProcess) {
+      const fields = parseWindowsCSVLine(matchingProcess);
+      PID = fields.length > 1 ? Number(fields[1]) : null;
+    }
   } else {
     PID = findCorePIDInProcessList(
       await exec(
