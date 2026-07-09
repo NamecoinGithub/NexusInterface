@@ -113,11 +113,14 @@ function CoreBinaryPathField() {
   };
 
   return (
-    <div style={{ display: 'flex', gap: '0.5em', width: '100%' }}>
-      <Form.TextField name="embeddedCoreBinaryPath" />
+    <div style={{ display: 'flex', width: '100%' }}>
+      <Form.TextField
+        name="embeddedCoreBinaryPath"
+        style={{ flexGrow: 1 }}
+      />
       <Button
         onClick={pickCoreBinary}
-        style={{ height: consts.inputHeightEm + 'em' }}
+        style={{ height: consts.inputHeightEm + 'em', marginLeft: '0.5em' }}
       >
         {__('Browse')}
       </Button>

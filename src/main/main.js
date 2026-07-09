@@ -233,10 +233,10 @@ function sanitizeMenuTemplate(template) {
         'Menu accelerator'
       );
     }
-    if (item.role !== undefined && !allowedMenuRoles.has(item.role)) {
-      throw new TypeError(`Unsupported menu role: ${item.role}`);
-    }
     if (item.role !== undefined) {
+      if (!allowedMenuRoles.has(item.role)) {
+        throw new TypeError(`Unsupported menu role: ${item.role}`);
+      }
       sanitized.role = item.role;
     }
     if (item.enabled !== undefined) {

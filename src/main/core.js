@@ -56,14 +56,15 @@ function normalizeConfiguredBinaryPath(configuredPath) {
     normalizedPath = normalizedPath.slice(1, -1).trim();
   }
 
-  if (normalizedPath === '~' || /^~[\\/]/.test(normalizedPath)) {
+  const homePrefix = `~${path.sep}`;
+  if (normalizedPath === '~' || normalizedPath.startsWith(homePrefix)) {
     const homeDir =
       process.platform === 'win32' ? process.env.USERPROFILE : process.env.HOME;
     if (homeDir) {
       normalizedPath =
         normalizedPath === '~'
           ? homeDir
-          : path.join(homeDir, normalizedPath.slice(2));
+          : path.join(homeDir, normalizedPath.slice(homePrefix.length));
     }
   }
 
@@ -167,12 +168,15 @@ function commandMatchesCore(
   resolvedCoreBinaryName
 ) {
   const normalizedCommand = path.normalize(command);
-  const commandParts = normalizedCommand.split(/\s+/);
+  const commandParts = splitCommandParts(command).map((part) =>
+    path.normalize(part)
+  );
   const possibleExecutableParts = commandParts.slice(0, 2);
 
   return (
     normalizedCommand === normalizedCoreBinaryPath ||
     normalizedCommand.startsWith(`${normalizedCoreBinaryPath} `) ||
+    normalizedCommand.startsWith(`"${normalizedCoreBinaryPath}"`) ||
     normalizedCommand.includes(` ${normalizedCoreBinaryPath} `) ||
     normalizedCommand.includes(` "${normalizedCoreBinaryPath}"`) ||
     possibleExecutableParts.some((part) => {
@@ -180,6 +184,18 @@ function commandMatchesCore(
       return path.basename(unquotedPart) === resolvedCoreBinaryName;
     })
   );
+}
+
+function splitCommandParts(command) {
+  const parts = [];
+  const pattern = /"([^"]*)"|'([^']*)'|(\S+)/g;
+  let match;
+
+  while ((match = pattern.exec(command)) !== null) {
+    parts.push(match[1] ?? match[2] ?? match[3]);
+  }
+
+  return parts;
 }
 
 function parseWindowsCSVLine(line) {
@@ -284,7 +300,7 @@ async function getCorePID() {
   if (process.platform == 'win32') {
     const taskList = await execFile(
       'tasklist',
-      ['/NH', '/v', '/fi', `IMAGENAME eq ${resolvedCoreBinaryName}`, '/fo', 'CSV'],
+      ['/NH', '/v', '/fo', 'CSV'],
       { env: modEnv }
     );
     const matchingProcess = taskList
@@ -293,7 +309,7 @@ async function getCorePID() {
       .find((output) => output.includes(`"${resolvedCoreBinaryName}"`));
     if (matchingProcess) {
       const fields = parseWindowsCSVLine(matchingProcess);
-      // tasklist CSV fields are "Image Name","PID",... so PID is column 1.
+      // tasklist CSV fields are "Image Name","PID",... so PID is column index 1.
       PID =
         fields.length > windowsTasklistPidIndex
           ? Number(fields[windowsTasklistPidIndex])
