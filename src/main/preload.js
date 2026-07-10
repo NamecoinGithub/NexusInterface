@@ -87,7 +87,26 @@ const ipc = {
   },
 };
 
-contextBridge.exposeInMainWorld('nexusElectron', {
+// This preload script must keep working whether the host window has
+// contextIsolation enabled or disabled: `contextBridge.exposeInMainWorld`
+// throws when contextIsolation is disabled, but a direct assignment to
+// `window` works in both modes (the preload script shares the page's
+// `window` object whenever contextIsolation is off). This mirrors
+// Electron's own documented dual-mode preload pattern.
+function exposeInMainWorld(name, api) {
+  if (process.contextIsolated) {
+    contextBridge.exposeInMainWorld(name, api);
+  } else {
+    window[name] = api;
+  }
+}
+
+exposeInMainWorld('nexusEnv', {
+  NODE_ENV: process.env.NODE_ENV || 'production',
+  PORT: process.env.PORT || '',
+});
+
+exposeInMainWorld('nexusElectron', {
   ipc,
   clipboard: {
     writeText(text) {
