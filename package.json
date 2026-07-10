@@ -288,6 +288,7 @@
   },
   "overrides": {
     "react": "$react",
-    "react-dom": "$react-dom"
+    "react-dom": "$react-dom",
+    "@noble/hashes": "1.7.1"
   }
 }
