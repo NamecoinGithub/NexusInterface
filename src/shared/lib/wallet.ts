@@ -13,6 +13,7 @@ import { stopCore } from 'lib/core';
 import { coreConnectedAtom } from 'lib/coreInfo';
 import { logOut, loggedInAtom } from 'lib/session';
 import { settingsAtom } from 'lib/settings';
+import nexusEnv from 'lib/nexusEnv';
 
 let _navigate: NavigateFunction | null = null;
 export function navigate(to: To, options?: NavigateOptions) {
@@ -55,7 +56,7 @@ export function prepareWallet() {
       const forceQuit = await ipcRenderer.invoke('is-force-quit');
       if (!forceQuit) {
         ipcRenderer.invoke('hide-window');
-        if (process.platform === 'darwin') {
+        if (nexusEnv.platform === 'darwin') {
           ipcRenderer.invoke('hide-dock');
         }
         return;
