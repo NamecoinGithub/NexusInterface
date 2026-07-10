@@ -27,6 +27,19 @@ const aptabaseRendererPath = path.join(
 export default merge(baseConfig, {
   target: 'electron-renderer',
 
+  // The renderer's `electron` alias below points at a safe, allowlisted
+  // wrapper (src/shared/lib/electronBridge.ts) around window.nexusElectron,
+  // instead of the real `electron` module. Without this override, the
+  // `electron-renderer` target's built-in Electron externals would
+  // short-circuit webpack's module resolution and force every
+  // `import ... from 'electron'` to compile to a raw `require("electron")`,
+  // silently bypassing the wrapper (and breaking entirely in any window that
+  // runs with contextIsolation:true, where `require` isn't defined).
+  externalsPresets: {
+    electron: false,
+    electronRenderer: false,
+  },
+
   resolve: {
     alias: {
       electron: electronBridgePath,
