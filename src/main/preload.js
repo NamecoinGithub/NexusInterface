@@ -104,6 +104,13 @@ function exposeInMainWorld(name, api) {
 exposeInMainWorld('nexusEnv', {
   NODE_ENV: process.env.NODE_ENV || 'production',
   PORT: process.env.PORT || '',
+  // Exposed so renderer code can branch on OS without needing direct access
+  // to the `process` global, which is unavailable when contextIsolation is
+  // enabled and nodeIntegration is disabled.
+  platform: process.platform,
+  arch: process.arch,
+  HOME: process.env.HOME || '',
+  USERPROFILE: process.env.USERPROFILE || '',
 });
 
 exposeInMainWorld('nexusElectron', {

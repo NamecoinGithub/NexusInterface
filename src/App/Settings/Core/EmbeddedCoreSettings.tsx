@@ -8,6 +8,7 @@ import Button from 'components/Button';
 import Switch from 'components/Switch';
 import { TextField } from 'components/TextField';
 import { useFieldValue } from 'lib/form';
+import nexusEnv from 'lib/nexusEnv';
 import { updateSettings, settingAtoms } from 'lib/settings';
 import { confirm, openErrorDialog } from 'lib/dialog';
 import { restartCore, stopCore, startCore } from 'lib/core';
@@ -102,7 +103,7 @@ function CoreBinaryPathField() {
       title: __('Select Nexus Core binary'),
       properties: ['openFile'],
       filters:
-        process.platform === 'win32'
+        nexusEnv.platform === 'win32'
           ? [{ name: 'Windows executable', extensions: ['exe'] }]
           : undefined,
     });

@@ -11,6 +11,7 @@ import {
   updateTheme,
   themeAtom,
 } from 'lib/theme';
+import nexusEnv from 'lib/nexusEnv';
 
 __ = __context('Settings.Style');
 
@@ -27,7 +28,7 @@ async function handleFilePick() {
   });
   let path = files?.[0];
   if (path) {
-    if (process.platform === 'win32') {
+    if (nexusEnv.platform === 'win32') {
       path = path.replace(/\\/g, '/');
     }
     updateTheme({ wallpaper: path });

@@ -28,6 +28,7 @@ import {
 } from 'lib/coreInfo';
 // import { confirm } from 'lib/dialog';
 import { walletDataDir } from 'consts/paths';
+import nexusEnv, { isDevelopment } from 'lib/nexusEnv';
 import { checkForUpdates, quitAndInstall, updaterStateAtom } from 'lib/updater';
 import AboutModal from 'components/AboutModal';
 
@@ -340,9 +341,9 @@ function buildDarwinTemplate() {
     label: __('View'),
     submenu: [menuItems.reloadUI, menuItems.toggleFullScreen],
   };
-  if (process.env.NODE_ENV === 'development' || devMode) {
+  if (isDevelopment || devMode) {
     subMenuWindow.submenu.push(menuItems.toggleDevTools);
-    if (process.env.NODE_ENV === 'development') {
+    if (isDevelopment) {
       subMenuWindow.submenu.push(menuItems.toggleJotaiDevTools);
       subMenuWindow.submenu.push(menuItems.toggleReactQueryDevTools);
     }
@@ -417,9 +418,9 @@ function buildDefaultTemplate() {
     label: __('View'),
     submenu: [menuItems.reloadUI, menuItems.toggleFullScreen],
   };
-  if (process.env.NODE_ENV === 'development' || devMode) {
+  if (isDevelopment || devMode) {
     subMenuView.submenu.push(menuItems.separator, menuItems.toggleDevTools);
-    if (process.env.NODE_ENV === 'development') {
+    if (isDevelopment) {
       subMenuView.submenu.push(menuItems.toggleJotaiDevTools);
       subMenuView.submenu.push(menuItems.toggleReactQueryDevTools);
     }
@@ -452,7 +453,7 @@ function buildDefaultTemplate() {
  */
 function buildMenu() {
   const template =
-    process.platform === 'darwin'
+    nexusEnv.platform === 'darwin'
       ? buildDarwinTemplate()
       : buildDefaultTemplate();
   ipcRenderer.invoke('set-app-menu', template);
