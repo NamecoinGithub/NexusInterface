@@ -125,9 +125,28 @@ function send([{ sendFrom, recipients, advancedOptions }]: any[]) {
   goToSend({ sendFrom, recipients, advancedOptions });
 }
 
+// Module bridges may request any registered Core endpoint. Runtime enforcement
+// lives in the main-process registry; this helper only narrows the TypeScript
+// surface so we do not reintroduce a public `endpoint: string` hatch on callAPI.
+async function callRegisteredAPI(
+  endpoint: unknown,
+  params?: Record<string, unknown>
+) {
+  if (typeof endpoint !== 'string') {
+    throw new TypeError('Module API endpoint must be a string');
+  }
+  return (callAPI as (
+    endpoint: string,
+    params?: Record<string, unknown>
+  ) => Promise<unknown>)(endpoint, params);
+}
+
 async function apiCall([endpoint, params, callId]: any[], webview: WebviewTag) {
   try {
-    const response = await callAPI(endpoint, params);
+    const response = await callRegisteredAPI(
+      endpoint,
+      params && typeof params === 'object' ? params : undefined
+    );
     if (webview) {
       webview.send(
         `api-return${callId ? `:${callId}` : ''}`,
@@ -177,7 +196,10 @@ async function secureApiCall(
     const response =
       pin === undefined
         ? undefined
-        : await callAPI(endpoint, { ...params, pin });
+        : await callRegisteredAPI(endpoint, {
+            ...(params && typeof params === 'object' ? params : {}),
+            pin,
+          });
     if (webview) {
       webview.send(
         `secure-api-return${callId ? `:${callId}` : ''}`,

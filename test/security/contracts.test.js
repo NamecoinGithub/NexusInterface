@@ -78,6 +78,9 @@ test('IPC request validators reject malformed and unexpected requests', () => {
     { endpoint: 'system/stop', params: [] },
     { endpoint: 'evil/get/info' },
     { endpoint: 'shell/exec' },
+    // Namespace alone is no longer enough for structured calls.
+    { endpoint: 'system/eval/code' },
+    { endpoint: 'finance/raw/execute' },
   ]) {
     assert.throws(() => validateCoreRpcRequest(request), TypeError);
   }
@@ -95,7 +98,7 @@ test('IPC request validators reject malformed and unexpected requests', () => {
   assert.throws(() => validateNoArguments({}), TypeError);
 });
 
-test('Core RPC URL validation enforces relative paths and namespaces', () => {
+test('Core RPC URL validation enforces relative paths and console namespaces', () => {
   assert.equal(validateCoreRpcUrl('system/get/info'), 'system/get/info');
   assert.equal(validateCoreRpcUrl('/finance/list/any'), 'finance/list/any');
   assert.equal(
