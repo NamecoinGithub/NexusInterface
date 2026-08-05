@@ -91,6 +91,8 @@ const CHANNELS = Object.freeze({
     openVirtualKeyboard: 'app:open-virtual-keyboard',
     openExternal: 'app:open-external',
     openManagedPath: 'app:open-managed-path',
+    writeClipboard: 'app:write-clipboard',
+    trackEvent: 'app:track-event',
   }),
 });
 
@@ -126,6 +128,27 @@ const ALLOWED_EXTERNAL_HOSTS = new Set([
   'raw.githubusercontent.com',
   't.me',
 ]);
+
+// First path segment of Core API endpoints the renderer/modules may request.
+// Unknown namespaces are rejected even when the path shape is otherwise valid.
+const ALLOWED_CORE_RPC_NAMESPACES = new Set([
+  'assets',
+  'finance',
+  'ledger',
+  'market',
+  'names',
+  'network',
+  'objects',
+  'profiles',
+  'register',
+  'sessions',
+  'supply',
+  'system',
+  'tokens',
+  'users',
+]);
+
+const MAX_CLIPBOARD_TEXT_LENGTH = 1000000;
 
 const ALLOWED_THEME_FIELDS = new Set([
   'wallpaper',
@@ -364,21 +387,132 @@ function validateThemeUpdate(value) {
   return validated;
 }
 
-function validateCoreRpcRequest(value) {
-  const request = assertRecord(value, 'Core RPC request');
-  const endpoint = assertString(request.endpoint, 'Core RPC endpoint', {
+function assertAllowedCoreRpcEndpoint(endpoint, name = 'Core RPC endpoint') {
+  const value = assertString(endpoint, name, {
     min: 3,
     max: 96,
   });
-  if (!/^[a-z]+(?:\/[a-z]+){1,3}$/.test(endpoint)) {
-    fail('Core RPC endpoint is invalid');
+  if (!/^[a-z]+(?:\/[a-z0-9_-]+){1,4}$/.test(value)) {
+    fail(`${name} is invalid`);
   }
+  const namespace = value.split('/')[0];
+  if (!ALLOWED_CORE_RPC_NAMESPACES.has(namespace)) {
+    fail(`${name} namespace is not allowed`);
+  }
+  return value;
+}
+
+function validateCoreRpcRequest(value) {
+  const request = assertRecord(value, 'Core RPC request');
+  const endpoint = assertAllowedCoreRpcEndpoint(request.endpoint);
   const params =
     request.params === undefined ? undefined : assertRecord(request.params, 'Core RPC params');
   if (params && JSON.stringify(params).length > 64 * 1024) {
     fail('Core RPC parameters are too large');
   }
   return { endpoint, params };
+}
+
+function validateCoreRpcUrl(value) {
+  const raw = assertString(value, 'Core RPC URL', { min: 1, max: 2048 });
+  const normalizedPath = raw.replace(/^\/+/, '');
+  if (!normalizedPath) {
+    fail('Core RPC URL is invalid');
+  }
+  if (
+    normalizedPath.includes('://') ||
+    normalizedPath.includes('\\') ||
+    normalizedPath.includes('#')
+  ) {
+    fail('Core RPC URL must be a relative API path');
+  }
+
+  const [pathOnly, ...queryParts] = normalizedPath.split('?');
+  if (queryParts.length > 1) {
+    fail('Core RPC URL is invalid');
+  }
+  if (!pathOnly) {
+    fail('Core RPC URL is invalid');
+  }
+  if (queryParts[0] !== undefined) {
+    // Allow console-style query strings, but reject nested URLs or traversal.
+    if (
+      queryParts[0].includes('://') ||
+      queryParts[0].includes('\\') ||
+      queryParts[0].includes('/../') ||
+      queryParts[0].includes('%2e%2e')
+    ) {
+      fail('Core RPC URL query is invalid');
+    }
+  }
+
+  const segments = pathOnly.split('/').filter(Boolean);
+  if (!segments.length || segments.length > 8) {
+    fail('Core RPC URL is invalid');
+  }
+  for (const segment of segments) {
+    let decoded;
+    try {
+      decoded = decodeURIComponent(segment);
+    } catch {
+      fail('Core RPC URL is invalid');
+    }
+    if (
+      !decoded ||
+      decoded === '.' ||
+      decoded === '..' ||
+      decoded.includes('/') ||
+      decoded.includes('\\') ||
+      decoded.includes('\0')
+    ) {
+      fail('Core RPC URL must be a relative API path');
+    }
+  }
+
+  // Console callers may use richer path/query shapes than structured call(),
+  // but the first segment must still be an approved Core API namespace.
+  if (!ALLOWED_CORE_RPC_NAMESPACES.has(segments[0].toLowerCase())) {
+    fail('Core RPC URL namespace is not allowed');
+  }
+  return normalizedPath;
+}
+
+function validateClipboardText(value) {
+  return assertString(value, 'Clipboard text', {
+    min: 0,
+    max: MAX_CLIPBOARD_TEXT_LENGTH,
+  });
+}
+
+function validateTrackEventRequest(value) {
+  const request = assertRecord(value, 'Analytics event');
+  const eventName = assertString(request.eventName, 'Analytics event name', {
+    min: 1,
+    max: 128,
+  });
+  if (!/^[A-Za-z][A-Za-z0-9_.-]*$/.test(eventName)) {
+    fail('Analytics event name is invalid');
+  }
+  let props;
+  if (request.props !== undefined) {
+    const properties = assertRecord(request.props, 'Analytics properties');
+    const entries = Object.entries(properties);
+    if (entries.length > 16) {
+      fail('Analytics properties contain too many fields');
+    }
+    props = {};
+    for (const [key, fieldValue] of entries) {
+      assertString(key, 'Analytics property name', { min: 1, max: 64 });
+      if (
+        !['string', 'number', 'boolean'].includes(typeof fieldValue) ||
+        (typeof fieldValue === 'string' && fieldValue.length > 256)
+      ) {
+        fail('Analytics property value is invalid');
+      }
+      props[key] = fieldValue;
+    }
+  }
+  return { eventName, props };
 }
 
 function validateCoreConsoleCommand(value) {
@@ -441,9 +575,12 @@ function error(code, message) {
 }
 
 module.exports = {
+  ALLOWED_CORE_RPC_NAMESPACES,
   ALLOWED_EXTERNAL_HOSTS,
   CHANNELS,
   EVENTS,
+  MAX_CLIPBOARD_TEXT_LENGTH,
+  assertAllowedCoreRpcEndpoint,
   assertBoolean,
   assertExternalUrl,
   assertRecord,
@@ -452,8 +589,10 @@ module.exports = {
   assertString,
   error,
   result,
+  validateClipboardText,
   validateCoreConsoleCommand,
   validateCoreRpcRequest,
+  validateCoreRpcUrl,
   validateMenuTemplate,
   validateModuleDownloadRequest,
   validateModuleFiles,
@@ -461,4 +600,5 @@ module.exports = {
   validateNoArguments,
   validateSettingsUpdate,
   validateThemeUpdate,
+  validateTrackEventRequest,
 };

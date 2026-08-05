@@ -168,7 +168,7 @@ interface NexusElectronBridge {
     onMenuClick(id: string, listener: (...args: unknown[]) => void): () => void;
   };
   clipboard: {
-    writeText(text: string): void;
+    writeText(text: string): Promise<{ written: boolean }>;
   };
   updaterEvents: {
     onAvailable(listener: (updateInfo: unknown) => void): () => void;

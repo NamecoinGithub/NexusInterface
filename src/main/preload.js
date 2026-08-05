@@ -1,5 +1,4 @@
-import { clipboard, contextBridge, ipcRenderer } from 'electron';
-import { trackEvent } from '@aptabase/electron/renderer';
+import { contextBridge, ipcRenderer } from 'electron';
 
 import { CHANNELS, EVENTS } from './ipc/contracts';
 
@@ -55,29 +54,6 @@ function validateMenuId(id) {
     throw new TypeError('Menu id contains unsupported characters');
   }
   return menuId;
-}
-
-function sanitizeAnalyticsProperties(properties) {
-  if (properties === undefined) return undefined;
-  if (!properties || typeof properties !== 'object' || Array.isArray(properties)) {
-    throw new TypeError('Analytics properties must be an object');
-  }
-  const entries = Object.entries(properties);
-  if (entries.length > 16) {
-    throw new TypeError('Analytics properties contain too many fields');
-  }
-  const sanitized = {};
-  for (const [key, value] of entries) {
-    assertString(key, 'Analytics property name', { min: 1, max: 64 });
-    if (
-      !['string', 'number', 'boolean'].includes(typeof value) ||
-      (typeof value === 'string' && value.length > 256)
-    ) {
-      throw new TypeError('Analytics property value is invalid');
-    }
-    sanitized[key] = value;
-  }
-  return sanitized;
 }
 
 function exposeInMainWorld(name, api) {
@@ -223,7 +199,7 @@ const nexusElectron = {
   },
   clipboard: {
     writeText(text) {
-      clipboard.writeText(assertString(text, 'Clipboard text', { max: 1000000 }));
+      return invoke(CHANNELS.app.writeClipboard, text);
     },
   },
   updaterEvents: {
@@ -249,10 +225,7 @@ const nexusElectron = {
   },
   aptabase: {
     trackEvent(eventName, props) {
-      return trackEvent(
-        assertString(eventName, 'Aptabase event name', { min: 1, max: 128 }),
-        sanitizeAnalyticsProperties(props)
-      );
+      return invoke(CHANNELS.app.trackEvent, { eventName, props });
     },
   },
 };
