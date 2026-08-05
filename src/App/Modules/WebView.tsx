@@ -47,7 +47,7 @@ export default function WebView({ module, ...rest }: WebViewProps) {
     return () => {
       unsetActiveAppModule();
     };
-  }, [module.info.name]);
+  }, [module.info.name, entryUrl]);
 
   if (!entryUrl) return null;
 
