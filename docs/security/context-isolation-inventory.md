@@ -52,7 +52,7 @@ the compiled renderer must also pass the renderer build boundary below.
 | Analytics events | `@aptabase/electron/main` | `aptabase.trackEvent` | `app:track-event` | Event name + property bounds | Complete |
 | Native dialogs / shell open | `src/main/main.js` | `dialogs.*` / `app.openExternal` | `dialogs:*` / `app:*` | Named dialogs; HTTPS host allowlist | Complete |
 
-### Explicitly included corrected files
+### Explicitly migrated renderer files
 
 | File | Former risk | Migration |
 | --- | --- | --- |

@@ -112,6 +112,7 @@ test('Core RPC URL validation enforces relative paths and namespaces', () => {
     '../system/get/info',
     'system/../../etc/passwd',
     'evil/get/info',
+    'System/get/info',
     'system/get/info#frag',
     'system/get/info?redirect=https://evil.example',
     '',

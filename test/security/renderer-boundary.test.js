@@ -44,7 +44,7 @@ function walk(dir, files = []) {
 }
 
 function isAllowedNodeFile(relativePath) {
-  const normalized = relativePath.split(path.sep).join(path.sep);
+  const normalized = path.normalize(relativePath);
   return ALLOWED_NODE_FILE_PREFIXES.some((prefix) => {
     if (prefix.endsWith(path.sep)) {
       return normalized.startsWith(prefix);

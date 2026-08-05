@@ -470,8 +470,9 @@ function validateCoreRpcUrl(value) {
   }
 
   // Console callers may use richer path/query shapes than structured call(),
-  // but the first segment must still be an approved Core API namespace.
-  if (!ALLOWED_CORE_RPC_NAMESPACES.has(segments[0].toLowerCase())) {
+  // but the first segment must still be an approved lowercase Core API
+  // namespace (same policy as validateCoreRpcRequest).
+  if (!ALLOWED_CORE_RPC_NAMESPACES.has(segments[0])) {
     fail('Core RPC URL namespace is not allowed');
   }
   return normalizedPath;

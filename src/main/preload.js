@@ -1,6 +1,11 @@
 import { contextBridge, ipcRenderer } from 'electron';
 
-import { CHANNELS, EVENTS } from './ipc/contracts';
+import {
+  CHANNELS,
+  EVENTS,
+  validateClipboardText,
+  validateTrackEventRequest,
+} from './ipc/contracts';
 
 function unwrap(result) {
   if (!result || typeof result !== 'object' || typeof result.ok !== 'boolean') {
@@ -199,7 +204,7 @@ const nexusElectron = {
   },
   clipboard: {
     writeText(text) {
-      return invoke(CHANNELS.app.writeClipboard, text);
+      return invoke(CHANNELS.app.writeClipboard, validateClipboardText(text));
     },
   },
   updaterEvents: {
@@ -225,7 +230,10 @@ const nexusElectron = {
   },
   aptabase: {
     trackEvent(eventName, props) {
-      return invoke(CHANNELS.app.trackEvent, { eventName, props });
+      return invoke(
+        CHANNELS.app.trackEvent,
+        validateTrackEventRequest({ eventName, props })
+      );
     },
   },
 };
