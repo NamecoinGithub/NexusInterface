@@ -1,8 +1,8 @@
 import checkDiskSpace from 'check-disk-space';
+import crypto from 'crypto';
 import fs from 'fs';
 import https from 'https';
 import path from 'path';
-import unzip from 'unzip-stream';
 
 import {
   coreBinaryExists,
@@ -11,11 +11,23 @@ import {
   startConfiguredCore,
 } from './core';
 import { callCoreRpc } from './coreRpc';
+import { extractSafeZip } from './ipc/safeZip';
 import { loadSettingsFromFile } from './settings';
 
 const BOOTSTRAP_URL = 'https://bootstrap.nexus.io/tritium.zip';
-const MIN_FREE_SPACE = 15 * 1000 * 1000 * 1000;
 const MAX_ARCHIVE_SIZE = 50 * 1000 * 1000 * 1000;
+const MAX_BOOTSTRAP_ARCHIVE_ENTRIES = 100000;
+const MAX_BOOTSTRAP_ARCHIVE_ENTRY_BYTES = 50 * 1000 * 1000 * 1000;
+const MAX_BOOTSTRAP_ARCHIVE_EXPANDED_BYTES = 50 * 1000 * 1000 * 1000;
+const MAX_BOOTSTRAP_ARCHIVE_COMPRESSION_RATIO = 100;
+const MIN_FREE_SPACE =
+  MAX_ARCHIVE_SIZE + MAX_BOOTSTRAP_ARCHIVE_EXPANDED_BYTES;
+const BOOTSTRAP_ARCHIVE_LIMITS = Object.freeze({
+  maxCompressionRatio: MAX_BOOTSTRAP_ARCHIVE_COMPRESSION_RATIO,
+  maxEntries: MAX_BOOTSTRAP_ARCHIVE_ENTRIES,
+  maxEntryBytes: MAX_BOOTSTRAP_ARCHIVE_ENTRY_BYTES,
+  maxExpandedBytes: MAX_BOOTSTRAP_ARCHIVE_EXPANDED_BYTES,
+});
 
 let activeBootstrap;
 
@@ -62,8 +74,18 @@ async function stopCore() {
   if (await isCoreRunning()) await killCoreProcess();
 }
 
-function downloadAndExtract(extractDir, onProgress) {
+function downloadArchive(archivePath, onProgress) {
   return new Promise((resolve, reject) => {
+    let settled = false;
+    const settle = (error) => {
+      if (settled) return;
+      settled = true;
+      if (error) {
+        reject(error);
+      } else {
+        resolve();
+      }
+    };
     const request = https.get(BOOTSTRAP_URL, (response) => {
       if (
         !response.statusCode ||
@@ -71,36 +93,59 @@ function downloadAndExtract(extractDir, onProgress) {
         response.statusCode >= 300
       ) {
         response.resume();
-        reject(new Error(`Bootstrap server returned ${response.statusCode}`));
+        settle(new Error(`Bootstrap server returned ${response.statusCode}`));
         return;
       }
       const totalSize = Number(response.headers['content-length']);
       if (Number.isFinite(totalSize) && totalSize > MAX_ARCHIVE_SIZE) {
-        response.destroy();
-        reject(new Error('Bootstrap archive is too large'));
+        response.resume();
+        settle(new Error('Bootstrap archive is too large'));
         return;
       }
 
+      const archive = fs.createWriteStream(archivePath, {
+        flags: 'wx',
+        mode: 0o600,
+      });
       let downloaded = 0;
-      const extractor = unzip.Extract({ path: extractDir });
+      const fail = (error) => {
+        settle(error);
+        response.destroy();
+        archive.destroy();
+      };
+
       response.on('data', (chunk) => {
         downloaded += chunk.length;
         if (downloaded > MAX_ARCHIVE_SIZE) {
-          request.destroy(new Error('Bootstrap archive is too large'));
+          fail(new Error('Bootstrap archive is too large'));
           return;
         }
-        onProgress({ downloaded, totalSize: Number.isFinite(totalSize) ? totalSize : undefined });
+        onProgress({
+          downloaded,
+          totalSize: Number.isFinite(totalSize) ? totalSize : undefined,
+        });
       });
-      response.once('error', reject);
-      extractor.once('error', reject);
-      extractor.once('close', () => resolve());
-      response.pipe(extractor);
+      response.once('error', fail);
+      archive.once('error', fail);
+      archive.once('finish', () => {
+        settle();
+      });
+      response.pipe(archive);
     });
     request.setTimeout(180000, () =>
       request.destroy(new Error('Bootstrap request timed out'))
     );
-    request.once('error', reject);
+    request.once('error', settle);
     activeBootstrap.request = request;
+  });
+}
+
+async function extractBootstrapArchive(archivePath, extractDir) {
+  await extractSafeZip({
+    archivePath,
+    destination: extractDir,
+    label: 'Bootstrap archive',
+    limits: BOOTSTRAP_ARCHIVE_LIMITS,
   });
 }
 
@@ -118,6 +163,10 @@ export async function startBootstrap(sendStatus) {
     throw new Error('Bootstrap is unavailable for a manually configured Core');
   }
   const extractDir = path.join(settings.coreDataDir, 'recent');
+  const archivePath = path.join(
+    settings.coreDataDir,
+    `.bootstrap-${crypto.randomUUID()}.zip`
+  );
   activeBootstrap = { aborted: false, request: undefined };
 
   let shouldRestartCore = false;
@@ -125,20 +174,27 @@ export async function startBootstrap(sendStatus) {
     await fs.promises.mkdir(settings.coreDataDir, { recursive: true });
     const diskSpace = await checkDiskSpace(settings.coreDataDir);
     if (diskSpace.free < MIN_FREE_SPACE) {
-      throw new Error('At least 15GB of free space is required for bootstrap');
+      throw new Error(
+        `At least ${MIN_FREE_SPACE / 1000 / 1000 / 1000}GB of free space is required for bootstrap`
+      );
     }
 
     emitStatus(sendStatus, 'preparing');
     await fs.promises.rm(extractDir, { recursive: true, force: true });
+    await fs.promises.rm(archivePath, { force: true });
     emitStatus(sendStatus, 'stopping_core');
     await stopCore();
     shouldRestartCore = true;
     if (activeBootstrap.aborted) return { aborted: true };
 
     emitStatus(sendStatus, 'downloading', { downloaded: 0 });
-    await downloadAndExtract(extractDir, (details) =>
+    await downloadArchive(archivePath, (details) =>
       emitStatus(sendStatus, 'downloading', details)
     );
+    if (activeBootstrap.aborted) return { aborted: true };
+
+    emitStatus(sendStatus, 'extracting');
+    await extractBootstrapArchive(archivePath, extractDir);
     if (activeBootstrap.aborted) return { aborted: true };
 
     emitStatus(sendStatus, 'moving_db');
@@ -151,12 +207,15 @@ export async function startBootstrap(sendStatus) {
       shouldRestartCore = false;
     }
     emitStatus(sendStatus, 'cleaning_up');
-    await fs.promises.rm(extractDir, { recursive: true, force: true });
     return { aborted: false };
   } catch (error) {
     if (activeBootstrap?.aborted) return { aborted: true };
     throw error;
   } finally {
+    await Promise.all([
+      fs.promises.rm(extractDir, { recursive: true, force: true }),
+      fs.promises.rm(archivePath, { force: true }),
+    ]).catch(() => {});
     if (shouldRestartCore && coreBinaryExists()) {
       try {
         await startConfiguredCore();
@@ -173,4 +232,8 @@ export const bootstrapConstants = Object.freeze({
   BOOTSTRAP_URL,
   MIN_FREE_SPACE,
   MAX_ARCHIVE_SIZE,
+  MAX_BOOTSTRAP_ARCHIVE_ENTRIES,
+  MAX_BOOTSTRAP_ARCHIVE_ENTRY_BYTES,
+  MAX_BOOTSTRAP_ARCHIVE_EXPANDED_BYTES,
+  MAX_BOOTSTRAP_ARCHIVE_COMPRESSION_RATIO,
 });

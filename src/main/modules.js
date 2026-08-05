@@ -15,7 +15,6 @@ import {
 import { shell } from 'electron';
 
 import axios from 'axios';
-import extractZip from 'extract-zip';
 import { isText } from 'istextorbinary';
 import Multistream from 'multistream';
 import semver from 'semver';
@@ -30,6 +29,7 @@ import {
   assertSafeModuleName,
   assertString,
 } from './ipc/contracts';
+import { extractSafeZip } from './ipc/safeZip';
 import { modulesDir, moduleDownloadDir, temporaryModuleDir } from './paths';
 import { loadSettingsFromFile } from './settings';
 import { resolveModuleRoot } from './moduleFiles';
@@ -61,9 +61,12 @@ const MAX_MODULE_ARCHIVE_ENTRIES = 10000;
 const MAX_MODULE_ARCHIVE_ENTRY_BYTES = 100 * 1024 * 1024;
 const MAX_MODULE_ARCHIVE_EXPANDED_BYTES = 250 * 1024 * 1024;
 const MAX_MODULE_ARCHIVE_COMPRESSION_RATIO = 100;
-const ZIP_DIRECTORY_MODE = 0o040000;
-const ZIP_REGULAR_FILE_MODE = 0o100000;
-const ZIP_FILE_TYPE_MASK = 0o170000;
+const MODULE_ARCHIVE_LIMITS = Object.freeze({
+  maxCompressionRatio: MAX_MODULE_ARCHIVE_COMPRESSION_RATIO,
+  maxEntries: MAX_MODULE_ARCHIVE_ENTRIES,
+  maxEntryBytes: MAX_MODULE_ARCHIVE_ENTRY_BYTES,
+  maxExpandedBytes: MAX_MODULE_ARCHIVE_EXPANDED_BYTES,
+});
 
 /**
  * =============================================================================
@@ -565,87 +568,12 @@ async function ensureDirExists(dirPath) {
   await fsp.mkdir(dirPath, { recursive: true });
 }
 
-function rejectArchiveEntry(zipfile, message) {
-  try {
-    zipfile.close();
-  } catch {
-    // The archive may already be closed after a previous validation failure.
-  }
-  throw new Error(message);
-}
-
-function validateArchiveEntry(entry, zipfile, state) {
-  const fileName = entry.fileName;
-  const isDirectory = typeof fileName === 'string' && fileName.endsWith('/');
-  const entryPath = isDirectory ? fileName.slice(0, -1) : fileName;
-  if (
-    typeof entryPath !== 'string' ||
-    !entryPath ||
-    entryPath.includes('\0') ||
-    entryPath.includes('\\') ||
-    entryPath.startsWith('/') ||
-    /^[A-Za-z]:/.test(entryPath) ||
-    entryPath.split('/').some(
-      (segment) => !segment || segment === '.' || segment === '..'
-    )
-  ) {
-    rejectArchiveEntry(zipfile, 'Archive contains an unsafe entry path');
-  }
-
-  const uncompressedSize = entry.uncompressedSize;
-  const compressedSize = entry.compressedSize;
-  if (
-    !Number.isSafeInteger(uncompressedSize) ||
-    uncompressedSize < 0 ||
-    !Number.isSafeInteger(compressedSize) ||
-    compressedSize < 0
-  ) {
-    rejectArchiveEntry(zipfile, 'Archive contains an entry with an invalid size');
-  }
-  if (++state.entryCount > MAX_MODULE_ARCHIVE_ENTRIES) {
-    rejectArchiveEntry(zipfile, 'Archive contains too many entries');
-  }
-  if (state.entryPaths.has(entryPath)) {
-    rejectArchiveEntry(zipfile, 'Archive contains duplicate entry paths');
-  }
-  state.entryPaths.add(entryPath);
-  if (uncompressedSize > MAX_MODULE_ARCHIVE_ENTRY_BYTES) {
-    rejectArchiveEntry(zipfile, 'Archive entry exceeds the size limit');
-  }
-  state.totalUncompressedSize += uncompressedSize;
-  if (state.totalUncompressedSize > MAX_MODULE_ARCHIVE_EXPANDED_BYTES) {
-    rejectArchiveEntry(zipfile, 'Archive exceeds the expanded size limit');
-  }
-  if (
-    (uncompressedSize > 0 && compressedSize === 0) ||
-    (compressedSize > 0 &&
-      uncompressedSize >
-        compressedSize * MAX_MODULE_ARCHIVE_COMPRESSION_RATIO)
-  ) {
-    rejectArchiveEntry(zipfile, 'Archive entry exceeds the compression ratio limit');
-  }
-
-  const fileType = (entry.externalFileAttributes >>> 16) & ZIP_FILE_TYPE_MASK;
-  if (
-    fileType &&
-    fileType !== ZIP_DIRECTORY_MODE &&
-    fileType !== ZIP_REGULAR_FILE_MODE
-  ) {
-    rejectArchiveEntry(zipfile, 'Archive contains a link or unsupported file type');
-  }
-}
-
 async function extractModuleArchive(archivePath, extractDir) {
-  const state = {
-    entryCount: 0,
-    entryPaths: new Set(),
-    totalUncompressedSize: 0,
-  };
-  await extractZip(archivePath, {
-    dir: extractDir,
-    onEntry(entry, zipfile) {
-      validateArchiveEntry(entry, zipfile, state);
-    },
+  await extractSafeZip({
+    archivePath,
+    destination: extractDir,
+    label: 'Module archive',
+    limits: MODULE_ARCHIVE_LIMITS,
   });
 }
 
@@ -737,8 +665,8 @@ async function resolveInstallSource(sourcePath) {
     if (stat.size > MAX_MODULE_ARCHIVE_BYTES) {
       throw new Error('Archive exceeds the compressed size limit');
     }
+    await ensureDirExists(temporaryModuleDir);
     const extractDir = join(temporaryModuleDir, crypto.randomUUID());
-    await ensureDirExists(extractDir);
     try {
       await extractModuleArchive(source, extractDir);
 

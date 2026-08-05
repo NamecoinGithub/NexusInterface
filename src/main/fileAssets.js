@@ -7,6 +7,12 @@ import { parse } from 'csv-parse/sync';
 import { Reader } from 'maxmind';
 
 import { assertExternalUrl, assertSafeModuleName, assertString } from './ipc/contracts';
+import {
+  EXTERNAL_ICON_REQUEST_OPTIONS,
+  getPublicGeoIpRequestOptions,
+  parsePublicGeoIpResponse,
+  PUBLIC_GEO_IP_URL,
+} from './ipc/networkPolicy';
 import { assetsDir } from './paths';
 import { resolveModuleRoot } from './moduleFiles';
 
@@ -62,13 +68,10 @@ export async function readModuleIcon(moduleName, relativePath) {
 
 export async function fetchExternalIcon(url) {
   const validatedUrl = assertExternalUrl(url, 'External icon URL');
-  const response = await axios.get(validatedUrl, {
-    maxContentLength: 1024 * 1024,
-    maxRedirects: 0,
-    responseType: 'text',
-    timeout: 10000,
-    validateStatus: (status) => status >= 200 && status < 300,
-  });
+  const response = await axios.get(
+    validatedUrl,
+    EXTERNAL_ICON_REQUEST_OPTIONS
+  );
   return String(response.data);
 }
 
@@ -114,21 +117,14 @@ export async function lookupGeoIp(addresses) {
 }
 
 export async function lookupPublicGeoIp() {
-  const response = await fetch('http://ip-api.com/json/?fields=450');
+  const response = await fetch(
+    PUBLIC_GEO_IP_URL,
+    getPublicGeoIpRequestOptions()
+  );
   if (!response.ok) {
     throw new Error(`Public Geo IP lookup failed: ${response.status}`);
   }
-  const result = await response.json();
-  const latitude = Number(result?.lat);
-  const longitude = Number(result?.lon);
-  if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) {
-    throw new Error('Public Geo IP response is invalid');
-  }
-  return {
-    latitude,
-    longitude,
-    timeZone: typeof result.timezone === 'string' ? result.timezone : '',
-  };
+  return parsePublicGeoIpResponse(await response.json());
 }
 
 export function loadTranslationSync(locale) {

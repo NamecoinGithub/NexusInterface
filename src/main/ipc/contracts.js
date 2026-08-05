@@ -22,7 +22,6 @@ const CHANNELS = Object.freeze({
     selectWallpaper: 'theme:select-wallpaper',
     importFromDialog: 'theme:import-from-dialog',
     exportToDialog: 'theme:export-to-dialog',
-    wallpaperExists: 'theme:wallpaper-exists',
   }),
   dialogs: Object.freeze({
     selectBackupDirectory: 'dialogs:select-backup-directory',
@@ -35,7 +34,6 @@ const CHANNELS = Object.freeze({
     getStatus: 'core:get-status',
     getConfiguration: 'core:get-configuration',
     start: 'core:start',
-    stop: 'core:stop',
     kill: 'core:kill',
     resyncLiteDatabase: 'core:resync-lite-database',
     executeConsoleCommand: 'core:execute-console-command',
@@ -122,7 +120,7 @@ const ALLOWED_EXTERNAL_HOSTS = new Set([
   'bootstrap.nexus.io',
   'crypto.nexus.io',
   'github.com',
-  'ip-api.com',
+  'ipwho.is',
   'nexus-featured-modules.netlify.app',
   'nexus.io',
   'raw.githubusercontent.com',
@@ -269,7 +267,7 @@ function assertExternalUrl(value, name = 'URL', { mailto = false } = {}) {
   }
 
   if (mailto && parsed.protocol === 'mailto:') return parsed.toString();
-  if (!['https:', 'http:'].includes(parsed.protocol)) {
+  if (parsed.protocol !== 'https:') {
     fail(`${name} protocol is not allowed`);
   }
   if (!ALLOWED_EXTERNAL_HOSTS.has(parsed.hostname.toLowerCase())) {
