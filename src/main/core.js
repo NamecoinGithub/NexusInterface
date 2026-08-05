@@ -360,116 +360,117 @@ export function startCore(params) {
       throw 'Core failed to start';
     }
 
-    /**
-     * Starts the bundled core using only settings persisted by the main process.
-     * Renderer callers cannot supply executable paths or process arguments.
-     */
-    export async function startConfiguredCore() {
-      const settings = loadSettingsFromFile();
-      if (settings.manualDaemon) {
-        return { started: false, reason: 'manual-daemon' };
-      }
-
-      const status = getCoreBinaryStatus();
-      if (!status.exists || !status.executable) {
-        throw new Error(status.error || 'Nexus Core binary not found');
-      }
-      if (await isCoreRunning()) {
-        return { started: false, reason: 'already-running' };
-      }
-
-      clearCoreConfigCache();
-      const configuration = await getCoreConfiguration();
-      const lockedTestnet =
-        typeof LOCK_TESTNET === 'undefined' ? '' : String(LOCK_TESTNET);
-      const version = typeof APP_VERSION === 'undefined' ? '' : String(APP_VERSION);
-      const preRelease =
-        version.includes('alpha') || version.includes('beta') || !!lockedTestnet;
-      const params = [
-        '-daemon',
-        '-server',
-        '-fastsync',
-        '-noterminateauth',
-        '-ssl=1',
-        '-apissl=1',
-        '-p2pssl=1',
-        `-datadir=${settings.coreDataDir}`,
-        `-apisslport=${configuration.apiPortSSL}`,
-        `-apiport=${configuration.apiPort}`,
-        `-verbose=${preRelease ? 3 : settings.verboseLevel}`,
-      ];
-
-      if (lockedTestnet) {
-        params.push(
-          '-connect=testnet1.interactions-nexus.io',
-          '-connect=testnet2.interactions-nexus.io',
-          '-connect=testnet3.interactions-nexus.io',
-          '-nodns=1',
-          `-testnet=${lockedTestnet}`
-        );
-      } else if (
-        settings.testnetIteration &&
-        String(settings.testnetIteration) !== '0'
-      ) {
-        params.push(`-testnet=${settings.testnetIteration}`);
-        if (settings.privateTestnet) params.push('-private=1');
-      }
-
-      if (settings.revertBlocks) {
-        params.push(`-revertblocks=${settings.revertBlocks}`);
-        updateSettingsFile({ revertBlocks: 0 });
-      }
-      if (settings.safeMode) params.push('-safemode=1');
-      if (settings.walletClean) {
-        params.push('-walletclean');
-        updateSettingsFile({ walletClean: false });
-      }
-      if (!settings.avatarMode) params.push('-avatar=0');
-      if (settings.enableMining) {
-        params.push('-mining=1');
-        if (settings.ipMineWhitelist) {
-          for (const ip of settings.ipMineWhitelist.split(';')) {
-            if (ip) params.push(`-llpallowip=${ip}`);
-          }
-        }
-      }
-      if (settings.enableStaking) params.push('-stake=1');
-      if (settings.pooledStaking) params.push('-poolstaking=1');
-      if (settings.liteMode) params.push('-client=1');
-      if (settings.multiUser) params.push('-multiusername=1');
-      if (settings.allowAdvancedCoreOptions && settings.advancedCoreParams) {
-        params.push(...splitCommandParts(settings.advancedCoreParams));
-      }
-
-      if (
-        !lockedTestnet &&
-        !settings.testnetIteration &&
-        (!settings.coreAPIPolicy || settings.coreAPIPolicy < 1)
-      ) {
-        updateSettingsFile({ coreAPIPolicy: 1 });
-        await fs.promises.rm(path.join(settings.coreDataDir, '_API'), {
-          recursive: true,
-          force: true,
-        });
-      }
-      return { started: true, pid: startCore(params) };
-    }
-
-    export async function resyncLiteDatabase() {
-      const settings = loadSettingsFromFile();
-      if (settings.manualDaemon || !settings.liteMode) {
-        throw new Error('Lite database resync is only available for embedded lite mode');
-      }
-      await fs.promises.rm(path.join(settings.coreDataDir, 'client'), {
-        recursive: true,
-        force: true,
-      });
-      return { removed: true };
-    }
   } catch (err) {
     console.error(err);
     throw err;
   }
+}
+
+/**
+ * Starts the bundled core using only settings persisted by the main process.
+ * Renderer callers cannot supply executable paths or process arguments.
+ */
+export async function startConfiguredCore() {
+  const settings = loadSettingsFromFile();
+  if (settings.manualDaemon) {
+    return { started: false, reason: 'manual-daemon' };
+  }
+
+  const status = getCoreBinaryStatus();
+  if (!status.exists || !status.executable) {
+    throw new Error(status.error || 'Nexus Core binary not found');
+  }
+  if (await isCoreRunning()) {
+    return { started: false, reason: 'already-running' };
+  }
+
+  clearCoreConfigCache();
+  const configuration = await getCoreConfiguration();
+  const lockedTestnet =
+    typeof LOCK_TESTNET === 'undefined' ? '' : String(LOCK_TESTNET);
+  const version = typeof APP_VERSION === 'undefined' ? '' : String(APP_VERSION);
+  const preRelease =
+    version.includes('alpha') || version.includes('beta') || !!lockedTestnet;
+  const params = [
+    '-daemon',
+    '-server',
+    '-fastsync',
+    '-noterminateauth',
+    '-ssl=1',
+    '-apissl=1',
+    '-p2pssl=1',
+    `-datadir=${settings.coreDataDir}`,
+    `-apisslport=${configuration.apiPortSSL}`,
+    `-apiport=${configuration.apiPort}`,
+    `-verbose=${preRelease ? 3 : settings.verboseLevel}`,
+  ];
+
+  if (lockedTestnet) {
+    params.push(
+      '-connect=testnet1.interactions-nexus.io',
+      '-connect=testnet2.interactions-nexus.io',
+      '-connect=testnet3.interactions-nexus.io',
+      '-nodns=1',
+      `-testnet=${lockedTestnet}`
+    );
+  } else if (
+    settings.testnetIteration &&
+    String(settings.testnetIteration) !== '0'
+  ) {
+    params.push(`-testnet=${settings.testnetIteration}`);
+    if (settings.privateTestnet) params.push('-private=1');
+  }
+
+  if (settings.revertBlocks) {
+    params.push(`-revertblocks=${settings.revertBlocks}`);
+    updateSettingsFile({ revertBlocks: 0 });
+  }
+  if (settings.safeMode) params.push('-safemode=1');
+  if (settings.walletClean) {
+    params.push('-walletclean');
+    updateSettingsFile({ walletClean: false });
+  }
+  if (!settings.avatarMode) params.push('-avatar=0');
+  if (settings.enableMining) {
+    params.push('-mining=1');
+    if (settings.ipMineWhitelist) {
+      for (const ip of settings.ipMineWhitelist.split(';')) {
+        if (ip) params.push(`-llpallowip=${ip}`);
+      }
+    }
+  }
+  if (settings.enableStaking) params.push('-stake=1');
+  if (settings.pooledStaking) params.push('-poolstaking=1');
+  if (settings.liteMode) params.push('-client=1');
+  if (settings.multiUser) params.push('-multiusername=1');
+  if (settings.allowAdvancedCoreOptions && settings.advancedCoreParams) {
+    params.push(...splitCommandParts(settings.advancedCoreParams));
+  }
+
+  if (
+    !lockedTestnet &&
+    !settings.testnetIteration &&
+    (!settings.coreAPIPolicy || settings.coreAPIPolicy < 1)
+  ) {
+    updateSettingsFile({ coreAPIPolicy: 1 });
+    await fs.promises.rm(path.join(settings.coreDataDir, '_API'), {
+      recursive: true,
+      force: true,
+    });
+  }
+  return { started: true, pid: startCore(params) };
+}
+
+export async function resyncLiteDatabase() {
+  const settings = loadSettingsFromFile();
+  if (settings.manualDaemon || !settings.liteMode) {
+    throw new Error('Lite database resync is only available for embedded lite mode');
+  }
+  await fs.promises.rm(path.join(settings.coreDataDir, 'client'), {
+    recursive: true,
+    force: true,
+  });
+  return { removed: true };
 }
 
 /**

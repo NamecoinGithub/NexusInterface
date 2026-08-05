@@ -164,6 +164,8 @@ const nexusElectron = {
       invoke(CHANNELS.modules.writeStorage, { name, data }),
     getFeatured: () => invoke(CHANNELS.modules.getFeatured),
     checkUpdates: () => invoke(CHANNELS.modules.checkUpdates),
+    openFailureLocation: (name) =>
+      invoke(CHANNELS.modules.openFailureLocation, name),
   },
   updater: {
     check: () => invoke(CHANNELS.updater.check),

@@ -49,9 +49,9 @@ export function hardenModuleWebviews(mainWindow) {
         return;
       }
       authorizedEntries.delete(params.src);
-      webPreferences.nodeIntegration = false;
-      webPreferences.contextIsolation = true;
-      webPreferences.sandbox = true;
+      webPreferences.nodeIntegration = !!policy.development;
+      webPreferences.contextIsolation = false;
+      webPreferences.sandbox = false;
       webPreferences.enableRemoteModule = false;
       webPreferences.preload = getModulePreloadPath();
       webPreferences.webSecurity = true;

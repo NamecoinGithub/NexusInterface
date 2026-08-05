@@ -3,8 +3,8 @@
  * - Be picky with importing stuffs into this file, especially for big
  * files and libraries. The bigger the preload scripts get, the slower the modules
  * will load.
- * - `NEXUS` is exposed through Electron's context bridge. Never assign values
- * to `global`; modules must not receive Node or Electron globals.
+ * - Besides `NEXUS`, don't assign any other thing to `global` variable because
+ * it will be passed into modules' execution environment.
  * - Make sure a similar note also presents in other files which are imported here.
  */
 
@@ -17,7 +17,7 @@ import * as ReactDOMClient from 'react-dom/client';
 import cache from '@emotion/cache';
 import * as react from '@emotion/react';
 import styled from '@emotion/styled';
-import { contextBridge, ipcRenderer } from 'electron';
+import { ipcRenderer } from 'electron';
 
 import GlobalStyles from 'components/GlobalStyles';
 import ThemeController from 'components/ThemeController';
@@ -43,7 +43,7 @@ const newId = (() => {
   return () => ++id;
 })();
 
-contextBridge.exposeInMainWorld('NEXUS', {
+global.NEXUS = {
   walletVersion: APP_VERSION,
   libraries: {
     React: { ...React, jsxDevRuntime, jsxRuntime, default: ReactDefault },
@@ -270,7 +270,7 @@ contextBridge.exposeInMainWorld('NEXUS', {
     },
     color,
   },
-});
+};
 
 // Open all external URLs on OS default browser instead of inside the wallet itself
 const { origin } = location;

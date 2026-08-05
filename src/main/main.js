@@ -40,6 +40,7 @@ import {
   validateCoreConsoleCommand,
   validateCoreRpcRequest,
   validateMenuTemplate,
+  validateModuleDownloadRequest,
   validateModuleFiles as validateModuleFilePaths,
   validateModuleStorageRequest,
   validateSettingsUpdate,
@@ -71,6 +72,20 @@ import {
   validateModuleFiles,
 } from './moduleFiles';
 import {
+  abortDownload,
+  addDevelopmentModule,
+  checkForModuleUpdates,
+  downloadAndInstallModule,
+  finalizeInstall,
+  getFeaturedModules,
+  inspectInstallSource,
+  listModules,
+  openFailureLocation,
+  readModuleStorage,
+  removeModule,
+  writeModuleStorage,
+} from './modules';
+import {
   callCoreRpc,
   callCoreRpcByUrl,
   clearCoreConfigCache,
@@ -97,6 +112,8 @@ const allowedOpenDialogProperties = new Set([
   'dontAddToRecent',
 ]);
 const selectedCoreBinaries = new Map();
+const selectedModuleSources = new Map();
+const selectedDevelopmentModuleSources = new Map();
 const allowedAppPathNames = new Set([
   'home',
   'appData',
@@ -198,6 +215,47 @@ function ensureObject(value, fieldName) {
     throw new TypeError(`${fieldName} must be an object`);
   }
   return value;
+}
+
+function ensureNoArguments(request, operationName) {
+  if (request !== undefined) {
+    throw new TypeError(`${operationName} does not accept arguments`);
+  }
+  return undefined;
+}
+
+function rememberSelectedPaths(pathsBySender, event, selectedPaths) {
+  if (!selectedPaths?.length) return;
+  const selectedPathSet = pathsBySender.get(event.sender.id) || new Set();
+  for (const selectedPath of selectedPaths) {
+    selectedPathSet.add(selectedPath);
+  }
+  pathsBySender.set(event.sender.id, selectedPathSet);
+}
+
+function ensureSelectedPath(value, pathsBySender, event, fieldName) {
+  const selectedPath = assertString(value, fieldName, { min: 1, max: 4096 });
+  if (!pathsBySender.get(event.sender.id)?.has(selectedPath)) {
+    throw new TypeError(`${fieldName} must be selected through its dialog`);
+  }
+  return selectedPath;
+}
+
+function validateModuleInstallRequest(request) {
+  const value = assertRecord(request, 'Module install request');
+  const unsupportedField = Object.keys(value).find(
+    (key) => key !== 'token' && key !== 'overwrite'
+  );
+  if (unsupportedField) {
+    throw new TypeError(`Unsupported module install field: ${unsupportedField}`);
+  }
+  return {
+    token: assertString(value.token, 'Install token', { min: 1, max: 128 }),
+    overwrite:
+      value.overwrite === undefined
+        ? false
+        : assertBoolean(value.overwrite, 'overwrite'),
+  };
 }
 
 function sanitizeDialogFilters(filters) {
@@ -520,29 +578,50 @@ registerOperation(
     return result.canceled ? undefined : result.filePaths;
   }
 );
-registerOperation(CHANNELS.dialogs.selectModuleArchive, undefined, async () => {
-  const result = await dialog.showOpenDialog(mainWindow, {
-    title: 'Select module archive file',
-    properties: ['openFile'],
-    filters: [{ name: 'Archive', extensions: ['zip'] }],
-  });
-  return result.canceled ? undefined : result.filePaths;
-});
-registerOperation(CHANNELS.dialogs.selectModuleDirectory, undefined, async () => {
-  const result = await dialog.showOpenDialog(mainWindow, {
-    title: 'Select module directory',
-    properties: ['openDirectory'],
-  });
-  return result.canceled ? undefined : result.filePaths;
-});
+registerOperation(
+  CHANNELS.dialogs.selectModuleArchive,
+  undefined,
+  async (_request, event) => {
+    const result = await dialog.showOpenDialog(mainWindow, {
+      title: 'Select module archive file',
+      properties: ['openFile'],
+      filters: [{ name: 'Archive', extensions: ['zip'] }],
+    });
+    if (!result.canceled) {
+      rememberSelectedPaths(selectedModuleSources, event, result.filePaths);
+    }
+    return result.canceled ? undefined : result.filePaths;
+  }
+);
+registerOperation(
+  CHANNELS.dialogs.selectModuleDirectory,
+  undefined,
+  async (_request, event) => {
+    const result = await dialog.showOpenDialog(mainWindow, {
+      title: 'Select module directory',
+      properties: ['openDirectory'],
+    });
+    if (!result.canceled) {
+      rememberSelectedPaths(selectedModuleSources, event, result.filePaths);
+    }
+    return result.canceled ? undefined : result.filePaths;
+  }
+);
 registerOperation(
   CHANNELS.dialogs.selectDevModuleDirectory,
   undefined,
-  async () => {
+  async (_request, event) => {
     const result = await dialog.showOpenDialog(mainWindow, {
       title: 'Select development module directory',
       properties: ['openDirectory'],
     });
+    if (!result.canceled) {
+      rememberSelectedPaths(
+        selectedDevelopmentModuleSources,
+        event,
+        result.filePaths
+      );
+    }
     return result.canceled ? undefined : result.filePaths;
   }
 );
@@ -560,6 +639,22 @@ registerOperation(
       throw new TypeError(
         'Core binary paths must be selected through the Core binary dialog'
       );
+    }
+    if (validated.devModulePaths) {
+      const currentPaths = new Set(
+        getRendererSettings().devModulePaths || []
+      );
+      const selectedPaths =
+        selectedDevelopmentModuleSources.get(event.sender.id) || new Set();
+      if (
+        validated.devModulePaths.some(
+          (path) => !currentPaths.has(path) && !selectedPaths.has(path)
+        )
+      ) {
+        throw new TypeError(
+          'Development module paths must be selected through the development module dialog'
+        );
+      }
     }
     return validated;
   },
@@ -747,6 +842,90 @@ registerOperation(
     await authorizeModuleEntry(name, entry);
     return entry;
   }
+);
+registerOperation(
+  CHANNELS.modules.list,
+  (request) => ensureNoArguments(request, 'Module list'),
+  async () => listModules()
+);
+registerOperation(
+  CHANNELS.modules.inspectInstallSource,
+  (source, event) =>
+    ensureSelectedPath(
+      source,
+      selectedModuleSources,
+      event,
+      'Module source path'
+    ),
+  async (source) => inspectInstallSource(source)
+);
+registerOperation(
+  CHANNELS.modules.install,
+  validateModuleInstallRequest,
+  async (request) => finalizeInstall(request)
+);
+registerOperation(
+  CHANNELS.modules.addDevelopment,
+  (source, event) =>
+    ensureSelectedPath(
+      source,
+      selectedDevelopmentModuleSources,
+      event,
+      'Development module path'
+    ),
+  async (source) => addDevelopmentModule(source)
+);
+registerOperation(
+  CHANNELS.modules.remove,
+  (name) => assertSafeModuleName(name),
+  async (name) => removeModule(name)
+);
+registerOperation(
+  CHANNELS.modules.downloadAndInstall,
+  validateModuleDownloadRequest,
+  async (request) => downloadAndInstallModule(request)
+);
+registerOperation(
+  CHANNELS.modules.abortDownload,
+  (name) => assertSafeModuleName(name),
+  async (name) => abortDownload(name)
+);
+registerOperation(
+  CHANNELS.modules.readStorage,
+  (request) => {
+    const value = validateModuleStorageRequest(request);
+    if (value.data !== undefined) {
+      throw new TypeError('Module storage read does not accept data');
+    }
+    return value.name;
+  },
+  async (name) => readModuleStorage(name)
+);
+registerOperation(
+  CHANNELS.modules.writeStorage,
+  (request) => {
+    const value = validateModuleStorageRequest(request);
+    if (value.data === undefined) {
+      throw new TypeError('Module storage write requires data');
+    }
+    return value;
+  },
+  async ({ name, data }) => writeModuleStorage(name, data)
+);
+registerOperation(
+  CHANNELS.modules.getFeatured,
+  (request) => ensureNoArguments(request, 'Featured modules'),
+  async () => getFeaturedModules()
+);
+registerOperation(
+  CHANNELS.modules.checkUpdates,
+  (request) => ensureNoArguments(request, 'Module update check'),
+  async () => checkForModuleUpdates()
+);
+registerOperation(
+  CHANNELS.modules.openFailureLocation,
+  (name) => assertString(name, 'Module folder name', { min: 1, max: 255 }),
+  async (name) => openFailureLocation(name)
 );
 // File assets are narrowly scoped to application-owned assets and approved hosts.
 registerOperation(

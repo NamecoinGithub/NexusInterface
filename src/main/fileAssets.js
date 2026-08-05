@@ -95,23 +95,6 @@ export async function lookupGeoIp(addresses) {
     throw new Error('Geo IP lookup requires at most 64 addresses');
   }
 
-  export async function lookupPublicGeoIp() {
-    const response = await fetch('http://ip-api.com/json/?fields=450');
-    if (!response.ok) {
-      throw new Error(`Public Geo IP lookup failed: ${response.status}`);
-    }
-    const result = await response.json();
-    const latitude = Number(result?.lat);
-    const longitude = Number(result?.lon);
-    if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) {
-      throw new Error('Public Geo IP response is invalid');
-    }
-    return {
-      latitude,
-      longitude,
-      timeZone: typeof result.timezone === 'string' ? result.timezone : '',
-    };
-  }
   const validAddresses = addresses.map((address) =>
     assertString(address, 'IP address', { min: 1, max: 64 })
   );
@@ -128,6 +111,24 @@ export async function lookupGeoIp(addresses) {
         }
       : null;
   });
+}
+
+export async function lookupPublicGeoIp() {
+  const response = await fetch('http://ip-api.com/json/?fields=450');
+  if (!response.ok) {
+    throw new Error(`Public Geo IP lookup failed: ${response.status}`);
+  }
+  const result = await response.json();
+  const latitude = Number(result?.lat);
+  const longitude = Number(result?.lon);
+  if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) {
+    throw new Error('Public Geo IP response is invalid');
+  }
+  return {
+    latitude,
+    longitude,
+    timeZone: typeof result.timezone === 'string' ? result.timezone : '',
+  };
 }
 
 export function loadTranslationSync(locale) {

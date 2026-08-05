@@ -104,6 +104,7 @@ interface NexusElectronBridge {
     writeStorage(name: string, data: Record<string, unknown>): Promise<unknown>;
     getFeatured(): Promise<unknown>;
     checkUpdates(): Promise<unknown>;
+    openFailureLocation(name: string): Promise<unknown>;
   };
   updater: {
     check(): Promise<unknown>;

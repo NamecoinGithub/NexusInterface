@@ -56,7 +56,11 @@ export default function WebView({ module, ...rest }: WebViewProps) {
       {...rest}
       ref={webviewRef}
       src={entryUrl}
-      webpreferences="contextIsolation=yes,nodeIntegration=no,sandbox=yes"
+      /* Can't enable contextIsolation because it will
+      mess with react-dom and emotion */
+      webpreferences={`contextIsolation=no${
+        module.development ? ', nodeIntegration=yes' : ''
+      }`}
     />
   );
 }

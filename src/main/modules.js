@@ -2,7 +2,15 @@ import crypto from 'crypto';
 import fs from 'fs';
 import fsp from 'fs/promises';
 import https from 'https';
-import { dirname, join, isAbsolute, normalize } from 'path';
+import {
+  dirname,
+  isAbsolute,
+  join,
+  normalize,
+  relative,
+  resolve,
+  sep,
+} from 'path';
 
 import { shell } from 'electron';
 
@@ -43,6 +51,14 @@ const RESERVED_MODULE_FILE_NAMES = [
 ];
 
 const SUPPORTED_ARCHIVE_EXTENSIONS = ['.zip'];
+const MAX_MODULE_ARCHIVE_BYTES = 100 * 1024 * 1024;
+const MAX_MODULE_ARCHIVE_ENTRIES = 10000;
+const MAX_MODULE_ARCHIVE_ENTRY_BYTES = 100 * 1024 * 1024;
+const MAX_MODULE_ARCHIVE_EXPANDED_BYTES = 250 * 1024 * 1024;
+const MAX_MODULE_ARCHIVE_COMPRESSION_RATIO = 100;
+const ZIP_DIRECTORY_MODE = 0o040000;
+const ZIP_REGULAR_FILE_MODE = 0o100000;
+const ZIP_FILE_TYPE_MASK = 0o170000;
 
 /**
  * =============================================================================
@@ -544,14 +560,115 @@ async function ensureDirExists(dirPath) {
   await fsp.mkdir(dirPath, { recursive: true });
 }
 
+function rejectArchiveEntry(zipfile, message) {
+  try {
+    zipfile.close();
+  } catch {
+    // The archive may already be closed after a previous validation failure.
+  }
+  throw new Error(message);
+}
+
+function validateArchiveEntry(entry, zipfile, state) {
+  const fileName = entry.fileName;
+  const isDirectory = typeof fileName === 'string' && fileName.endsWith('/');
+  const entryPath = isDirectory ? fileName.slice(0, -1) : fileName;
+  if (
+    typeof entryPath !== 'string' ||
+    !entryPath ||
+    entryPath.includes('\0') ||
+    entryPath.includes('\\') ||
+    entryPath.startsWith('/') ||
+    /^[A-Za-z]:/.test(entryPath) ||
+    entryPath.split('/').some(
+      (segment) => !segment || segment === '.' || segment === '..'
+    )
+  ) {
+    rejectArchiveEntry(zipfile, 'Archive contains an unsafe entry path');
+  }
+
+  const uncompressedSize = entry.uncompressedSize;
+  const compressedSize = entry.compressedSize;
+  if (
+    !Number.isSafeInteger(uncompressedSize) ||
+    uncompressedSize < 0 ||
+    !Number.isSafeInteger(compressedSize) ||
+    compressedSize < 0
+  ) {
+    rejectArchiveEntry(zipfile, 'Archive contains an entry with an invalid size');
+  }
+  if (++state.entryCount > MAX_MODULE_ARCHIVE_ENTRIES) {
+    rejectArchiveEntry(zipfile, 'Archive contains too many entries');
+  }
+  if (state.entryPaths.has(entryPath)) {
+    rejectArchiveEntry(zipfile, 'Archive contains duplicate entry paths');
+  }
+  state.entryPaths.add(entryPath);
+  if (uncompressedSize > MAX_MODULE_ARCHIVE_ENTRY_BYTES) {
+    rejectArchiveEntry(zipfile, 'Archive entry exceeds the size limit');
+  }
+  state.totalUncompressedSize += uncompressedSize;
+  if (state.totalUncompressedSize > MAX_MODULE_ARCHIVE_EXPANDED_BYTES) {
+    rejectArchiveEntry(zipfile, 'Archive exceeds the expanded size limit');
+  }
+  if (
+    (uncompressedSize > 0 && compressedSize === 0) ||
+    (compressedSize > 0 &&
+      uncompressedSize >
+        compressedSize * MAX_MODULE_ARCHIVE_COMPRESSION_RATIO)
+  ) {
+    rejectArchiveEntry(zipfile, 'Archive entry exceeds the compression ratio limit');
+  }
+
+  const fileType = (entry.externalFileAttributes >>> 16) & ZIP_FILE_TYPE_MASK;
+  if (
+    fileType &&
+    fileType !== ZIP_DIRECTORY_MODE &&
+    fileType !== ZIP_REGULAR_FILE_MODE
+  ) {
+    rejectArchiveEntry(zipfile, 'Archive contains a link or unsupported file type');
+  }
+}
+
+async function extractModuleArchive(archivePath, extractDir) {
+  const state = {
+    entryCount: 0,
+    entryPaths: new Set(),
+    totalUncompressedSize: 0,
+  };
+  await extractZip(archivePath, {
+    dir: extractDir,
+    onEntry(entry, zipfile) {
+      validateArchiveEntry(entry, zipfile, state);
+    },
+  });
+}
+
+function isPathWithinDirectory(candidatePath, directoryPath) {
+  const relativePath = relative(resolve(directoryPath), resolve(candidatePath));
+  return (
+    relativePath === '' ||
+    (!relativePath.startsWith(`..${sep}`) &&
+      relativePath !== '..' &&
+      !isAbsolute(relativePath))
+  );
+}
+
 async function copyModuleFiles(files, source, dest) {
   for (const file of files) {
     await ensureDirExists(dirname(join(dest, file)));
   }
   const copyOne = (file) => fsp.copyFile(join(source, file), join(dest, file));
   const promises = [copyOne('nxs_package.json'), ...files.map(copyOne)];
-  if (fs.existsSync(join(source, 'repo_info.json'))) {
+  const repoInfoPath = join(source, 'repo_info.json');
+  try {
+    const repoInfoStat = await fsp.lstat(repoInfoPath);
+    if (!repoInfoStat.isFile() || repoInfoStat.isSymbolicLink()) {
+      throw new Error('repo_info.json must not be a symbolic link');
+    }
     promises.push(copyOne('repo_info.json'));
+  } catch (err) {
+    if (err?.code !== 'ENOENT') throw err;
   }
   return Promise.all(promises);
 }
@@ -585,42 +702,65 @@ function takePendingInstall(token) {
 }
 
 /**
- * Resolve a user-selected install source (native file dialog result or a
- * dropped file/directory path) into a directory containing the module to
- * install, extracting archives into a managed temp directory as needed.
+ * Resolve a native file-dialog install source into a directory containing the
+ * module to install, extracting archives into a managed temp directory as
+ * needed.
  */
 async function resolveInstallSource(sourcePath) {
-  const path = assertString(sourcePath, 'Module source path', { min: 1, max: 4096 });
-  if (!fs.existsSync(path)) {
-    throw new Error('Cannot find module');
+  const source = assertString(sourcePath, 'Module source path', {
+    min: 1,
+    max: 4096,
+  });
+  let stat;
+  try {
+    stat = await fsp.lstat(source);
+  } catch (err) {
+    if (err?.code === 'ENOENT') throw new Error('Cannot find module');
+    throw err;
   }
-
-  const stat = await fsp.stat(path);
+  if (stat.isSymbolicLink()) {
+    throw new Error('Module source must not be a symbolic link');
+  }
   if (stat.isFile()) {
-    if (!SUPPORTED_ARCHIVE_EXTENSIONS.some((ext) => path.toLowerCase().endsWith(ext))) {
+    if (
+      !SUPPORTED_ARCHIVE_EXTENSIONS.some((ext) =>
+        source.toLowerCase().endsWith(ext)
+      )
+    ) {
       throw new Error('Unsupported file type');
+    }
+    if (stat.size > MAX_MODULE_ARCHIVE_BYTES) {
+      throw new Error('Archive exceeds the compressed size limit');
     }
     const extractDir = join(temporaryModuleDir, crypto.randomUUID());
     await ensureDirExists(extractDir);
-    await extractZip(path, { dir: extractDir });
+    try {
+      await extractModuleArchive(source, extractDir);
 
-    let resolvedDir = extractDir;
-    // In case the module is wrapped inside a sub directory of the archive file
-    const subItems = await fsp.readdir(extractDir);
-    if (subItems.length === 1) {
-      const subItemPath = join(extractDir, subItems[0]);
-      if ((await fsp.stat(subItemPath)).isDirectory()) {
-        resolvedDir = subItemPath;
+      let resolvedDir = extractDir;
+      // In case the module is wrapped inside a sub directory of the archive file
+      const subItems = await fsp.readdir(extractDir);
+      if (subItems.length === 1) {
+        const subItemPath = join(extractDir, subItems[0]);
+        const subItemStat = await fsp.lstat(subItemPath);
+        if (subItemStat.isDirectory() && !subItemStat.isSymbolicLink()) {
+          resolvedDir = subItemPath;
+        }
       }
+      return { dirPath: resolvedDir, cleanupPath: extractDir };
+    } catch (err) {
+      await fsp.rm(extractDir, { recursive: true, force: true });
+      throw err;
     }
-    return { dirPath: resolvedDir, cleanupPath: extractDir };
   }
 
-  const normalizedPath = normalize(path);
-  if (normalizedPath.startsWith(normalize(modulesDir))) {
+  if (!stat.isDirectory()) {
+    throw new Error('Module source must be a file or directory');
+  }
+  if (isPathWithinDirectory(source, modulesDir)) {
     throw new Error('Cannot install from this location');
   }
-  return { dirPath: normalizedPath, cleanupPath: undefined };
+  return { dirPath: resolve(source), cleanupPath: undefined };
 }
 
 /**
@@ -630,11 +770,22 @@ async function resolveInstallSource(sourcePath) {
  */
 export async function inspectInstallSource(sourcePath) {
   const { dirPath, cleanupPath } = await resolveInstallSource(sourcePath);
-  const settings = loadSettingsFromFile();
-  const module = await loadModuleFromDir(dirPath, settings);
-  const alreadyInstalled = fs.existsSync(join(modulesDir, module.info.name));
-  const token = stagePendingInstall({ sourcePath: dirPath, cleanupPath, moduleInfo: module.info });
-  return { token, module, alreadyInstalled };
+  try {
+    const settings = loadSettingsFromFile();
+    const module = await loadModuleFromDir(dirPath, settings);
+    const alreadyInstalled = fs.existsSync(join(modulesDir, module.info.name));
+    const token = stagePendingInstall({
+      sourcePath: dirPath,
+      cleanupPath,
+      moduleInfo: module.info,
+    });
+    return { token, module, alreadyInstalled };
+  } catch (err) {
+    if (cleanupPath) {
+      await fsp.rm(cleanupPath, { recursive: true, force: true });
+    }
+    throw err;
+  }
 }
 
 /**
@@ -748,45 +899,90 @@ function sendDownloadProgress(moduleName, progress) {
   }
 }
 
-function downloadToFile(url, filePath, moduleName) {
+function downloadToFile(url, filePath, moduleName, redirectCount = 0) {
   return new Promise((resolve, reject) => {
+    let file;
+    let settled = false;
+    const finish = (err) => {
+      if (settled) return;
+      settled = true;
+      if (err) {
+        file?.destroy();
+        reject(err);
+      } else {
+        resolve(filePath);
+      }
+    };
     const request = https
       .get(url)
       .setTimeout(180000)
       .on('response', (response) => {
         if (String(response.statusCode).startsWith('3') && response.headers.location) {
-          downloadToFile(response.headers.location, filePath, moduleName)
-            .then(resolve)
-            .catch(reject);
+          response.resume();
+          if (redirectCount >= 5) {
+            finish(new Error('Too many redirects while downloading module archive'));
+            return;
+          }
+          downloadToFile(
+            response.headers.location,
+            filePath,
+            moduleName,
+            redirectCount + 1
+          )
+            .then(() => finish())
+            .catch(finish);
+          return;
+        }
+
+        if (response.statusCode < 200 || response.statusCode >= 300) {
+          response.resume();
+          finish(
+            new Error(
+              `Module archive download failed: HTTP ${response.statusCode}`
+            )
+          );
           return;
         }
 
         const totalSize = parseInt(response.headers['content-length'] || '', 10);
+        if (Number.isFinite(totalSize) && totalSize > MAX_MODULE_ARCHIVE_BYTES) {
+          response.resume();
+          finish(new Error('Module archive exceeds the compressed size limit'));
+          return;
+        }
         let downloaded = 0;
-        const file = fs.createWriteStream(filePath);
+        file = fs.createWriteStream(filePath, { mode: 0o600 });
 
         response
           .on('data', (chunk) => {
             downloaded += chunk.length;
+            if (downloaded > MAX_MODULE_ARCHIVE_BYTES) {
+              const err = new Error(
+                'Module archive exceeds the compressed size limit'
+              );
+              response.destroy(err);
+              finish(err);
+              return;
+            }
             sendDownloadProgress(moduleName, { downloaded, totalSize, downloading: true });
           })
-          .on('close', () => resolve(filePath))
-          .on('error', (err) => reject(err))
+          .on('error', finish)
           .pipe(file);
+        file.on('error', finish).on('finish', () => finish());
       })
-      .on('error', (err) => reject(err))
+      .on('error', finish)
       .on('timeout', () => {
-        request.destroy();
-        reject(new Error('Request timeout!'));
+        request.destroy(new Error('Request timeout!'));
       });
     downloadRequests.set(moduleName, request);
   });
 }
 
 export async function downloadAndInstallModule({ moduleName, owner, repo, releaseId }) {
+  const safeModuleName = assertSafeModuleName(moduleName);
   let filePath;
   try {
-    sendDownloadProgress(moduleName, { downloading: true });
+    sendDownloadProgress(safeModuleName, { downloading: true });
 
     let resolvedReleaseId = releaseId;
     if (releaseId === 'latest') {
@@ -801,20 +997,20 @@ export async function downloadAndInstallModule({ moduleName, owner, repo, releas
       { headers: { Accept: 'application/vnd.github.v3+json' } }
     );
     const asset = releaseAssets.find(
-      ({ name }) => name.startsWith(moduleName) && name.endsWith('.zip')
+      ({ name }) => name.startsWith(safeModuleName) && name.endsWith('.zip')
     );
     if (!asset) {
       throw new Error('Cannot find module archive file among assets');
     }
 
     await ensureDirExists(moduleDownloadDir);
-    filePath = join(moduleDownloadDir, asset.name);
-    await downloadToFile(asset.browser_download_url, filePath, moduleName);
+    filePath = join(moduleDownloadDir, `${safeModuleName}-${crypto.randomUUID()}.zip`);
+    await downloadToFile(asset.browser_download_url, filePath, safeModuleName);
 
     return await inspectInstallSource(filePath);
   } finally {
-    downloadRequests.delete(moduleName);
-    sendDownloadProgress(moduleName, { downloading: false });
+    downloadRequests.delete(safeModuleName);
+    sendDownloadProgress(safeModuleName, { downloading: false });
     if (filePath) {
       fsp.unlink(filePath).catch(() => {});
     }
@@ -838,6 +1034,46 @@ export async function getFeaturedModules() {
     `https://nexus-featured-modules.netlify.app/featured-modules?wallet_version=${APP_VERSION}`
   );
   return response.data;
+}
+
+export async function checkForModuleUpdates() {
+  const { modules } = await listModules();
+  const results = await Promise.allSettled(
+    modules
+      .filter((module) => !module.development && module.repository)
+      .map(async (module) => {
+        const { owner, repo } = module.repository;
+        const response = await fetchGithubLatestRelease(getRepoId({ owner, repo }), {
+          headers: { Accept: 'application/vnd.github.v3+json' },
+        });
+        const release = response?.data;
+        const latestVersion =
+          typeof release?.tag_name === 'string'
+            ? release.tag_name.replace(/^v/, '')
+            : '';
+        if (
+          !Number.isSafeInteger(release?.id) ||
+          !release.assets ||
+          !semver.valid(latestVersion) ||
+          !semver.valid(module.info.version) ||
+          !semver.gt(latestVersion, module.info.version)
+        ) {
+          return null;
+        }
+        return {
+          moduleName: module.info.name,
+          latestVersion,
+          latestRelease: {
+            id: release.id,
+            tag_name: release.tag_name,
+            assets: true,
+          },
+        };
+      })
+  );
+  return results
+    .filter(({ status, value }) => status === 'fulfilled' && value)
+    .map(({ value }) => value);
 }
 
 /**

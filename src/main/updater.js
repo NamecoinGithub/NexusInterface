@@ -55,62 +55,64 @@ export function initializeUpdater(settings) {
         global.mainWindow.webContents.send(eventChannel, ...args);
       }
 
-      export async function checkForUpdates() {
-        if (process.env.NODE_ENV === 'development') {
-          return { mode: 'disabled' };
-        }
-
-        export async function getMarketData() {
-          const response = await fetch(
-            'https://api.dex-trade.com/v1/public/ticker?pair=NXSUSDT'
-          );
-          if (!response.ok) {
-            throw new Error(`Market data request failed: ${response.status}`);
-          }
-          const payload = await response.json();
-          const price = Number(payload?.data?.last);
-          const changePct24Hr = Number(
-            payload?.data?.['percent_сhange'] ?? payload?.data?.percent_change ?? 0
-          );
-          if (!payload?.status || !Number.isFinite(price) || !Number.isFinite(changePct24Hr)) {
-            throw new Error('Market data response is invalid');
-          }
-          return { price, changePct24Hr, currency: 'USDT' };
-        }
-        if (!fs.existsSync(path.join(assetsParentDir, 'app-update.yml'))) {
-          const response = await fetch(
-            'https://api.github.com/repos/Nexusoft/NexusInterface/releases/latest',
-            { headers: { Accept: 'application/vnd.github+json', 'User-Agent': 'NexusInterface' } }
-          );
-          if (!response.ok) {
-            throw new Error(`GitHub release request failed: ${response.status}`);
-          }
-          const release = await response.json();
-          if (
-            !release ||
-            typeof release.tag_name !== 'string' ||
-            typeof release.prerelease !== 'boolean'
-          ) {
-            throw new Error('GitHub release response is invalid');
-          }
-          return {
-            mode: 'github',
-            release: {
-              tagName: release.tag_name,
-              prerelease: release.prerelease,
-            },
-          };
-        }
-        const result = await autoUpdater.checkForUpdates();
-        return {
-          mode: 'auto',
-          updateInfo: result?.updateInfo
-            ? { version: result.updateInfo.version }
-            : undefined,
-        };
-      }
     });
   });
+}
+
+export async function getMarketData() {
+  const response = await fetch(
+    'https://api.dex-trade.com/v1/public/ticker?pair=NXSUSDT'
+  );
+  if (!response.ok) {
+    throw new Error(`Market data request failed: ${response.status}`);
+  }
+  const payload = await response.json();
+  const price = Number(payload?.data?.last);
+  const changePct24Hr = Number(
+    payload?.data?.['percent_сhange'] ?? payload?.data?.percent_change ?? 0
+  );
+  if (!payload?.status || !Number.isFinite(price) || !Number.isFinite(changePct24Hr)) {
+    throw new Error('Market data response is invalid');
+  }
+  return { price, changePct24Hr, currency: 'USDT' };
+}
+
+export async function checkForUpdates() {
+  if (process.env.NODE_ENV === 'development') {
+    return { mode: 'disabled' };
+  }
+
+  if (!fs.existsSync(path.join(assetsParentDir, 'app-update.yml'))) {
+    const response = await fetch(
+      'https://api.github.com/repos/Nexusoft/NexusInterface/releases/latest',
+      { headers: { Accept: 'application/vnd.github+json', 'User-Agent': 'NexusInterface' } }
+    );
+    if (!response.ok) {
+      throw new Error(`GitHub release request failed: ${response.status}`);
+    }
+    const release = await response.json();
+    if (
+      !release ||
+      typeof release.tag_name !== 'string' ||
+      typeof release.prerelease !== 'boolean'
+    ) {
+      throw new Error('GitHub release response is invalid');
+    }
+    return {
+      mode: 'github',
+      release: {
+        tagName: release.tag_name,
+        prerelease: release.prerelease,
+      },
+    };
+  }
+  const result = await autoUpdater.checkForUpdates();
+  return {
+    mode: 'auto',
+    updateInfo: result?.updateInfo
+      ? { version: result.updateInfo.version }
+      : undefined,
+  };
 }
 
 export function setAllowPrerelease(value) {
