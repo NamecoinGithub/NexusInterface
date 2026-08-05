@@ -632,9 +632,7 @@ function validateCoreRpcParamsForEndpoint(endpoint, params) {
   return validated;
 }
 
-function redactSensitiveValue(value) {
-  if (typeof value !== 'string') return '***';
-  if (!value) return '***';
+function redactSensitiveValue(_value) {
   return '***';
 }
 

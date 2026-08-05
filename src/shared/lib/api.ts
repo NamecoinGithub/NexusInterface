@@ -2,6 +2,15 @@ import { coreInfoQuery } from 'lib/coreInfo';
 import { activeSessionIdAtom } from 'lib/session';
 import { store } from 'lib/store';
 
+// Session-management endpoints may pass an explicit multi-user `session`
+// (terminate a specific session, unlock immediately after login). All other
+// endpoints always prefer the active store session.
+const SESSION_OVERRIDE_ENDPOINTS = new Set([
+  'sessions/terminate/local',
+  'sessions/unlock/local',
+  'sessions/status/local',
+]);
+
 /**
  * Send a Tritium API request in GET method
  */
@@ -829,14 +838,7 @@ async function callAPI(
   // Multi-user session attachment policy:
   // - Default: inject the active store session last so modules/callers cannot
   //   silently retarget another user's session.
-  // - Session-management endpoints may pass an explicit `session` (terminate a
-  //   specific session, unlock immediately after login before the store updates).
-  const SESSION_OVERRIDE_ENDPOINTS = new Set([
-    'sessions/terminate/local',
-    'sessions/unlock/local',
-    'sessions/status/local',
-  ]);
-
+  // - Session-management endpoints may pass an explicit `session`.
   let params = normalizedParams;
   if (coreInfo?.multiuser) {
     const explicitSession =
