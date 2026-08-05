@@ -1,5 +1,3 @@
-import path from 'path';
-import { ipcRenderer } from 'electron';
 import { useField } from 'react-final-form';
 
 import Form from 'components/Form';
@@ -8,15 +6,12 @@ import Button from 'components/Button';
 import Switch from 'components/Switch';
 import { TextField } from 'components/TextField';
 import { useFieldValue } from 'lib/form';
-import nexusEnv from 'lib/nexusEnv';
-import { updateSettings, settingAtoms } from 'lib/settings';
+import { updateSettings } from 'lib/settings';
 import { confirm, openErrorDialog } from 'lib/dialog';
 import { restartCore, stopCore, startCore } from 'lib/core';
 import { defaultConfig } from 'lib/coreConfig';
 import { preRelease } from 'consts/misc';
-import { rm as deleteDirectory } from 'fs/promises';
 import { consts } from 'styles';
-import { store } from 'lib/store';
 
 __ = __context('Settings.Core');
 
@@ -99,14 +94,7 @@ function CoreBinaryPathField() {
   const { input } = useField('embeddedCoreBinaryPath');
 
   const pickCoreBinary = async () => {
-    const filePaths = await ipcRenderer.invoke('show-open-dialog', {
-      title: __('Select Nexus Core binary'),
-      properties: ['openFile'],
-      filters:
-        nexusEnv.platform === 'win32'
-          ? [{ name: 'Windows executable', extensions: ['exe'] }]
-          : undefined,
-    });
+    const filePaths = await window.nexusElectron.dialogs.selectCoreBinary();
 
     if (filePaths?.[0]) {
       input.onChange(filePaths[0]);
@@ -118,6 +106,7 @@ function CoreBinaryPathField() {
       <Form.TextField
         name="embeddedCoreBinaryPath"
         style={{ flexGrow: 1 }}
+        readOnly
       />
       <Button
         onClick={pickCoreBinary}
@@ -467,10 +456,8 @@ async function resyncLiteMode() {
   if (confirmed) {
     updateSettings({ clearPeers: true });
     await stopCore();
-    const coreDataDir = store.get(settingAtoms.coreDataDir);
-    const clientFolder = path.join(coreDataDir, 'client');
     try {
-      await deleteDirectory(clientFolder, { recursive: true, force: true });
+      await window.nexusElectron.core.resyncLiteDatabase();
     } catch (err: any) {
       openErrorDialog({ message: err && err.message });
     }

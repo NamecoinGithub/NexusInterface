@@ -2,7 +2,6 @@
 import { useState } from 'react';
 import Dropzone from 'react-dropzone';
 import styled from '@emotion/styled';
-import { ipcRenderer } from 'electron';
 
 // Internal
 import { installModule } from 'lib/modules';
@@ -68,26 +67,14 @@ export default function AddModule() {
   };
 
   const browseFiles = async () => {
-    const paths = await ipcRenderer.invoke('show-open-dialog', {
-      title: __('Select module archive file'),
-      properties: ['openFile'],
-      filters: [
-        {
-          name: 'Archive',
-          extensions: ['zip', 'tar.gz'],
-        },
-      ],
-    });
+    const paths = await window.nexusElectron.dialogs.selectModuleArchive();
     if (paths && paths[0]) {
       startInstall(paths[0]);
     }
   };
 
   const browseDirectories = async () => {
-    const paths = await ipcRenderer.invoke('show-open-dialog', {
-      title: __('Select module directory'),
-      properties: ['openDirectory'],
-    });
+    const paths = await window.nexusElectron.dialogs.selectModuleDirectory();
     if (paths && paths[0]) {
       startInstall(paths[0]);
     }

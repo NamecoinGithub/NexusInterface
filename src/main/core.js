@@ -4,8 +4,9 @@ import log from 'electron-log';
 import fs from 'fs';
 import path from 'path';
 
-import { assetsByPlatformDir } from 'consts/paths';
-import { loadSettingsFromFile } from 'lib/settings/universal';
+import { assetsByPlatformDir } from './paths';
+import { loadSettingsFromFile, updateSettingsFile } from './settings';
+import { clearCoreConfigCache, getCoreConfiguration } from './coreRpc';
 
 const coreBinaryName = `nexus-${process.platform}-${process.arch}${
   process.platform === 'win32' ? '.exe' : ''
@@ -19,17 +20,6 @@ const coreBinaryOverrideEnv =
   process.env.NEXUS_CORE_BINARY_PATH || process.env.NEXUS_CORE_BINARY;
 const windowsExecutableExtension = '.exe';
 const windowsTasklistPidIndex = 1;
-
-const exec = (command, options = {}) =>
-  new Promise((resolve, reject) => {
-    child_process.exec(command, options, (err, stdout, stderr) => {
-      if (err) {
-        reject(err);
-      } else {
-        resolve(stdout);
-      }
-    });
-  });
 
 const execFile = (file, args, options = {}) =>
   new Promise((resolve, reject) => {
@@ -317,13 +307,12 @@ async function getCorePID() {
     }
   } else {
     PID = findCorePIDInProcessList(
-      await exec(
+      await execFile(
+        'ps',
         process.platform == 'darwin'
-          ? 'ps -axo pid=,comm=,args='
-          : 'ps -eo pid=,comm=,args=',
-        {
-          env: modEnv,
-        }
+          ? ['-axo', 'pid=,comm=,args=']
+          : ['-eo', 'pid=,comm=,args='],
+        { env: modEnv }
       ),
       coreBinaryPath,
       resolvedCoreBinaryName
@@ -370,6 +359,113 @@ export function startCore(params) {
     } else {
       throw 'Core failed to start';
     }
+
+    /**
+     * Starts the bundled core using only settings persisted by the main process.
+     * Renderer callers cannot supply executable paths or process arguments.
+     */
+    export async function startConfiguredCore() {
+      const settings = loadSettingsFromFile();
+      if (settings.manualDaemon) {
+        return { started: false, reason: 'manual-daemon' };
+      }
+
+      const status = getCoreBinaryStatus();
+      if (!status.exists || !status.executable) {
+        throw new Error(status.error || 'Nexus Core binary not found');
+      }
+      if (await isCoreRunning()) {
+        return { started: false, reason: 'already-running' };
+      }
+
+      clearCoreConfigCache();
+      const configuration = await getCoreConfiguration();
+      const lockedTestnet =
+        typeof LOCK_TESTNET === 'undefined' ? '' : String(LOCK_TESTNET);
+      const version = typeof APP_VERSION === 'undefined' ? '' : String(APP_VERSION);
+      const preRelease =
+        version.includes('alpha') || version.includes('beta') || !!lockedTestnet;
+      const params = [
+        '-daemon',
+        '-server',
+        '-fastsync',
+        '-noterminateauth',
+        '-ssl=1',
+        '-apissl=1',
+        '-p2pssl=1',
+        `-datadir=${settings.coreDataDir}`,
+        `-apisslport=${configuration.apiPortSSL}`,
+        `-apiport=${configuration.apiPort}`,
+        `-verbose=${preRelease ? 3 : settings.verboseLevel}`,
+      ];
+
+      if (lockedTestnet) {
+        params.push(
+          '-connect=testnet1.interactions-nexus.io',
+          '-connect=testnet2.interactions-nexus.io',
+          '-connect=testnet3.interactions-nexus.io',
+          '-nodns=1',
+          `-testnet=${lockedTestnet}`
+        );
+      } else if (
+        settings.testnetIteration &&
+        String(settings.testnetIteration) !== '0'
+      ) {
+        params.push(`-testnet=${settings.testnetIteration}`);
+        if (settings.privateTestnet) params.push('-private=1');
+      }
+
+      if (settings.revertBlocks) {
+        params.push(`-revertblocks=${settings.revertBlocks}`);
+        updateSettingsFile({ revertBlocks: 0 });
+      }
+      if (settings.safeMode) params.push('-safemode=1');
+      if (settings.walletClean) {
+        params.push('-walletclean');
+        updateSettingsFile({ walletClean: false });
+      }
+      if (!settings.avatarMode) params.push('-avatar=0');
+      if (settings.enableMining) {
+        params.push('-mining=1');
+        if (settings.ipMineWhitelist) {
+          for (const ip of settings.ipMineWhitelist.split(';')) {
+            if (ip) params.push(`-llpallowip=${ip}`);
+          }
+        }
+      }
+      if (settings.enableStaking) params.push('-stake=1');
+      if (settings.pooledStaking) params.push('-poolstaking=1');
+      if (settings.liteMode) params.push('-client=1');
+      if (settings.multiUser) params.push('-multiusername=1');
+      if (settings.allowAdvancedCoreOptions && settings.advancedCoreParams) {
+        params.push(...splitCommandParts(settings.advancedCoreParams));
+      }
+
+      if (
+        !lockedTestnet &&
+        !settings.testnetIteration &&
+        (!settings.coreAPIPolicy || settings.coreAPIPolicy < 1)
+      ) {
+        updateSettingsFile({ coreAPIPolicy: 1 });
+        await fs.promises.rm(path.join(settings.coreDataDir, '_API'), {
+          recursive: true,
+          force: true,
+        });
+      }
+      return { started: true, pid: startCore(params) };
+    }
+
+    export async function resyncLiteDatabase() {
+      const settings = loadSettingsFromFile();
+      if (settings.manualDaemon || !settings.liteMode) {
+        throw new Error('Lite database resync is only available for embedded lite mode');
+      }
+      await fs.promises.rm(path.join(settings.coreDataDir, 'client'), {
+        recursive: true,
+        force: true,
+      });
+      return { removed: true };
+    }
   } catch (err) {
     console.error(err);
     throw err;
@@ -388,11 +484,10 @@ export async function killCoreProcess() {
   }
 
   log.info('Core Manager: Killing process ' + corePID);
-  const env = { ...process.env, KILL_PID: corePID };
   if (process.platform == 'win32') {
-    await exec(`taskkill /F /PID ${corePID}`, { env });
+    await execFile('taskkill', ['/F', '/PID', String(corePID)]);
   } else {
-    await exec('kill -9 $KILL_PID', { env });
+    process.kill(corePID, 'SIGKILL');
   }
   return true;
 }
@@ -406,7 +501,9 @@ export async function killCoreProcess() {
 export async function executeCommand(command) {
   const { path: coreBinaryPath } = getExecutableCoreBinary();
   try {
-    const result = await exec(`"${coreBinaryPath}" -noapiauth ${command}`);
+    const args = splitCommandParts(command);
+    if (!args.length) throw new Error('Core console command is empty');
+    const result = await execFile(coreBinaryPath, ['-noapiauth', ...args]);
     return result;
   } catch (err) {
     console.error(err);

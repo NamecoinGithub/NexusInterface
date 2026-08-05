@@ -1,4 +1,850 @@
+import crypto from 'crypto';
+import fs from 'fs';
+import fsp from 'fs/promises';
+import https from 'https';
+import { dirname, join, isAbsolute, normalize } from 'path';
+
+import { shell } from 'electron';
+
 import axios from 'axios';
+import extractZip from 'extract-zip';
+import { isText } from 'istextorbinary';
+import Multistream from 'multistream';
+import semver from 'semver';
+import z from 'zod';
+
+import normalizeEol from 'utils/normalizeEol';
+import { fetchGithubLatestRelease, getMembers, getRepoId } from 'lib/github';
+
+import { assertRecord, assertSafeModuleName, assertString } from './ipc/contracts';
+import { modulesDir, moduleDownloadDir, temporaryModuleDir } from './paths';
+import { loadSettingsFromFile } from './settings';
+import { resolveModuleRoot } from './moduleFiles';
+
+/**
+ * This module is the main-process module registry: it owns every filesystem,
+ * network, and crypto operation involved in discovering, installing,
+ * updating, and removing app modules. The renderer only ever sees the
+ * serializable results below through the `modules:*` IPC operations; it no
+ * longer touches `fs`/`https`/`crypto` directly.
+ */
+
+// Duplicated from `consts/misc.ts` (semver-regex) because that file executes
+// browser-only code (`document`, `window`) at import time and cannot safely
+// be imported into the main process.
+const SEMVER_REGEX =
+  /(?<=^v?|\sv?)(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)(?:-(?:[1-9]\d*|[\da-z-]*[a-z-][\da-z-]*)(?:\.(?:[1-9]\d*|[\da-z-]*[a-z-][\da-z-]*))*)?(?:\+[\da-z-]+(?:\.[\da-z-]+)*)?(?=$|\s)/gi;
+
+const RESERVED_MODULE_FILE_NAMES = [
+  'nxs_package.json',
+  'nxs_package.dev.json',
+  'repo_info.json',
+  'storage.json',
+];
+
+const SUPPORTED_ARCHIVE_EXTENSIONS = ['.zip'];
+
+/**
+ * =============================================================================
+ * nxs_package.json / nxs_package.dev.json / repo_info.json schemas
+ * =============================================================================
+ */
+const nxsPackageSchema = z.object({
+  name: z.string().regex(/^[0-9a-z_-]*[a-z][0-9a-z_-]*$/),
+  displayName: z.string().regex(/^[^\n]*$/),
+  version: z.string().regex(SEMVER_REGEX),
+  targetWalletVersion: z.string().regex(SEMVER_REGEX).optional(),
+  specVersion: z.string().optional(),
+  description: z.string().optional(),
+  type: z.enum(['app']),
+  options: z
+    .object({
+      wrapInPanel: z.boolean().optional(),
+    })
+    .optional(),
+  entry: z
+    .string()
+    .regex(/^(.(?<!\.\.\/|\.\.\\))+$|^$/)
+    .optional(),
+  icon: z
+    .string()
+    .regex(/^(.(?<!\.\.\/|\.\.\\))+\.(svg|png)$|^$/)
+    .optional(),
+  author: z
+    .object({
+      name: z.string().optional(),
+      email: z.string().email().optional(),
+    })
+    .optional(),
+  files: z.array(z.string().regex(/^(.(?<!\.\.\/|\.\.\\))+$/)),
+});
+
+const nxsPackageDevSchema = z.object({
+  name: z.string(),
+  displayName: z.string(),
+  description: z.string().optional(),
+  type: z.enum(['app']),
+  entry: z
+    .string()
+    .regex(/^(.(?<!\.\.\/|\.\.\\))+$|^$/)
+    .optional(),
+  icon: z
+    .string()
+    .regex(/^(.(?<!\.\.\/|\.\.\\))+\.(svg|png)$|^$/)
+    .optional(),
+  options: z
+    .object({
+      wrapInPanel: z.boolean().optional(),
+    })
+    .optional(),
+});
+
+const repositorySchema = z.object({
+  type: z.enum(['git']),
+  host: z.enum(['github.com']),
+  owner: z.string(),
+  repo: z.string(),
+  commit: z.string().min(40).max(40),
+});
+
+const repoInfoSchema = z.object({
+  verification: z
+    .object({
+      signature: z.string(),
+    })
+    .optional(),
+  data: z.object({
+    repository: repositorySchema,
+    moduleHash: z.string().optional(),
+  }),
+});
+
+/**
+ * =============================================================================
+ * Filesystem helpers
+ * =============================================================================
+ */
+
+function getAllUpperFolders(path) {
+  const parent = dirname(path);
+  if (parent !== '.' && parent !== '/' && parent !== path) {
+    return [path, ...getAllUpperFolders(parent)];
+  }
+  return [path];
+}
+
+async function checkPath(path, checkSymLink) {
+  let stat;
+  try {
+    stat = await fsp.lstat(path);
+  } catch (err) {
+    if (err && err.code === 'ENOENT') {
+      throw { reason: 'not_found', path };
+    } else {
+      throw { reason: 'inaccessible', path };
+    }
+  }
+  if (!stat) throw { reason: 'not_found', path };
+  if (checkSymLink && stat.isSymbolicLink()) throw { reason: 'symlink', path };
+}
+
+async function loadModuleInfoFile(dirPath) {
+  const nxsPackagePath = join(dirPath, 'nxs_package.json');
+  if (!fs.existsSync(nxsPackagePath)) {
+    throw new Error('nxs_package.json not found');
+  }
+  let content;
+  try {
+    const stat = await fsp.lstat(nxsPackagePath);
+    if (!stat.isFile() || stat.isSymbolicLink()) {
+      throw new Error(nxsPackagePath + ' is not a file');
+    }
+    content = await fsp.readFile(nxsPackagePath);
+  } catch (err) {
+    throw new Error(`Error reading file at ${nxsPackagePath}: ${err.message}`);
+  }
+  try {
+    return content ? JSON.parse(String(content)) : undefined;
+  } catch {
+    throw new Error('Invalid JSON at ' + nxsPackagePath);
+  }
+}
+
+async function loadModuleDevInfoFile(dirPath) {
+  const nxsPackageDevPath = join(dirPath, 'nxs_package.dev.json');
+  const content = await fsp.readFile(nxsPackageDevPath);
+  return content ? JSON.parse(String(content)) : undefined;
+}
+
+async function parseModuleInfo(moduleInfo, dirPath, settings) {
+  let parsed;
+  try {
+    parsed = nxsPackageSchema.parse(moduleInfo);
+  } catch (err) {
+    console.log('nxs_package.json schema errors', err);
+    throw new Error('Invalid nxs_package.json');
+  }
+
+  if (!parsed.targetWalletVersion && !parsed.specVersion) {
+    throw new Error(
+      'nxs_package.json validation error: either `targetWalletVersion` or `specVersion` must present in nxs_package.json'
+    );
+  }
+  if (parsed.entry && isAbsolute(parsed.entry)) {
+    throw new Error(
+      'nxs_package.json validation error: `entry` must be a relative path. Getting ' +
+        parsed.entry
+    );
+  }
+  if (parsed.icon && isAbsolute(parsed.icon)) {
+    throw new Error(
+      'nxs_package.json validation error: `icon` must be a relative path. Getting ' +
+        parsed.icon
+    );
+  }
+  const nonRelativeFile = parsed.files.find((file) => isAbsolute(file));
+  if (nonRelativeFile) {
+    throw new Error(
+      'nxs_package.json validation error: `files` must contain only relative paths. Getting ' +
+        nonRelativeFile
+    );
+  }
+  const reservedFile = parsed.files.find((file) =>
+    RESERVED_MODULE_FILE_NAMES.includes(normalize(file))
+  );
+  if (reservedFile) {
+    throw new Error(
+      `nxs_package.json validation error: ${reservedFile} is a reserved file name`
+    );
+  }
+
+  const relativePaths = parsed.files.flatMap(getAllUpperFolders);
+  const filePaths = relativePaths.map((path) => join(dirPath, path));
+  const { devMode, allowSymLink } = settings;
+  const checkSymLink = !(devMode && allowSymLink);
+  try {
+    await Promise.all(filePaths.map((path) => checkPath(path, checkSymLink)));
+  } catch (err) {
+    switch (err?.reason) {
+      case 'not_found':
+        throw new Error(
+          `nxs_package.json validation error: file not found at ${err?.path}`
+        );
+      case 'inaccessible':
+        throw new Error(
+          `nxs_package.json validation error: ${err?.path} is inaccessible`
+        );
+      case 'symlink':
+        throw new Error(
+          `nxs_package.json validation error: ${err?.path} is a symbolic link`
+        );
+      default:
+        throw new Error('nxs_package.json validation error');
+    }
+  }
+
+  if (parsed.type === 'app') {
+    if (parsed.entry && !parsed.entry.toLowerCase().endsWith('.html')) {
+      throw new Error(
+        'nxs_package.json validation error: `entry` file extension must be .html'
+      );
+    }
+  }
+
+  return parsed;
+}
+
+function parseModuleDevInfo(moduleInfo) {
+  try {
+    return nxsPackageDevSchema.parse(moduleInfo);
+  } catch (err) {
+    console.log('nxs_package.dev.json schema errors', err);
+    throw new Error('Invalid nxs_package.dev.json');
+  }
+}
+
+/**
+ * =============================================================================
+ * Module hash & repository verification (ported from lib/modules/repo.ts)
+ * =============================================================================
+ */
+
+function normalizeFile(path) {
+  const stream = fs.createReadStream(path);
+  const buffer = fs.readFileSync(path);
+  if (isText(path, buffer)) {
+    return stream.pipe(normalizeEol('\n'));
+  }
+  return stream;
+}
+
+function getModuleHash(moduleInfo, dirPath) {
+  return new Promise(async (resolve, reject) => {
+    try {
+      const nxsPackagePath = join(dirPath, 'nxs_package.json');
+      const filePaths = moduleInfo.files
+        .slice()
+        .sort()
+        .map((file) => join(dirPath, file));
+      const streams = [
+        normalizeFile(nxsPackagePath),
+        ...filePaths.map(normalizeFile),
+      ];
+      const hash = crypto.createHash('sha256');
+      hash.setEncoding('base64');
+      hash.on('readable', () => {
+        const result = hash.read();
+        resolve(result ? String(result) : undefined);
+      });
+      new Multistream(streams).pipe(hash);
+    } catch (err) {
+      console.error(err);
+      reject(err);
+    }
+  });
+}
+
+async function loadRepoInfo(dirPath) {
+  const filePath = join(dirPath, 'repo_info.json');
+  if (!fs.existsSync(filePath)) return undefined;
+  const lstat = await fsp.lstat(filePath);
+  if (lstat.isSymbolicLink()) return undefined;
+  try {
+    const fileContent = await fsp.readFile(filePath);
+    const rawRepoInfo = JSON.parse(String(fileContent));
+    return repoInfoSchema.parse(rawRepoInfo);
+  } catch (err) {
+    console.error(err);
+  }
+  return undefined;
+}
+
+async function isRepoOnline(repository) {
+  if (!repository) return false;
+  const { host, owner, repo, commit } = repository;
+  if (!host || !owner || !repo || !commit) return false;
+  try {
+    const apiUrls = {
+      'github.com': `https://github.com/${owner}/${repo}/commit/${commit}`,
+    };
+    const url = apiUrls[host];
+    const requestHead = (url) =>
+      new Promise((resolve, reject) => {
+        try {
+          https
+            .request(url, { method: 'HEAD' }, (res) => resolve(res))
+            .on('error', (err) => reject(err))
+            .end();
+        } catch (error) {
+          reject(error);
+        }
+      });
+    const res = await requestHead(url);
+    return res.statusCode === 200;
+  } catch (err) {
+    console.error(err);
+    return false;
+  }
+}
+
+async function isModuleVerified(moduleHash, repoInfo) {
+  if (!repoInfo) return false;
+  const { data, verification } = repoInfo;
+  if (!verification || !data || !data.moduleHash) return false;
+  try {
+    if (data.moduleHash !== moduleHash) return false;
+    const serializedData = JSON.stringify(data);
+    return crypto
+      .createVerify('RSA-SHA256')
+      .update(serializedData, 'utf8')
+      .end()
+      .verify(
+        { key: NEXUS_EMBASSY_PUBLIC_KEY, format: 'pem' },
+        verification.signature,
+        'base64'
+      );
+  } catch (err) {
+    console.error(err);
+    return false;
+  }
+}
+
+const getNexusOrgUsers = (() => {
+  let nexusOrgUsers;
+  let promise = null;
+  return () => {
+    if (!promise) {
+      promise = new Promise(async (resolve, reject) => {
+        if (!nexusOrgUsers) {
+          try {
+            const response = await getMembers('Nexusoft');
+            nexusOrgUsers = response.data.map((e) => e.login);
+          } catch (err) {
+            console.error(err);
+            return reject(err);
+          } finally {
+            promise = null;
+          }
+        }
+        resolve(nexusOrgUsers);
+      });
+    }
+    return promise;
+  };
+})();
+
+async function isRepoFromNexus(repository) {
+  if (!repository) return false;
+  const { host, owner, repo, commit } = repository;
+  if (!host || !owner || !repo || !commit) return false;
+  if (owner === 'Nexusoft') return true;
+  const nexusOrgUsers = await getNexusOrgUsers();
+  if (!nexusOrgUsers) return false;
+  return nexusOrgUsers.includes(owner);
+}
+
+async function initializeModule(moduleInfo, dirPath, settings) {
+  const hash = await getModuleHash(moduleInfo, dirPath);
+  const repoInfo = await loadRepoInfo(dirPath);
+  const repository = repoInfo?.data.repository;
+  const [repoOnline, repoVerified, repoFromNexus] = await Promise.all([
+    isRepoOnline(repository),
+    isModuleVerified(hash, repoInfo),
+    isRepoFromNexus(repository),
+  ]);
+
+  const { devMode, verifyModuleSource, disabledModules } = settings;
+  const incompatible =
+    !moduleInfo.targetWalletVersion ||
+    semver.lt(moduleInfo.targetWalletVersion, BACKWARD_COMPATIBLE_VERSION);
+  const disallowed = !(
+    (devMode && !verifyModuleSource) ||
+    (repository && repoOnline && repoVerified)
+  );
+  const enabled = !disallowed && !disabledModules.includes(moduleInfo.name);
+
+  return {
+    hash,
+    repository,
+    repoOnline,
+    repoVerified,
+    repoFromNexus,
+    incompatible,
+    disallowed,
+    enabled,
+  };
+}
+
+/**
+ * Load a production module from an installed directory. Returns a plain,
+ * JSON-serializable object (no filesystem paths) suitable to send to the
+ * renderer.
+ */
+async function loadModuleFromDir(dirPath, settings) {
+  const rawModuleInfo = await loadModuleInfoFile(dirPath);
+  const moduleInfo = await parseModuleInfo(rawModuleInfo, dirPath, settings);
+  const initialization = await initializeModule(moduleInfo, dirPath, settings);
+  return {
+    development: false,
+    info: moduleInfo,
+    ...initialization,
+  };
+}
+
+/**
+ * Load a development module. `path` is retained on the result because the
+ * renderer needs it only to match against the `devModulePaths` setting
+ * entries it already owns (no filesystem access is implied).
+ */
+async function loadDevModuleFromDir(dirPath) {
+  const rawModuleInfo = await loadModuleDevInfoFile(dirPath);
+  const moduleInfo = parseModuleDevInfo(rawModuleInfo);
+  return {
+    development: true,
+    path: dirPath,
+    info: moduleInfo,
+    enabled: true,
+  };
+}
+
+// Keyed by the on-disk directory name so `openFailureLocation` never has to
+// trust a path supplied by the renderer.
+let failedModulePaths = new Map();
+
+/**
+ * List every installed and development module, mirroring the previous
+ * renderer-side `prepareModules()` inventory scan.
+ */
+export async function listModules() {
+  const settings = loadSettingsFromFile();
+  const { devModulePaths = [] } = settings;
+
+  // Fire the request as early as possible, same as the previous renderer flow.
+  getNexusOrgUsers();
+
+  let childNames = [];
+  if (fs.existsSync(modulesDir)) {
+    childNames = await fsp.readdir(modulesDir);
+  }
+  const childPaths = childNames.map((name) => join(modulesDir, name));
+  const stats = await Promise.all(childPaths.map((path) => fsp.stat(path)));
+  const dirNames = childNames.filter((_name, i) => stats[i].isDirectory());
+  const dirPaths = dirNames.map((name) => join(modulesDir, name));
+
+  const results = await Promise.allSettled([
+    ...devModulePaths.map((path) => loadDevModuleFromDir(path)),
+    ...dirPaths.map((path) => loadModuleFromDir(path, settings)),
+  ]);
+
+  const modules = results
+    .filter(({ status }) => status === 'fulfilled')
+    .map(({ value }) => value);
+
+  const newFailedModulePaths = new Map();
+  const failedModules = [];
+  for (let i = 0; i < dirNames.length; ++i) {
+    const j = devModulePaths.length + i;
+    if (results[j].status === 'rejected') {
+      failedModules.push({ name: dirNames[i], message: results[j].reason?.message });
+      newFailedModulePaths.set(dirNames[i], dirPaths[i]);
+    }
+  }
+  failedModulePaths = newFailedModulePaths;
+
+  return { modules, failedModules };
+}
+
+/**
+ * Open the folder of a module that failed to load. Only ever opens a path
+ * that this process itself discovered during the last `listModules()` scan,
+ * never a path supplied directly by the renderer.
+ */
+export async function openFailureLocation(name) {
+  const key = assertSafeishFolderName(name);
+  const path = failedModulePaths.get(key);
+  if (!path) throw new Error('Unknown failed module');
+  return shell.openPath(path);
+}
+
+function assertSafeishFolderName(value) {
+  const name = assertString(value, 'Module folder name', { min: 1, max: 255 });
+  if (name.includes('\0') || name === '.' || name === '..') {
+    throw new TypeError('Module folder name is invalid');
+  }
+  return name;
+}
+
+/**
+ * =============================================================================
+ * Install / remove
+ * =============================================================================
+ */
+
+async function ensureDirExists(dirPath) {
+  await fsp.mkdir(dirPath, { recursive: true });
+}
+
+async function copyModuleFiles(files, source, dest) {
+  for (const file of files) {
+    await ensureDirExists(dirname(join(dest, file)));
+  }
+  const copyOne = (file) => fsp.copyFile(join(source, file), join(dest, file));
+  const promises = [copyOne('nxs_package.json'), ...files.map(copyOne)];
+  if (fs.existsSync(join(source, 'repo_info.json'))) {
+    promises.push(copyOne('repo_info.json'));
+  }
+  return Promise.all(promises);
+}
+
+// token -> { sourcePath, cleanupPath, moduleInfo, timer }
+const pendingInstalls = new Map();
+const PENDING_INSTALL_TTL = 10 * 60 * 1000; // 10 minutes
+
+function stagePendingInstall({ sourcePath, cleanupPath, moduleInfo }) {
+  const token = crypto.randomUUID();
+  const timer = setTimeout(() => {
+    const pending = pendingInstalls.get(token);
+    pendingInstalls.delete(token);
+    if (pending?.cleanupPath) {
+      fsp.rm(pending.cleanupPath, { recursive: true, force: true }).catch(() => {});
+    }
+  }, PENDING_INSTALL_TTL);
+  // Node timers keep the event loop alive; this one is non-critical.
+  if (typeof timer.unref === 'function') timer.unref();
+  pendingInstalls.set(token, { sourcePath, cleanupPath, moduleInfo, timer });
+  return token;
+}
+
+function takePendingInstall(token) {
+  const value = assertString(token, 'Install token', { min: 1, max: 128 });
+  const pending = pendingInstalls.get(value);
+  if (!pending) throw new Error('Install session has expired, please try again');
+  clearTimeout(pending.timer);
+  pendingInstalls.delete(value);
+  return pending;
+}
+
+/**
+ * Resolve a user-selected install source (native file dialog result or a
+ * dropped file/directory path) into a directory containing the module to
+ * install, extracting archives into a managed temp directory as needed.
+ */
+async function resolveInstallSource(sourcePath) {
+  const path = assertString(sourcePath, 'Module source path', { min: 1, max: 4096 });
+  if (!fs.existsSync(path)) {
+    throw new Error('Cannot find module');
+  }
+
+  const stat = await fsp.stat(path);
+  if (stat.isFile()) {
+    if (!SUPPORTED_ARCHIVE_EXTENSIONS.some((ext) => path.toLowerCase().endsWith(ext))) {
+      throw new Error('Unsupported file type');
+    }
+    const extractDir = join(temporaryModuleDir, crypto.randomUUID());
+    await ensureDirExists(extractDir);
+    await extractZip(path, { dir: extractDir });
+
+    let resolvedDir = extractDir;
+    // In case the module is wrapped inside a sub directory of the archive file
+    const subItems = await fsp.readdir(extractDir);
+    if (subItems.length === 1) {
+      const subItemPath = join(extractDir, subItems[0]);
+      if ((await fsp.stat(subItemPath)).isDirectory()) {
+        resolvedDir = subItemPath;
+      }
+    }
+    return { dirPath: resolvedDir, cleanupPath: extractDir };
+  }
+
+  const normalizedPath = normalize(path);
+  if (normalizedPath.startsWith(normalize(modulesDir))) {
+    throw new Error('Cannot install from this location');
+  }
+  return { dirPath: normalizedPath, cleanupPath: undefined };
+}
+
+/**
+ * Inspect a module install source: extracts archives if necessary, validates
+ * and loads the module descriptor, and stages it for a follow-up `install`
+ * call. Never exposes filesystem paths to the renderer.
+ */
+export async function inspectInstallSource(sourcePath) {
+  const { dirPath, cleanupPath } = await resolveInstallSource(sourcePath);
+  const settings = loadSettingsFromFile();
+  const module = await loadModuleFromDir(dirPath, settings);
+  const alreadyInstalled = fs.existsSync(join(modulesDir, module.info.name));
+  const token = stagePendingInstall({ sourcePath: dirPath, cleanupPath, moduleInfo: module.info });
+  return { token, module, alreadyInstalled };
+}
+
+/**
+ * Finalize an install previously staged by `inspectInstallSource` (or
+ * `downloadAndInstall`). Throws `ALREADY_EXISTS` if the destination exists
+ * and the caller did not explicitly confirm an overwrite.
+ */
+export async function finalizeInstall({ token, overwrite }) {
+  const pending = takePendingInstall(token);
+  try {
+    const settings = loadSettingsFromFile();
+    // Re-validate the staged module right before installing, in case
+    // anything on disk changed since it was inspected.
+    const module = await loadModuleFromDir(pending.sourcePath, settings);
+    const dest = join(modulesDir, module.info.name);
+
+    if (fs.existsSync(dest)) {
+      if (!overwrite) {
+        const err = new Error('A module with the same directory name already exists');
+        err.code = 'ALREADY_EXISTS';
+        throw err;
+      }
+      await fsp.rm(dest, { recursive: true, force: true });
+    }
+
+    await ensureDirExists(dest);
+    await copyModuleFiles(module.info.files, pending.sourcePath, dest);
+    return loadModuleFromDir(dest, settings);
+  } finally {
+    if (pending.cleanupPath) {
+      fsp.rm(pending.cleanupPath, { recursive: true, force: true }).catch(() => {});
+    }
+  }
+}
+
+/**
+ * Validate a development module directory and return its parsed descriptor.
+ * Persisting the directory into `devModulePaths` remains the renderer's
+ * responsibility (it already goes through the `settings:update` operation).
+ */
+export async function addDevelopmentModule(dirPath) {
+  const path = assertString(dirPath, 'Development module path', { min: 1, max: 4096 });
+  if (!fs.existsSync(path)) {
+    throw new Error('Directory does not exist');
+  }
+  return loadDevModuleFromDir(path);
+}
+
+export async function removeModule(name) {
+  const moduleName = assertSafeModuleName(name);
+  const { root, development } = await resolveModuleRoot(moduleName);
+  if (development) {
+    throw new Error('Development modules are removed by updating settings, not by this operation');
+  }
+  await fsp.rm(root, { recursive: true, force: true });
+}
+
+/**
+ * =============================================================================
+ * Storage (per-module storage.json)
+ * =============================================================================
+ */
+
+const STORAGE_FILE_NAME = 'storage.json';
+const MAX_STORAGE_BYTES = 1000000;
+
+export async function readModuleStorage(name) {
+  const moduleName = assertSafeModuleName(name);
+  try {
+    const { root } = await resolveModuleRoot(moduleName);
+    const storagePath = join(root, STORAGE_FILE_NAME);
+    const stat = await fsp.stat(storagePath);
+    if (!stat.isFile()) return {};
+    const content = await fsp.readFile(storagePath);
+    return JSON.parse(String(content));
+  } catch (err) {
+    if (err?.code !== 'ENOENT') console.error(err);
+    return {};
+  }
+}
+
+export async function writeModuleStorage(name, data) {
+  const moduleName = assertSafeModuleName(name);
+  const value = assertRecord(data ?? {}, 'Module storage data');
+  const content = JSON.stringify(value);
+  if (content.length > MAX_STORAGE_BYTES) {
+    throw new Error('Module storage data must not exceed 1MB');
+  }
+  const { root } = await resolveModuleRoot(moduleName);
+  const storagePath = join(root, STORAGE_FILE_NAME);
+  await fsp.writeFile(storagePath, content);
+}
+
+/**
+ * =============================================================================
+ * Download & install from a GitHub release asset
+ * =============================================================================
+ */
+
+// moduleName -> in-flight http(s) ClientRequest, so downloads can be aborted.
+const downloadRequests = new Map();
+
+function sendDownloadProgress(moduleName, progress) {
+  try {
+    global.mainWindow?.webContents.send('modules:download-progress', {
+      moduleName,
+      ...progress,
+    });
+  } catch {
+    // Renderer may not be listening (older preload build); safe to ignore.
+  }
+}
+
+function downloadToFile(url, filePath, moduleName) {
+  return new Promise((resolve, reject) => {
+    const request = https
+      .get(url)
+      .setTimeout(180000)
+      .on('response', (response) => {
+        if (String(response.statusCode).startsWith('3') && response.headers.location) {
+          downloadToFile(response.headers.location, filePath, moduleName)
+            .then(resolve)
+            .catch(reject);
+          return;
+        }
+
+        const totalSize = parseInt(response.headers['content-length'] || '', 10);
+        let downloaded = 0;
+        const file = fs.createWriteStream(filePath);
+
+        response
+          .on('data', (chunk) => {
+            downloaded += chunk.length;
+            sendDownloadProgress(moduleName, { downloaded, totalSize, downloading: true });
+          })
+          .on('close', () => resolve(filePath))
+          .on('error', (err) => reject(err))
+          .pipe(file);
+      })
+      .on('error', (err) => reject(err))
+      .on('timeout', () => {
+        request.destroy();
+        reject(new Error('Request timeout!'));
+      });
+    downloadRequests.set(moduleName, request);
+  });
+}
+
+export async function downloadAndInstallModule({ moduleName, owner, repo, releaseId }) {
+  let filePath;
+  try {
+    sendDownloadProgress(moduleName, { downloading: true });
+
+    let resolvedReleaseId = releaseId;
+    if (releaseId === 'latest') {
+      const { data: release } = await fetchGithubLatestRelease(getRepoId({ owner, repo }), {
+        headers: { Accept: 'application/vnd.github.v3+json' },
+      });
+      resolvedReleaseId = release.id;
+    }
+
+    const { data: releaseAssets } = await axios.get(
+      `https://api.github.com/repos/${owner}/${repo}/releases/${resolvedReleaseId}/assets`,
+      { headers: { Accept: 'application/vnd.github.v3+json' } }
+    );
+    const asset = releaseAssets.find(
+      ({ name }) => name.startsWith(moduleName) && name.endsWith('.zip')
+    );
+    if (!asset) {
+      throw new Error('Cannot find module archive file among assets');
+    }
+
+    await ensureDirExists(moduleDownloadDir);
+    filePath = join(moduleDownloadDir, asset.name);
+    await downloadToFile(asset.browser_download_url, filePath, moduleName);
+
+    return await inspectInstallSource(filePath);
+  } finally {
+    downloadRequests.delete(moduleName);
+    sendDownloadProgress(moduleName, { downloading: false });
+    if (filePath) {
+      fsp.unlink(filePath).catch(() => {});
+    }
+  }
+}
+
+export function abortDownload(name) {
+  const request = downloadRequests.get(name);
+  if (request) request.destroy();
+  downloadRequests.delete(name);
+}
+
+/**
+ * =============================================================================
+ * Featured modules feed
+ * =============================================================================
+ */
+
+export async function getFeaturedModules() {
+  const response = await axios.get(
+    `https://nexus-featured-modules.netlify.app/featured-modules?wallet_version=${APP_VERSION}`
+  );
+  return response.data;
+}
+
+/**
+ * =============================================================================
+ * Misc
+ * =============================================================================
+ */
 
 export async function proxyRequest(...params) {
   const { data, status, statusText, headers } = await axios(...params);

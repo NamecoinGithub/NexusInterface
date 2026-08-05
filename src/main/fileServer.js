@@ -7,7 +7,7 @@ import { normalize } from 'path';
 import express from 'express';
 import log from 'electron-log';
 
-import { modulesDir } from 'consts/paths';
+import { modulesDir } from './paths';
 
 const server = express();
 const staticMiddleware = express.static(modulesDir);
