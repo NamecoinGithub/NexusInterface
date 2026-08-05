@@ -24,6 +24,11 @@ function escapeRegExp(value) {
 }
 
 test('every declared privileged channel has a validated main-process handler', () => {
+  assert.equal(
+    [...mainSource.matchAll(/\bipcMain\.(?:handle|on)\(/g)].length,
+    2,
+    'IPC registration must remain inside the guarded registration helpers'
+  );
   assert.match(mainSource, /function registerOperation\(channel, validateRequest, operation\)/);
   assert.match(mainSource, /function registerSynchronousOperation\(channel, validateRequest, operation\)/);
   assert.match(mainSource, /validateRequest\s*\?\s*validateRequest\(request, event\)\s*:\s*validateNoArguments/);
