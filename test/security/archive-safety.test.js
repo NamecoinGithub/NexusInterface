@@ -91,6 +91,7 @@ test('archive validation rejects traversal, links, bombs, and encrypted entries'
     archiveEntry({ fileName: 'db\\outside' }),
     archiveEntry({ fileName: '/outside' }),
     archiveEntry({ fileName: 'C:\\outside' }),
+    archiveEntry({ fileName: `db/${'a'.repeat(1025)}` }),
     archiveEntry({ externalFileAttributes: 0o120777 << 16 }),
     archiveEntry({ isEncrypted: () => true }),
     archiveEntry({ compressedSize: 1, uncompressedSize: 101 }),
@@ -149,10 +150,32 @@ test('safe ZIP extraction validates all paths before creating its destination', 
       archivePath,
       createStoredZip([{ fileName: 'db/data.txt', contents: 'safe' }])
     );
+    const blockedDestination = path.join(temporaryDirectory, 'blocked');
+    await assert.rejects(
+      extractSafeZip({
+        archivePath,
+        destination: blockedDestination,
+        limits: ARCHIVE_LIMITS,
+        onPreflight: () => {
+          throw new Error('insufficient extraction space');
+        },
+      }),
+      /insufficient extraction space/
+    );
+    await assert.rejects(fs.stat(blockedDestination), { code: 'ENOENT' });
+
+    let preflight;
     await extractSafeZip({
       archivePath,
       destination,
       limits: ARCHIVE_LIMITS,
+      onPreflight: (metadata) => {
+        preflight = metadata;
+      },
+    });
+    assert.deepEqual(preflight, {
+      entryCount: 1,
+      totalUncompressedSize: 4,
     });
     assert.equal(
       await fs.readFile(path.join(destination, 'db', 'data.txt'), 'utf8'),

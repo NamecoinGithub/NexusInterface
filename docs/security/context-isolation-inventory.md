@@ -51,7 +51,9 @@ Bootstrap extraction now preflights every ZIP entry and rejects traversal,
 duplicate paths, links, encryption, excessive entry counts, excessive
 expansion, and unsafe compression ratios before it writes any destination
 path. The archive is downloaded to a private temporary file and extracted only
-after that preflight completes.
+after that preflight completes. The download is bounded by currently available
+disk space, and the preflight checks that the declared expanded size fits before
+creating the extraction directory.
 
 A cryptographic bootstrap-artifact verification cannot safely be enabled until
 the bootstrap service publishes a stable, authenticated digest or signed

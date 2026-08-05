@@ -9,6 +9,8 @@ const yauzl = require('yauzl');
 const ZIP_DIRECTORY_MODE = 0o040000;
 const ZIP_REGULAR_FILE_MODE = 0o100000;
 const ZIP_FILE_TYPE_MASK = 0o170000;
+const MAX_ENTRY_PATH_LENGTH = 1024;
+const MAX_PATH_SEGMENT_LENGTH = 255;
 
 function archiveError(label, message) {
   return new Error(`${label} ${message}`);
@@ -34,8 +36,12 @@ function validateZipEntry(entry, state, limits, label = 'Archive') {
     entryPath.includes('\\') ||
     entryPath.startsWith('/') ||
     /^[A-Za-z]:/.test(entryPath) ||
-    entryPath.split('/').some(
-      (segment) => !segment || segment === '.' || segment === '..'
+    entryPath.length > MAX_ENTRY_PATH_LENGTH ||
+    entryPath.split('/').some((segment) =>
+      !segment ||
+      segment === '.' ||
+      segment === '..' ||
+      segment.length > MAX_PATH_SEGMENT_LENGTH
     )
   ) {
     throw archiveError(label, 'contains an unsafe entry path');
@@ -188,7 +194,13 @@ async function extractFile(root, item, zipfile, state, limits, label) {
   }
 }
 
-async function extractSafeZip({ archivePath, destination, limits, label = 'Archive' }) {
+async function extractSafeZip({
+  archivePath,
+  destination,
+  limits,
+  label = 'Archive',
+  onPreflight,
+}) {
   if (!path.isAbsolute(destination)) {
     throw archiveError(label, 'destination must be an absolute path');
   }
@@ -196,6 +208,12 @@ async function extractSafeZip({ archivePath, destination, limits, label = 'Archi
   try {
     const state = createArchiveState();
     const entries = await collectEntries(zipfile, state, limits, label);
+    if (onPreflight) {
+      await onPreflight({
+        entryCount: state.entryCount,
+        totalUncompressedSize: state.totalUncompressedSize,
+      });
+    }
     await fsp.mkdir(destination, { mode: 0o700 });
     const root = await fsp.realpath(destination);
     const rootStat = await fsp.lstat(root);

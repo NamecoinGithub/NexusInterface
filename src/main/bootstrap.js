@@ -20,8 +20,7 @@ const MAX_BOOTSTRAP_ARCHIVE_ENTRIES = 100000;
 const MAX_BOOTSTRAP_ARCHIVE_ENTRY_BYTES = 50 * 1000 * 1000 * 1000;
 const MAX_BOOTSTRAP_ARCHIVE_EXPANDED_BYTES = 50 * 1000 * 1000 * 1000;
 const MAX_BOOTSTRAP_ARCHIVE_COMPRESSION_RATIO = 100;
-const MIN_FREE_SPACE =
-  MAX_ARCHIVE_SIZE + MAX_BOOTSTRAP_ARCHIVE_EXPANDED_BYTES;
+const MIN_FREE_SPACE = 15 * 1000 * 1000 * 1000;
 const BOOTSTRAP_ARCHIVE_LIMITS = Object.freeze({
   maxCompressionRatio: MAX_BOOTSTRAP_ARCHIVE_COMPRESSION_RATIO,
   maxEntries: MAX_BOOTSTRAP_ARCHIVE_ENTRIES,
@@ -74,7 +73,7 @@ async function stopCore() {
   if (await isCoreRunning()) await killCoreProcess();
 }
 
-function downloadArchive(archivePath, onProgress) {
+function downloadArchive(archivePath, onProgress, availableSpace) {
   return new Promise((resolve, reject) => {
     let settled = false;
     const settle = (error) => {
@@ -102,6 +101,11 @@ function downloadArchive(archivePath, onProgress) {
         settle(new Error('Bootstrap archive is too large'));
         return;
       }
+      if (Number.isFinite(totalSize) && totalSize > availableSpace) {
+        response.resume();
+        settle(new Error('Bootstrap archive exceeds the available disk space'));
+        return;
+      }
 
       const archive = fs.createWriteStream(archivePath, {
         flags: 'wx',
@@ -118,6 +122,10 @@ function downloadArchive(archivePath, onProgress) {
         downloaded += chunk.length;
         if (downloaded > MAX_ARCHIVE_SIZE) {
           fail(new Error('Bootstrap archive is too large'));
+          return;
+        }
+        if (downloaded > availableSpace) {
+          fail(new Error('Bootstrap archive exceeds the available disk space'));
           return;
         }
         onProgress({
@@ -140,12 +148,13 @@ function downloadArchive(archivePath, onProgress) {
   });
 }
 
-async function extractBootstrapArchive(archivePath, extractDir) {
+async function extractBootstrapArchive(archivePath, extractDir, onPreflight) {
   await extractSafeZip({
     archivePath,
     destination: extractDir,
     label: 'Bootstrap archive',
     limits: BOOTSTRAP_ARCHIVE_LIMITS,
+    onPreflight,
   });
 }
 
@@ -174,9 +183,7 @@ export async function startBootstrap(sendStatus) {
     await fs.promises.mkdir(settings.coreDataDir, { recursive: true });
     const diskSpace = await checkDiskSpace(settings.coreDataDir);
     if (diskSpace.free < MIN_FREE_SPACE) {
-      throw new Error(
-        `At least ${MIN_FREE_SPACE / 1000 / 1000 / 1000}GB of free space is required for bootstrap`
-      );
+      throw new Error('At least 15GB of free space is required for bootstrap');
     }
 
     emitStatus(sendStatus, 'preparing');
@@ -188,13 +195,22 @@ export async function startBootstrap(sendStatus) {
     if (activeBootstrap.aborted) return { aborted: true };
 
     emitStatus(sendStatus, 'downloading', { downloaded: 0 });
-    await downloadArchive(archivePath, (details) =>
-      emitStatus(sendStatus, 'downloading', details)
+    await downloadArchive(
+      archivePath,
+      (details) => emitStatus(sendStatus, 'downloading', details),
+      diskSpace.free
     );
     if (activeBootstrap.aborted) return { aborted: true };
 
     emitStatus(sendStatus, 'extracting');
-    await extractBootstrapArchive(archivePath, extractDir);
+    await extractBootstrapArchive(archivePath, extractDir, async (archive) => {
+      const availableSpace = await checkDiskSpace(settings.coreDataDir);
+      if (availableSpace.free < archive.totalUncompressedSize) {
+        throw new Error(
+          'Bootstrap archive requires more free space for extraction'
+        );
+      }
+    });
     if (activeBootstrap.aborted) return { aborted: true };
 
     emitStatus(sendStatus, 'moving_db');
