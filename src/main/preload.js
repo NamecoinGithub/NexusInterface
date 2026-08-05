@@ -54,30 +54,30 @@ function validateMenuId(id) {
   if (!/^[A-Za-z0-9_.-]+$/.test(menuId)) {
     throw new TypeError('Menu id contains unsupported characters');
   }
-
-  function sanitizeAnalyticsProperties(properties) {
-    if (properties === undefined) return undefined;
-    if (!properties || typeof properties !== 'object' || Array.isArray(properties)) {
-      throw new TypeError('Analytics properties must be an object');
-    }
-    const entries = Object.entries(properties);
-    if (entries.length > 16) {
-      throw new TypeError('Analytics properties contain too many fields');
-    }
-    const sanitized = {};
-    for (const [key, value] of entries) {
-      assertString(key, 'Analytics property name', { min: 1, max: 64 });
-      if (
-        !['string', 'number', 'boolean'].includes(typeof value) ||
-        (typeof value === 'string' && value.length > 256)
-      ) {
-        throw new TypeError('Analytics property value is invalid');
-      }
-      sanitized[key] = value;
-    }
-    return sanitized;
-  }
   return menuId;
+}
+
+function sanitizeAnalyticsProperties(properties) {
+  if (properties === undefined) return undefined;
+  if (!properties || typeof properties !== 'object' || Array.isArray(properties)) {
+    throw new TypeError('Analytics properties must be an object');
+  }
+  const entries = Object.entries(properties);
+  if (entries.length > 16) {
+    throw new TypeError('Analytics properties contain too many fields');
+  }
+  const sanitized = {};
+  for (const [key, value] of entries) {
+    assertString(key, 'Analytics property name', { min: 1, max: 64 });
+    if (
+      !['string', 'number', 'boolean'].includes(typeof value) ||
+      (typeof value === 'string' && value.length > 256)
+    ) {
+      throw new TypeError('Analytics property value is invalid');
+    }
+    sanitized[key] = value;
+  }
+  return sanitized;
 }
 
 function exposeInMainWorld(name, api) {
