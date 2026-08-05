@@ -23,7 +23,7 @@ import {
   modulesMapAtom,
   moduleStatesAtom,
 } from './atoms';
-import { readModuleStorage, writeModuleStorage } from './storage';
+import { readModuleStorage, writeModuleStorage } from './rendererStorage';
 
 type WebviewTag = HTMLWebViewElement & {
   send(channel: string, ...args: unknown[]): void;

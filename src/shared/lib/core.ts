@@ -1,5 +1,3 @@
-import log from 'electron-log';
-
 import { store } from 'lib/store';
 import { coreConfigAtom } from 'lib/coreConfig';
 import { coreInfoPausedAtom } from 'lib/coreInfo';
@@ -14,7 +12,7 @@ export const startCore = async () => {
   // Check remote core mode
   const settings = store.get(settingsAtom);
   if (settings.manualDaemon) {
-    log.info('Core Manager: Remote Core mode, skipping starting core');
+    console.info('Core Manager: Remote Core mode, skipping starting core');
     return;
   }
 
@@ -27,7 +25,7 @@ export const startCore = async () => {
     throw new Error(status.status?.error || 'Nexus Core binary not found');
   }
   if (status.running) {
-    log.info(
+    console.info(
       'Core Manager: Nexus Core Process already running. Skipping starting core'
     );
     return;
@@ -41,7 +39,7 @@ export const startCore = async () => {
  * Stop Nexus Core
  */
 export const stopCore = async (forRestart?: boolean) => {
-  log.info('Core Manager: Stop function called');
+  console.info('Core Manager: Stop function called');
   const { manualDaemon } = store.get(settingsAtom);
   try {
     await callAPI('system/stop');
@@ -54,11 +52,11 @@ export const stopCore = async (forRestart?: boolean) => {
       };
       coreStillRunning = !!coreStatus.running;
       if (coreStillRunning) {
-        log.info(
+        console.info(
           `Core Manager: Core still running after stop command for: ${i} seconds`
         );
       } else {
-        log.info(`Core Manager: Core stopped gracefully.`);
+        console.info(`Core Manager: Core stopped gracefully.`);
         break;
       }
       await sleep(1000);

@@ -24,7 +24,12 @@ import z from 'zod';
 import normalizeEol from 'utils/normalizeEol';
 import { fetchGithubLatestRelease, getMembers, getRepoId } from 'lib/github';
 
-import { assertRecord, assertSafeModuleName, assertString } from './ipc/contracts';
+import {
+  EVENTS,
+  assertRecord,
+  assertSafeModuleName,
+  assertString,
+} from './ipc/contracts';
 import { modulesDir, moduleDownloadDir, temporaryModuleDir } from './paths';
 import { loadSettingsFromFile } from './settings';
 import { resolveModuleRoot } from './moduleFiles';
@@ -890,7 +895,7 @@ const downloadRequests = new Map();
 
 function sendDownloadProgress(moduleName, progress) {
   try {
-    global.mainWindow?.webContents.send('modules:download-progress', {
+    global.mainWindow?.webContents.send(EVENTS.modules.downloadProgress, {
       moduleName,
       ...progress,
     });

@@ -87,6 +87,7 @@ const CHANNELS = Object.freeze({
     exit: 'app:exit',
     hideWindow: 'app:hide-window',
     hideDock: 'app:hide-dock',
+    setOpenOnStart: 'app:set-open-on-start',
     popupContextMenu: 'app:popup-context-menu',
     setMenu: 'app:set-menu',
     openVirtualKeyboard: 'app:open-virtual-keyboard',
@@ -98,6 +99,9 @@ const CHANNELS = Object.freeze({
 const EVENTS = Object.freeze({
   bootstrapStatus: 'bootstrap:status',
   coreOutput: 'core:output',
+  modules: Object.freeze({
+    downloadProgress: 'modules:download-progress',
+  }),
   windowClose: 'window-close',
   usageTrackingError: 'usage-tracking-error-relay',
   keyboardInputChange: 'keyboard-input-change',
@@ -224,6 +228,13 @@ function assertString(value, name, { min = 0, max = 4096 } = {}) {
 function assertBoolean(value, name) {
   if (typeof value !== 'boolean') fail(`${name} must be a boolean`);
   return value;
+}
+
+function validateNoArguments(value, operationName = 'Operation') {
+  if (value !== undefined) {
+    fail(`${operationName} does not accept arguments`);
+  }
+  return undefined;
 }
 
 function assertSafeModuleName(value, name = 'Module name') {
@@ -449,6 +460,7 @@ module.exports = {
   validateModuleDownloadRequest,
   validateModuleFiles,
   validateModuleStorageRequest,
+  validateNoArguments,
   validateSettingsUpdate,
   validateThemeUpdate,
 };

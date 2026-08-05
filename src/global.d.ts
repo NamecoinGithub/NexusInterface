@@ -105,6 +105,14 @@ interface NexusElectronBridge {
     getFeatured(): Promise<unknown>;
     checkUpdates(): Promise<unknown>;
     openFailureLocation(name: string): Promise<unknown>;
+    onDownloadProgress(
+      listener: (progress: {
+        moduleName: string;
+        downloaded?: number;
+        totalSize?: number;
+        downloading: boolean;
+      }) => void
+    ): () => void;
   };
   updater: {
     check(): Promise<unknown>;
@@ -144,6 +152,7 @@ interface NexusElectronBridge {
     exit(): Promise<void>;
     hideWindow(): Promise<void>;
     hideDock(): Promise<void>;
+    setOpenOnStart(enabled: boolean): Promise<void>;
     popupContextMenu(
       template: unknown[],
       webContentsId?: number

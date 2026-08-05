@@ -20,6 +20,7 @@ import { authorizeModuleEntry, hardenModuleWebviews } from './webviewSecurity';
 import { setupTray } from './tray';
 import { setApplicationMenu, popupContextMenu } from './menu';
 import { openVirtualKeyboard } from './keyboard';
+import { setOpenOnStart } from './autoLaunch';
 import {
   initializeUpdater,
   checkForUpdates,
@@ -43,6 +44,7 @@ import {
   validateModuleDownloadRequest,
   validateModuleFiles as validateModuleFilePaths,
   validateModuleStorageRequest,
+  validateNoArguments,
   validateSettingsUpdate,
   validateThemeUpdate,
 } from './ipc/contracts';
@@ -215,13 +217,6 @@ function ensureObject(value, fieldName) {
     throw new TypeError(`${fieldName} must be an object`);
   }
   return value;
-}
-
-function ensureNoArguments(request, operationName) {
-  if (request !== undefined) {
-    throw new TypeError(`${operationName} does not accept arguments`);
-  }
-  return undefined;
 }
 
 function rememberSelectedPaths(pathsBySender, event, selectedPaths) {
@@ -450,7 +445,7 @@ function registerOperation(channel, validateRequest, operation) {
     try {
       const validatedRequest = validateRequest
         ? validateRequest(request, event)
-        : undefined;
+        : validateNoArguments(request, channel);
       return ipcResult(await operation(validatedRequest, event));
     } catch (err) {
       return operationError(err);
@@ -467,7 +462,7 @@ function registerSynchronousOperation(channel, validateRequest, operation) {
     try {
       const validatedRequest = validateRequest
         ? validateRequest(request, event)
-        : undefined;
+        : validateNoArguments(request, channel);
       event.returnValue = ipcResult(operation(validatedRequest, event));
     } catch (err) {
       event.returnValue = operationError(err);
@@ -513,6 +508,11 @@ registerOperation(CHANNELS.app.hideWindow, undefined, async () => mainWindow.hid
 registerOperation(CHANNELS.app.hideDock, undefined, async () => {
   if (process.platform === 'darwin') app.dock.hide();
 });
+registerOperation(
+  CHANNELS.app.setOpenOnStart,
+  (enabled) => assertBoolean(enabled, 'openOnStart'),
+  async (enabled) => setOpenOnStart(enabled)
+);
 registerOperation(
   CHANNELS.app.popupContextMenu,
   (request) => {
@@ -845,7 +845,7 @@ registerOperation(
 );
 registerOperation(
   CHANNELS.modules.list,
-  (request) => ensureNoArguments(request, 'Module list'),
+  (request) => validateNoArguments(request, 'Module list'),
   async () => listModules()
 );
 registerOperation(
@@ -914,12 +914,12 @@ registerOperation(
 );
 registerOperation(
   CHANNELS.modules.getFeatured,
-  (request) => ensureNoArguments(request, 'Featured modules'),
+  (request) => validateNoArguments(request, 'Featured modules'),
   async () => getFeaturedModules()
 );
 registerOperation(
   CHANNELS.modules.checkUpdates,
-  (request) => ensureNoArguments(request, 'Module update check'),
+  (request) => validateNoArguments(request, 'Module update check'),
   async () => checkForModuleUpdates()
 );
 registerOperation(

@@ -206,13 +206,13 @@ const menuItems = preprocess({
   websiteLink: {
     label: __('Nexus Website'),
     click: () => {
-      void window.nexusElectron.app.openExternal('http://nexus.io');
+      void window.nexusElectron.app.openExternal('https://nexus.io');
     },
   },
   gitRepoLink: {
     label: __('Nexus Git Repository'),
     click: () => {
-      void window.nexusElectron.app.openExternal('http://github.com/Nexusoft');
+      void window.nexusElectron.app.openExternal('https://github.com/Nexusoft');
     },
   },
   walletGuideLink: {

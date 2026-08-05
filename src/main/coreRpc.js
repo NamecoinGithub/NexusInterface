@@ -5,6 +5,10 @@ import path from 'path';
 import crypto from 'crypto';
 
 import { loadSettingsFromFile } from './settings';
+import {
+  getCoreTransportOptions,
+  validateCoreRpcPath,
+} from './ipc/coreTransport';
 
 let cachedEmbeddedConfig;
 
@@ -97,11 +101,12 @@ export async function getPublicCoreConfiguration() {
 
 function requestCore({ method, endpoint, params, config }) {
   const body = params === undefined ? undefined : JSON.stringify(params);
-  const client = config.apiSSL ? https : http;
+  const { apiSSL, rejectUnauthorized } = getCoreTransportOptions(config);
+  const client = apiSSL ? https : http;
   const options = {
     method,
     hostname: config.ip,
-    port: config.apiSSL ? config.apiPortSSL : config.apiPort,
+    port: apiSSL ? config.apiPortSSL : config.apiPort,
     path: `/${endpoint}`,
     headers: {
       'Content-Type': 'application/json',
@@ -111,8 +116,7 @@ function requestCore({ method, endpoint, params, config }) {
       config.apiUser && config.apiPassword
         ? `${config.apiUser}:${config.apiPassword}`
         : undefined,
-    // Nexus Core commonly uses a self-signed local certificate.
-    rejectUnauthorized: false,
+    ...(apiSSL ? { rejectUnauthorized } : {}),
     timeout: 30000,
   };
 
@@ -151,17 +155,7 @@ export async function callCoreRpc({ endpoint, params }) {
 }
 
 export async function callCoreRpcByUrl(url) {
-  if (typeof url !== 'string' || !url || url.length > 2048) {
-    throw new Error('Core RPC URL is invalid');
-  }
-  const normalizedUrl = url.replace(/^\/+/, '');
-  if (
-    normalizedUrl.includes('://') ||
-    normalizedUrl.includes('\\') ||
-    normalizedUrl.split('/').some((part) => part === '..')
-  ) {
-    throw new Error('Core RPC URL must be a relative API path');
-  }
+  const normalizedUrl = validateCoreRpcPath(url);
   const config = await getCoreConfiguration();
   return requestCore({
     method: 'GET',

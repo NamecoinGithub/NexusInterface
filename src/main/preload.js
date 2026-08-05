@@ -166,6 +166,12 @@ const nexusElectron = {
     checkUpdates: () => invoke(CHANNELS.modules.checkUpdates),
     openFailureLocation: (name) =>
       invoke(CHANNELS.modules.openFailureLocation, name),
+    onDownloadProgress: (listener) =>
+      subscribe(
+        EVENTS.modules.downloadProgress,
+        listener,
+        'Module download progress'
+      ),
   },
   updater: {
     check: () => invoke(CHANNELS.updater.check),
@@ -195,6 +201,8 @@ const nexusElectron = {
     exit: () => invoke(CHANNELS.app.exit),
     hideWindow: () => invoke(CHANNELS.app.hideWindow),
     hideDock: () => invoke(CHANNELS.app.hideDock),
+    setOpenOnStart: (enabled) =>
+      invoke(CHANNELS.app.setOpenOnStart, enabled),
     popupContextMenu: (template, webContentsId) =>
       invoke(CHANNELS.app.popupContextMenu, { template, webContentsId }),
     setMenu: (template) => invoke(CHANNELS.app.setMenu, template),
