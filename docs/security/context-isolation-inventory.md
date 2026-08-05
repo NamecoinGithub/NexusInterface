@@ -6,7 +6,7 @@ the compiled renderer must also pass the renderer build boundary below.
 
 | Surface | Node integration | Context isolation | Sandbox | Privileged interface | Status |
 | --- | --- | --- | --- | --- | --- |
-| Main wallet window | Disabled | Enabled | Not enabled | `window.nexusElectron`, exposed by `src/main/preload.js` | Complete for the current migration phase |
+| Main wallet window | Disabled | Enabled | Enabled | `window.nexusElectron`, exposed by `src/main/preload.js` | Complete for the current migration phase |
 | Virtual keyboard window | Disabled | Enabled | Enabled | `src/keyboard/preload.js` | Complete |
 | Production module WebViews | Disabled | Disabled | Disabled | Module preload and authorized module-file origin | Deferred compatibility milestone |
 | Development module WebViews | Enabled for local development modules only | Disabled | Disabled | Module preload and local developer-selected directory | Deferred compatibility milestone |
@@ -16,24 +16,49 @@ the compiled renderer must also pass the renderer build boundary below.
 ## Main-window acceptance criteria
 
 - `src/main/renderer.js` sets `nodeIntegration: false`,
-  `contextIsolation: true`, and `enableRemoteModule: false`.
+  `contextIsolation: true`, `sandbox: true`, and `enableRemoteModule: false`.
 - `src/main/preload.js` exposes an allowlisted, typed operation surface rather
   than raw `ipcRenderer`, Node modules, or Electron modules.
+- Clipboard writes and analytics events go through named IPC channels
+  (`app:write-clipboard`, `app:track-event`) instead of preload-local Electron
+  or third-party renderer SDKs.
 - Every registered operation validates its request before invoking a
   main-process service. Operations with no request reject supplied arguments.
+- Core RPC calls require an allowlisted API namespace in addition to path-shape
+  validation.
 - `npm run build-renderer` uses
   `configs/webpack.config.base.renderer.babel.js`, which disables Node and
   Electron externals and resolves browser package conditions. A Node-core
   import in the live renderer graph therefore fails the build rather than
   becoming a runtime `require`.
-- `npm run test:security` verifies the URL, path, Core transport, and archive
-  boundaries. `test/security/startup.test.js` also checks
-  the main and keyboard window hardening configuration.
+- `npm run test:security` verifies the URL, path, Core transport, archive,
+  renderer-boundary, and startup configuration checks.
 
-The main-window sandbox remains an explicit follow-up: the current preload
-uses Electron clipboard support and the Aptabase renderer integration, both of
-which need a compatibility migration to IPC-safe alternatives before
-`sandbox: true` can be enabled without changing behavior.
+## Capability inventory (post-migration)
+
+| Former renderer capability | Main-process owner | Preload / bridge method | IPC channel | Validation | Status |
+| --- | --- | --- | --- | --- | --- |
+| `process.env` / platform / arch | Preload environment snapshot | `window.nexusEnv` / `environment` | N/A (preload constants) | Read-only values | Complete |
+| Application path bootstrap | `src/main/paths.js` | `paths.getBootstrap()` | `paths:get-bootstrap` | No arguments; no FS paths returned | Complete |
+| Settings / address book files | `src/main/settings.js` | `settings.*` | `settings:*` | Field allowlists | Complete |
+| Theme / wallpaper files | `src/main/theme.js` | `theme.*` | `theme:*` | Theme field allowlist / dialog-only import-export | Complete |
+| Core lifecycle / console | `src/main/core.js` | `core.*` | `core:*` | Console command bounds | Complete |
+| Core RPC HTTP(S) | `src/main/coreRpc.js` | `coreRpc.call` / `callByUrl` | `core-rpc:*` | Endpoint shape + namespace allowlist + TLS policy | Complete |
+| Bootstrap download/extract | `src/main/bootstrap.js` | `bootstrap.*` | `bootstrap:*` | Progress events; archive preflight | Complete |
+| Module install/storage/repo | `src/main/modules.js` | `modules.*` | `modules:*` | Safe module names, archive limits | Complete |
+| Module icons / recovery / geoip / i18n | `src/main/fileAssets.js` | `fileAssets.*` | `file-assets:*` | Host/path allowlists | Complete |
+| Updater / market data | `src/main/updater.js` | `updater.*` | `updater:*` | Boolean/option validation | Complete |
+| Clipboard write | Electron main `clipboard` | `clipboard.writeText` | `app:write-clipboard` | Max length | Complete |
+| Analytics events | `@aptabase/electron/main` | `aptabase.trackEvent` | `app:track-event` | Event name + property bounds | Complete |
+| Native dialogs / shell open | `src/main/main.js` | `dialogs.*` / `app.openExternal` | `dialogs:*` / `app:*` | Named dialogs; HTTPS host allowlist | Complete |
+
+### Explicitly migrated renderer files
+
+| File | Former risk | Migration |
+| --- | --- | --- |
+| `src/shared/components/ExternalIcon.tsx` | External HTTP / file reads | `fileAssets.fetchExternalIcon` |
+| `src/shared/components/ModuleIcon.tsx` | Module filesystem icon reads | `fileAssets.readModuleIcon` |
+| `src/App/Modules/WebView.tsx` | Module entry/file serving | `modules.getEntry` / `modules.prepareFiles` + WebView host bridge |
 
 ## Module-WebView deferral
 
@@ -75,3 +100,5 @@ The repository workflow at `.github/workflows/security.yml` runs these checks
 on pull requests and pushes. A full GUI launch smoke test remains a separate
 environment-dependent release check because it requires Electron display and
 Core fixtures.
+
+See also: [context-isolation-migration-report.md](./context-isolation-migration-report.md).

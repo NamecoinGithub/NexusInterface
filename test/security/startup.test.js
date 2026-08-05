@@ -16,11 +16,14 @@ test('window startup configuration keeps wallet and keyboard renderers isolated'
 
   assert.match(renderer, /nodeIntegration:\s*false/);
   assert.match(renderer, /contextIsolation:\s*true/);
+  assert.match(renderer, /sandbox:\s*true/);
   assert.match(renderer, /enableRemoteModule:\s*false/);
   assert.match(keyboard, /nodeIntegration:\s*false/);
   assert.match(keyboard, /contextIsolation:\s*true/);
   assert.match(keyboard, /sandbox:\s*true/);
   assert.match(preload, /contextBridge\.exposeInMainWorld/);
+  assert.doesNotMatch(preload, /from ['"]electron['"].*clipboard|clipboard.*from ['"]electron['"]/);
+  assert.doesNotMatch(preload, /@aptabase\/electron\/renderer/);
 });
 
 test('renderer build fails rather than externalizing Node or Electron imports', () => {

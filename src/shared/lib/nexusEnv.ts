@@ -1,18 +1,18 @@
 /**
  * Safe accessor for `window.nexusEnv`, which is exposed by the preload
  * script (see src/main/preload.js). Renderer code should read platform/env
- * information through this module instead of the `process` global, since
- * `process` is unavailable in the renderer's main world when
- * contextIsolation is enabled and nodeIntegration is disabled.
+ * information through this module instead of Node globals, since those are
+ * unavailable in the renderer's main world when contextIsolation is enabled
+ * and nodeIntegration is disabled.
  */
 export interface NexusEnv {
-  /** Mirrors `process.env.NODE_ENV` from the main process. */
+  /** Build environment from the main-process preload snapshot. */
   NODE_ENV: string;
   /** Dev server port, only meaningful when `NODE_ENV === 'development'`. */
   PORT: string;
-  /** Mirrors `process.platform` from the main process. */
+  /** Host platform from the main-process preload snapshot. */
   platform: NexusPlatform;
-  /** Mirrors `process.arch` from the main process. */
+  /** Host CPU architecture from the main-process preload snapshot. */
   arch: string;
 }
 

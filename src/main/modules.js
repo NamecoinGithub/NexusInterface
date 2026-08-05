@@ -20,7 +20,7 @@ import Multistream from 'multistream';
 import semver from 'semver';
 import z from 'zod';
 
-import normalizeEol from 'utils/normalizeEol';
+import normalizeEol from './normalizeEol';
 import { fetchGithubLatestRelease, getMembers, getRepoId } from 'lib/github';
 
 import {

@@ -59,6 +59,7 @@ export async function createWindow(settings) {
           : path.resolve(__dirname, 'main_preload.prod.js'),
       nodeIntegration: false,
       contextIsolation: true,
+      sandbox: true,
       webviewTag: true,
       enableRemoteModule: false,
     },

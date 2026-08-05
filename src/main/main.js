@@ -1,7 +1,7 @@
-import { app, ipcMain, dialog, shell, webContents } from 'electron';
+import { app, clipboard, ipcMain, dialog, shell, webContents } from 'electron';
 import { autoUpdater } from 'electron-updater';
 import log from 'electron-log';
-import { initialize } from '@aptabase/electron/main';
+import { initialize, trackEvent } from '@aptabase/electron/main';
 
 import { ensureApplicationDirectories } from './paths';
 import { loadSettingsFromFile } from './settings';
@@ -38,9 +38,12 @@ import {
   assertString,
   error as ipcError,
   result as ipcResult,
+  validateClipboardText,
   validateCoreConsoleCommand,
   validateCoreRpcRequest,
+  validateCoreRpcUrl,
   validateMenuTemplate,
+  validateTrackEventRequest,
   validateModuleDownloadRequest,
   validateModuleFiles as validateModuleFilePaths,
   validateModuleStorageRequest,
@@ -549,6 +552,22 @@ registerOperation(
   },
   async (name) => shell.openPath(getManagedPath(name))
 );
+registerOperation(
+  CHANNELS.app.writeClipboard,
+  validateClipboardText,
+  async (text) => {
+    clipboard.writeText(text);
+    return { written: true };
+  }
+);
+registerOperation(
+  CHANNELS.app.trackEvent,
+  validateTrackEventRequest,
+  async ({ eventName, props }) => {
+    await trackEvent(eventName, props);
+    return { tracked: true };
+  }
+);
 
 // Named dialogs never accept renderer-defined dialog options.
 registerOperation(CHANNELS.dialogs.selectBackupDirectory, undefined, async () => {
@@ -752,7 +771,7 @@ registerOperation(
 );
 registerOperation(
   CHANNELS.coreRpc.callByUrl,
-  (url) => assertString(url, 'Core RPC URL', { min: 1, max: 2048 }),
+  validateCoreRpcUrl,
   async (url) => callCoreRpcByUrl(url)
 );
 
