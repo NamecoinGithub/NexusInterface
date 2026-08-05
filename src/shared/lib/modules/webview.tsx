@@ -1,5 +1,3 @@
-import { clipboard, IpcMessageEvent, shell, WebviewTag } from 'electron';
-
 import { AddressBook, addressBookAtom } from 'lib/addressBook';
 import { callAPI } from 'lib/api';
 import { defaultMenu, popupContextMenu } from 'lib/contextMenu';
@@ -25,7 +23,21 @@ import {
   modulesMapAtom,
   moduleStatesAtom,
 } from './atoms';
-import { readModuleStorage, writeModuleStorage } from './storage';
+import { readModuleStorage, writeModuleStorage } from './rendererStorage';
+
+type WebviewTag = HTMLWebViewElement & {
+  send(channel: string, ...args: unknown[]): void;
+  openDevTools(): void;
+  closeDevTools(): void;
+  isDevToolsOpened(): boolean;
+  getWebContentsId(): number;
+};
+
+type IpcMessageEvent = Event & {
+  target: EventTarget & WebviewTag;
+  channel: string;
+  args: any[];
+};
 
 let activeWebView: WebviewTag | null = null;
 
@@ -64,6 +76,7 @@ const getActiveModule = () => {
 
 function handleIpcMessage({ target, channel, args }: IpcMessageEvent) {
   const webview = target as WebviewTag;
+  if (webview !== activeWebView) return;
   switch (channel) {
     case 'send':
       send(args);
@@ -265,11 +278,15 @@ function contextMenu([template]: any[], webview: WebviewTag) {
 }
 
 function openInBrowser([url]: any[]) {
-  shell.openExternal(url);
+  if (typeof url === 'string') {
+    void window.nexusElectron.app.openExternal(url);
+  }
 }
 
 function copyToClipboard([text]: any[]) {
-  clipboard.writeText(text);
+  if (typeof text === 'string') {
+    window.nexusElectron.clipboard.writeText(text);
+  }
 }
 
 /**

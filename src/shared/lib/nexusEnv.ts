@@ -11,13 +11,9 @@ export interface NexusEnv {
   /** Dev server port, only meaningful when `NODE_ENV === 'development'`. */
   PORT: string;
   /** Mirrors `process.platform` from the main process. */
-  platform: NodeJS.Platform;
+  platform: NexusPlatform;
   /** Mirrors `process.arch` from the main process. */
   arch: string;
-  /** Mirrors `process.env.HOME`; populated on macOS/Linux. */
-  HOME: string;
-  /** Mirrors `process.env.USERPROFILE`; populated on Windows. */
-  USERPROFILE: string;
 }
 
 const fallbackNexusEnv: NexusEnv = {
@@ -25,11 +21,9 @@ const fallbackNexusEnv: NexusEnv = {
   PORT: '',
   platform: 'linux',
   arch: '',
-  HOME: '',
-  USERPROFILE: '',
 };
 
-const injectedNexusEnv: NexusEnv | undefined = (window as any).nexusEnv;
+const injectedNexusEnv: NexusEnv | undefined = window.nexusEnv;
 if (!injectedNexusEnv) {
   // window.nexusEnv should always be set by the preload script
   // (src/main/preload.js). If it's missing, fall back to safe defaults but

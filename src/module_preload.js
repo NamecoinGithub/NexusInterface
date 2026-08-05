@@ -155,26 +155,6 @@ global.NEXUS = {
         ipcRenderer.sendToHost('secure-api-call', endpoint, params, callId);
       });
     },
-    proxyRequest: (url, config) => {
-      if (!url) {
-        throw new Error('`url` is required');
-      }
-      if (typeof url !== 'string') {
-        throw new Error(
-          'Expected `url` to be a `string`, found: ' + typeof url
-        );
-      }
-      if (!config) {
-        throw new Error('`config` is required');
-      }
-      if (typeof config !== 'object' && typeof config !== 'undefined') {
-        throw new Error(
-          'Expected `config` to be an `object` `undefined` type, found: ' +
-            typeof config
-        );
-      }
-      return ipcRenderer.invoke('proxy-request', url, config);
-    },
     showNotification: (options) => {
       if (!options) {
         throw new Error('`options` is required');

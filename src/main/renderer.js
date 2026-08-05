@@ -5,8 +5,8 @@ import installExtension, {
 } from 'electron-devtools-installer';
 
 // Internal
-import { assetsDir } from 'consts/paths';
-import { updateSettingsFile } from 'lib/settings/universal';
+import { assetsDir } from './paths';
+import { updateSettingsFile } from './settings';
 import { debounced } from 'utils/universal';
 
 const port = process.env.PORT || 1212;
@@ -57,8 +57,8 @@ export async function createWindow(settings) {
         process.env.NODE_ENV === 'development'
           ? path.resolve(process.cwd(), 'build', 'main_preload.dev.js')
           : path.resolve(__dirname, 'main_preload.prod.js'),
-      nodeIntegration: true,
-      contextIsolation: false,
+      nodeIntegration: false,
+      contextIsolation: true,
       webviewTag: true,
       enableRemoteModule: false,
     },

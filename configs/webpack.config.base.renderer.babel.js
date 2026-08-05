@@ -36,11 +36,13 @@ export default merge(baseConfig, {
   // silently bypassing the wrapper (and breaking entirely in any window that
   // runs with contextIsolation:true, where `require` isn't defined).
   externalsPresets: {
+    node: false,
     electron: false,
     electronRenderer: false,
   },
 
   resolve: {
+    conditionNames: ['webpack', 'production', 'browser', 'import', 'module', 'default'],
     alias: {
       electron: electronBridgePath,
       '@aptabase/electron/renderer': aptabaseRendererPath,

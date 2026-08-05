@@ -1,32 +1,103 @@
-import { app, ipcMain, dialog, webContents } from 'electron';
+import { app, ipcMain, dialog, shell, webContents } from 'electron';
 import { autoUpdater } from 'electron-updater';
 import log from 'electron-log';
 import { initialize } from '@aptabase/electron/main';
 
-import { loadSettingsFromFile } from 'lib/settings/universal';
+import { ensureApplicationDirectories } from './paths';
+import { loadSettingsFromFile } from './settings';
 import {
-  startCore,
   coreBinaryExists,
   coreBinaryStatus,
   executeCommand,
   isCoreRunning,
   killCoreProcess,
+  resyncLiteDatabase,
+  startConfiguredCore,
 } from './core';
 import { getDomain, serveModuleFiles } from './fileServer';
 import { createWindow } from './renderer';
+import { authorizeModuleEntry, hardenModuleWebviews } from './webviewSecurity';
 import { setupTray } from './tray';
 import { setApplicationMenu, popupContextMenu } from './menu';
 import { openVirtualKeyboard } from './keyboard';
+import { setOpenOnStart } from './autoLaunch';
 import {
   initializeUpdater,
+  checkForUpdates,
+  getMarketData,
   migrateToMainnet,
   setAllowPrerelease,
 } from './updater';
-import { proxyRequest } from './modules';
+import {
+  CHANNELS,
+  EVENTS,
+  assertBoolean,
+  assertExternalUrl,
+  assertRecord,
+  assertSafeModuleName,
+  assertString,
+  error as ipcError,
+  result as ipcResult,
+  validateCoreConsoleCommand,
+  validateCoreRpcRequest,
+  validateMenuTemplate,
+  validateModuleDownloadRequest,
+  validateModuleFiles as validateModuleFilePaths,
+  validateModuleStorageRequest,
+  validateNoArguments,
+  validateSettingsUpdate,
+  validateThemeUpdate,
+} from './ipc/contracts';
+import { abortBootstrap, startBootstrap } from './bootstrap';
+import { subscribeCoreOutput, unsubscribeCoreOutput } from './coreOutput';
+import {
+  fetchExternalIcon,
+  loadRecoveryWords,
+  loadTranslation,
+  loadTranslationSync,
+  lookupGeoIp,
+  lookupPublicGeoIp,
+  readModuleIcon,
+} from './fileAssets';
+import {
+  getRendererSettings,
+  getManagedPath,
+  loadTheme,
+  readAddressBook,
+  saveTheme,
+  updateSettingsFile,
+  writeAddressBook,
+} from './settings';
+import { exportTheme, importTheme, selectWallpaper } from './theme';
+import {
+  getModuleEntry,
+  validateModuleFiles,
+} from './moduleFiles';
+import {
+  abortDownload,
+  addDevelopmentModule,
+  checkForModuleUpdates,
+  downloadAndInstallModule,
+  finalizeInstall,
+  getFeaturedModules,
+  inspectInstallSource,
+  listModules,
+  openFailureLocation,
+  readModuleStorage,
+  removeModule,
+  writeModuleStorage,
+} from './modules';
+import {
+  callCoreRpc,
+  callCoreRpcByUrl,
+  clearCoreConfigCache,
+  getPublicCoreConfiguration,
+} from './coreRpc';
 
 let mainWindow;
 global.forceQuit = false;
 app.setAppUserModelId(APP_ID);
+ensureApplicationDirectories();
 initialize('A-US-0744437796'); // This doesn't send anything so it is safe to fire even if the user has turned tracking off
 
 log.initialize();
@@ -42,6 +113,9 @@ const allowedOpenDialogProperties = new Set([
   'treatPackageAsDirectory',
   'dontAddToRecent',
 ]);
+const selectedCoreBinaries = new Map();
+const selectedModuleSources = new Map();
+const selectedDevelopmentModuleSources = new Map();
 const allowedAppPathNames = new Set([
   'home',
   'appData',
@@ -145,6 +219,40 @@ function ensureObject(value, fieldName) {
   return value;
 }
 
+function rememberSelectedPaths(pathsBySender, event, selectedPaths) {
+  if (!selectedPaths?.length) return;
+  const selectedPathSet = pathsBySender.get(event.sender.id) || new Set();
+  for (const selectedPath of selectedPaths) {
+    selectedPathSet.add(selectedPath);
+  }
+  pathsBySender.set(event.sender.id, selectedPathSet);
+}
+
+function ensureSelectedPath(value, pathsBySender, event, fieldName) {
+  const selectedPath = assertString(value, fieldName, { min: 1, max: 4096 });
+  if (!pathsBySender.get(event.sender.id)?.has(selectedPath)) {
+    throw new TypeError(`${fieldName} must be selected through its dialog`);
+  }
+  return selectedPath;
+}
+
+function validateModuleInstallRequest(request) {
+  const value = assertRecord(request, 'Module install request');
+  const unsupportedField = Object.keys(value).find(
+    (key) => key !== 'token' && key !== 'overwrite'
+  );
+  if (unsupportedField) {
+    throw new TypeError(`Unsupported module install field: ${unsupportedField}`);
+  }
+  return {
+    token: assertString(value.token, 'Install token', { min: 1, max: 128 }),
+    overwrite:
+      value.overwrite === undefined
+        ? false
+        : assertBoolean(value.overwrite, 'overwrite'),
+  };
+}
+
 function sanitizeDialogFilters(filters) {
   if (filters === undefined) return undefined;
   const filterList = Array.isArray(filters) ? filters : [filters];
@@ -191,20 +299,35 @@ function sanitizeSaveDialogOptions(options = {}) {
 }
 
 function sanitizeKeyboardOptions(options = {}) {
-  if (!options || typeof options !== 'object' || Array.isArray(options)) {
-    throw new TypeError('Keyboard options must be an object');
+  const value = assertRecord(options, 'Keyboard options');
+  const theme = assertRecord(value.theme, 'Keyboard theme');
+  let serializedTheme;
+  try {
+    serializedTheme = JSON.stringify(theme);
+  } catch {
+    throw new TypeError('Keyboard theme must be serializable');
+  }
+  if (!serializedTheme || serializedTheme.length > 64 * 1024) {
+    throw new TypeError('Keyboard theme is too large');
   }
   return {
-    ...options,
+    theme: JSON.parse(serializedTheme),
     defaultText:
-      options.defaultText === undefined
+      value.defaultText === undefined
         ? ''
-        : ensureString(options.defaultText, 'Keyboard defaultText'),
+        : assertString(value.defaultText, 'Keyboard defaultText', {
+            max: 100000,
+          }),
     placeholder:
-      options.placeholder === undefined
+      value.placeholder === undefined
         ? ''
-        : ensureString(options.placeholder, 'Keyboard placeholder'),
-    maskable: !!options.maskable,
+        : assertString(value.placeholder, 'Keyboard placeholder', {
+            max: 4096,
+          }),
+    maskable:
+      value.maskable === undefined
+        ? false
+        : assertBoolean(value.maskable, 'Keyboard maskable'),
   };
 }
 
@@ -301,6 +424,52 @@ function sanitizeProxyRequest(url, config = {}) {
   return [requestURL, config];
 }
 
+function isMainWindowSender(event) {
+  const windowContents = mainWindow?.webContents || global.mainWindow?.webContents;
+  return !!windowContents && event.sender.id === windowContents.id;
+}
+
+function senderError() {
+  return ipcError('UNAUTHORIZED_SENDER', 'IPC sender is not an application window');
+}
+
+function operationError(err) {
+  const message = err instanceof Error ? err.message : 'Operation failed';
+  log.warn(`IPC operation failed: ${message}`);
+  return ipcError('OPERATION_FAILED', message);
+}
+
+function registerOperation(channel, validateRequest, operation) {
+  ipcMain.handle(channel, async (event, request) => {
+    if (!isMainWindowSender(event)) return senderError();
+    try {
+      const validatedRequest = validateRequest
+        ? validateRequest(request, event)
+        : validateNoArguments(request, channel);
+      return ipcResult(await operation(validatedRequest, event));
+    } catch (err) {
+      return operationError(err);
+    }
+  });
+}
+
+function registerSynchronousOperation(channel, validateRequest, operation) {
+  ipcMain.on(channel, (event, request) => {
+    if (!isMainWindowSender(event)) {
+      event.returnValue = senderError();
+      return;
+    }
+    try {
+      const validatedRequest = validateRequest
+        ? validateRequest(request, event)
+        : validateNoArguments(request, channel);
+      event.returnValue = ipcResult(operation(validatedRequest, event));
+    } catch (err) {
+      event.returnValue = operationError(err);
+    }
+  });
+}
+
 // Temporarily add this because there are some errors in autoUpdater.checkForUpdates
 // cannot be caught (net::ERR_HTTP_RESPONSE_CODE_FAILURE).
 // This should be removed when the issue is resolved.
@@ -312,77 +481,491 @@ process.on('uncaughtException', (err) => {
 // HANDLERS
 // =============================================================================
 
-// App
-ipcMain.handle('is-force-quit', async () => global.forceQuit);
-ipcMain.handle('quit-app', async () => {
-  app.quit();
-});
-ipcMain.handle('exit-app', () => {
-  app.exit();
-});
-ipcMain.handle('hide-window', () => mainWindow.hide());
-ipcMain.handle('hide-dock', () => app.dock.hide());
-ipcMain.handle('show-open-dialog', (event, options) =>
-  dialog.showOpenDialogSync(mainWindow, sanitizeOpenDialogOptions(options))
+// Synchronous bootstrap is intentionally limited to static renderer state
+// needed before React can mount. Every user-triggered operation is async.
+registerSynchronousOperation(CHANNELS.paths.getBootstrap, undefined, () => ({
+  // Kept only for synchronous bootstrap compatibility; no filesystem paths
+  // are exposed to the renderer.
+}));
+registerSynchronousOperation(CHANNELS.settings.getInitial, undefined, () => ({
+  settings: getRendererSettings(),
+  addressBook: readAddressBook(),
+}));
+registerSynchronousOperation(CHANNELS.theme.getInitial, undefined, () =>
+  loadTheme()
 );
-ipcMain.handle('show-save-dialog', async (event, options) =>
-  dialog.showSaveDialogSync(mainWindow, sanitizeSaveDialogOptions(options))
-);
-ipcMain.handle('popup-context-menu', (event, menuTemplate, webContentsId) =>
-  popupContextMenu(
-    sanitizeMenuTemplate(menuTemplate),
-    sanitizeWebContentsId(webContentsId)
-  )
-);
-ipcMain.handle('set-app-menu', (event, menuTemplate) => {
-  setApplicationMenu(sanitizeMenuTemplate(menuTemplate));
-});
-ipcMain.handle('open-virtual-keyboard', (event, ...args) => {
-  openVirtualKeyboard(sanitizeKeyboardOptions(args[0]));
-});
-
-// File server
-ipcMain.handle('serve-module-files', (event, ...args) =>
-  serveModuleFiles(ensureStringArray(args[0], 'Module files'))
+registerSynchronousOperation(
+  CHANNELS.fileAssets.loadTranslation,
+  (locale) => assertString(locale, 'Locale', { min: 2, max: 8 }),
+  (locale) => loadTranslationSync(locale)
 );
 
-// Core
-ipcMain.handle('check-core-exists', async () => await coreBinaryExists());
-ipcMain.handle('core-binary-status', async () => await coreBinaryStatus());
-ipcMain.handle('check-core-running', async () => await isCoreRunning());
-ipcMain.handle('start-core', (event, params) =>
-  startCore(ensureStringArray(params, 'Core parameters'))
-);
-ipcMain.handle('kill-core-process', async () => await killCoreProcess());
-ipcMain.handle(
-  'execute-core-command',
-  async (event, command) => await executeCommand(ensureString(command, 'Command'))
-);
-
-// Auto update
-ipcMain.handle('check-for-updates', () => autoUpdater.checkForUpdates());
-ipcMain.handle('quit-and-install-update', (event, isSilent, isForceRunAfter) =>
-  autoUpdater.quitAndInstall(
-    ensureOptionalBoolean(isSilent, 'isSilent'),
-    ensureOptionalBoolean(isForceRunAfter, 'isForceRunAfter')
-  )
-);
-ipcMain.handle('set-allow-prerelease', (event, value) =>
-  setAllowPrerelease(ensureBoolean(value, 'allowPrerelease'))
-);
-ipcMain.handle('migrate-to-mainnet', () => migrateToMainnet());
-
-// Sync message handlers
-ipcMain.on('get-path', (event, name) => {
-  event.returnValue = app.getPath(sanitizeAppPathName(name));
+// App/window operations
+registerOperation(CHANNELS.app.isForceQuit, undefined, async () => global.forceQuit);
+registerOperation(CHANNELS.app.quit, undefined, async () => app.quit());
+registerOperation(CHANNELS.app.exit, undefined, async () => app.exit());
+registerOperation(CHANNELS.app.hideWindow, undefined, async () => mainWindow.hide());
+registerOperation(CHANNELS.app.hideDock, undefined, async () => {
+  if (process.platform === 'darwin') app.dock.hide();
 });
-ipcMain.on('get-file-server-domain', (event) => {
-  event.returnValue = getDomain();
-});
+registerOperation(
+  CHANNELS.app.setOpenOnStart,
+  (enabled) => assertBoolean(enabled, 'openOnStart'),
+  async (enabled) => setOpenOnStart(enabled)
+);
+registerOperation(
+  CHANNELS.app.popupContextMenu,
+  (request) => {
+    const value = assertRecord(request, 'Context menu request');
+    return {
+      template: sanitizeMenuTemplate(validateMenuTemplate(value.template)),
+      webContentsId: sanitizeWebContentsId(value.webContentsId),
+    };
+  },
+  ({ template, webContentsId }) => popupContextMenu(template, webContentsId)
+);
+registerOperation(
+  CHANNELS.app.setMenu,
+  (request) => sanitizeMenuTemplate(validateMenuTemplate(request)),
+  async (template) => setApplicationMenu(template)
+);
+registerOperation(
+  CHANNELS.app.openVirtualKeyboard,
+  (request) => sanitizeKeyboardOptions(request),
+  async (options) => openVirtualKeyboard(options)
+);
+registerOperation(
+  CHANNELS.app.openExternal,
+  (url) => assertExternalUrl(url, 'External URL', { mailto: true }),
+  async (url) => shell.openExternal(url)
+);
+registerOperation(
+  CHANNELS.app.openManagedPath,
+  (name) => {
+    if (name !== 'walletData' && name !== 'coreData') {
+      throw new TypeError('Unsupported managed path');
+    }
+    return name;
+  },
+  async (name) => shell.openPath(getManagedPath(name))
+);
 
-// Modules
-ipcMain.handle('proxy-request', (event, url, config) =>
-  proxyRequest(...sanitizeProxyRequest(url, config))
+// Named dialogs never accept renderer-defined dialog options.
+registerOperation(CHANNELS.dialogs.selectBackupDirectory, undefined, async () => {
+  const result = await dialog.showOpenDialog(mainWindow, {
+    title: 'Select backup directory',
+    properties: ['openDirectory', 'createDirectory'],
+  });
+  return result.canceled ? undefined : result.filePaths;
+});
+registerOperation(
+  CHANNELS.dialogs.selectCoreBinary,
+  undefined,
+  async (_request, event) => {
+    const result = await dialog.showOpenDialog(mainWindow, {
+      title: 'Select Nexus Core binary',
+      properties: ['openFile'],
+      filters:
+        process.platform === 'win32'
+          ? [{ name: 'Windows executable', extensions: ['exe'] }]
+          : undefined,
+    });
+    if (!result.canceled && result.filePaths[0]) {
+      const selected = selectedCoreBinaries.get(event.sender.id) || new Set();
+      selected.add(result.filePaths[0]);
+      selectedCoreBinaries.set(event.sender.id, selected);
+    }
+    return result.canceled ? undefined : result.filePaths;
+  }
+);
+registerOperation(
+  CHANNELS.dialogs.selectModuleArchive,
+  undefined,
+  async (_request, event) => {
+    const result = await dialog.showOpenDialog(mainWindow, {
+      title: 'Select module archive file',
+      properties: ['openFile'],
+      filters: [{ name: 'Archive', extensions: ['zip'] }],
+    });
+    if (!result.canceled) {
+      rememberSelectedPaths(selectedModuleSources, event, result.filePaths);
+    }
+    return result.canceled ? undefined : result.filePaths;
+  }
+);
+registerOperation(
+  CHANNELS.dialogs.selectModuleDirectory,
+  undefined,
+  async (_request, event) => {
+    const result = await dialog.showOpenDialog(mainWindow, {
+      title: 'Select module directory',
+      properties: ['openDirectory'],
+    });
+    if (!result.canceled) {
+      rememberSelectedPaths(selectedModuleSources, event, result.filePaths);
+    }
+    return result.canceled ? undefined : result.filePaths;
+  }
+);
+registerOperation(
+  CHANNELS.dialogs.selectDevModuleDirectory,
+  undefined,
+  async (_request, event) => {
+    const result = await dialog.showOpenDialog(mainWindow, {
+      title: 'Select development module directory',
+      properties: ['openDirectory'],
+    });
+    if (!result.canceled) {
+      rememberSelectedPaths(
+        selectedDevelopmentModuleSources,
+        event,
+        result.filePaths
+      );
+    }
+    return result.canceled ? undefined : result.filePaths;
+  }
+);
+
+// Settings and theme persistence
+registerOperation(
+  CHANNELS.settings.update,
+  (updates, event) => {
+    const validated = validateSettingsUpdate(updates);
+    const binaryPath = validated.embeddedCoreBinaryPath;
+    if (
+      binaryPath &&
+      !selectedCoreBinaries.get(event.sender.id)?.has(binaryPath)
+    ) {
+      throw new TypeError(
+        'Core binary paths must be selected through the Core binary dialog'
+      );
+    }
+    if (validated.devModulePaths) {
+      const currentPaths = new Set(
+        getRendererSettings().devModulePaths || []
+      );
+      const selectedPaths =
+        selectedDevelopmentModuleSources.get(event.sender.id) || new Set();
+      if (
+        validated.devModulePaths.some(
+          (path) => !currentPaths.has(path) && !selectedPaths.has(path)
+        )
+      ) {
+        throw new TypeError(
+          'Development module paths must be selected through the development module dialog'
+        );
+      }
+    }
+    return validated;
+  },
+  async (updates) => {
+    updateSettingsFile(updates);
+    clearCoreConfigCache();
+    return getRendererSettings();
+  }
+);
+registerOperation(
+  CHANNELS.settings.saveAddressBook,
+  (addressBook) => assertRecord(addressBook, 'Address book'),
+  async (addressBook) => writeAddressBook(addressBook)
+);
+registerOperation(CHANNELS.settings.getAddressBook, undefined, async () =>
+  readAddressBook()
+);
+registerOperation(CHANNELS.theme.update, validateThemeUpdate, async (updates) => {
+  const theme = { ...loadTheme(), ...updates };
+  return saveTheme(theme);
+});
+registerOperation(
+  CHANNELS.theme.selectWallpaper,
+  undefined,
+  async () => selectWallpaper(mainWindow)
+);
+registerOperation(
+  CHANNELS.theme.importFromDialog,
+  undefined,
+  async () => importTheme(mainWindow)
+);
+registerOperation(
+  CHANNELS.theme.exportToDialog,
+  undefined,
+  async () => exportTheme(mainWindow)
+);
+
+// Core lifecycle and console operations.
+registerOperation(CHANNELS.core.getStatus, undefined, async () => ({
+  exists: await coreBinaryExists(),
+  status: await coreBinaryStatus(),
+  running: await isCoreRunning(),
+}));
+registerOperation(
+  CHANNELS.core.getConfiguration,
+  undefined,
+  async () => getPublicCoreConfiguration()
+);
+registerOperation(
+  CHANNELS.core.start,
+  (request) => {
+    if (request !== undefined) {
+      throw new TypeError('Core start does not accept renderer arguments');
+    }
+    return undefined;
+  },
+  async () => startConfiguredCore()
+);
+registerOperation(CHANNELS.core.kill, undefined, async () => killCoreProcess());
+registerOperation(
+  CHANNELS.core.resyncLiteDatabase,
+  (request) => {
+    if (request !== undefined) {
+      throw new TypeError('Lite database resync does not accept arguments');
+    }
+    return undefined;
+  },
+  async () => resyncLiteDatabase()
+);
+registerOperation(
+  CHANNELS.core.subscribeOutput,
+  (request) => {
+    if (request !== undefined) throw new TypeError('Core output subscription does not accept arguments');
+    return undefined;
+  },
+  async (_request, event) => subscribeCoreOutput(event.sender)
+);
+registerOperation(
+  CHANNELS.core.unsubscribeOutput,
+  (request) => {
+    if (request !== undefined) throw new TypeError('Core output unsubscription does not accept arguments');
+    return undefined;
+  },
+  async (_request, event) => unsubscribeCoreOutput(event.sender)
+);
+registerOperation(
+  CHANNELS.core.executeConsoleCommand,
+  validateCoreConsoleCommand,
+  async (command) => executeCommand(command)
+);
+registerOperation(
+  CHANNELS.coreRpc.call,
+  validateCoreRpcRequest,
+  async (request) => callCoreRpc(request)
+);
+registerOperation(
+  CHANNELS.coreRpc.callByUrl,
+  (url) => assertString(url, 'Core RPC URL', { min: 1, max: 2048 }),
+  async (url) => callCoreRpcByUrl(url)
+);
+
+registerOperation(
+  CHANNELS.bootstrap.start,
+  (request) => {
+    if (request !== undefined) {
+      throw new TypeError('Bootstrap start does not accept arguments');
+    }
+    return undefined;
+  },
+  async () =>
+    startBootstrap((status) =>
+      mainWindow?.webContents.send(EVENTS.bootstrapStatus, status)
+    )
+);
+registerOperation(
+  CHANNELS.bootstrap.abort,
+  (request) => {
+    if (request !== undefined) {
+      throw new TypeError('Bootstrap abort does not accept arguments');
+    }
+    return undefined;
+  },
+  async () => {
+    abortBootstrap();
+    return { requested: true };
+  }
+);
+
+// Auto updater
+registerOperation(CHANNELS.updater.check, undefined, async () =>
+  checkForUpdates()
+);
+registerOperation(
+  CHANNELS.updater.quitAndInstall,
+  (request = {}) => {
+    const value = assertRecord(request, 'Updater install request');
+    return {
+      isSilent: ensureOptionalBoolean(value.isSilent, 'isSilent'),
+      isForceRunAfter: ensureOptionalBoolean(
+        value.isForceRunAfter,
+        'isForceRunAfter'
+      ),
+    };
+  },
+  async ({ isSilent, isForceRunAfter }) =>
+    autoUpdater.quitAndInstall(isSilent, isForceRunAfter)
+);
+registerOperation(
+  CHANNELS.updater.setAllowPrerelease,
+  (value) => assertBoolean(value, 'allowPrerelease'),
+  async (value) => setAllowPrerelease(value)
+);
+registerOperation(CHANNELS.updater.migrateToMainnet, undefined, async () =>
+  migrateToMainnet()
+);
+registerOperation(
+  CHANNELS.updater.getMarketData,
+  (request) => {
+    if (request !== undefined) throw new TypeError('Market data does not accept arguments');
+    return undefined;
+  },
+  async () => getMarketData()
+);
+
+// Module file serving only accepts normalized relative files.
+registerOperation(
+  CHANNELS.modules.prepareFiles,
+  (request) => {
+    const value = assertRecord(request, 'Module file request');
+    return {
+      moduleName: assertSafeModuleName(value.moduleName),
+      files: validateModuleFilePaths(value.files),
+    };
+  },
+  async ({ moduleName, files }) => {
+    const validFiles = await validateModuleFiles(moduleName, files);
+    return serveModuleFiles(validFiles.map((file) => `${moduleName}/${file}`));
+  }
+);
+registerOperation(
+  CHANNELS.modules.getEntry,
+  (name) => assertSafeModuleName(name),
+  async (name) => {
+    const entry = await getModuleEntry(name, getDomain());
+    await authorizeModuleEntry(name, entry);
+    return entry;
+  }
+);
+registerOperation(
+  CHANNELS.modules.list,
+  (request) => validateNoArguments(request, 'Module list'),
+  async () => listModules()
+);
+registerOperation(
+  CHANNELS.modules.inspectInstallSource,
+  (source, event) =>
+    ensureSelectedPath(
+      source,
+      selectedModuleSources,
+      event,
+      'Module source path'
+    ),
+  async (source) => inspectInstallSource(source)
+);
+registerOperation(
+  CHANNELS.modules.install,
+  validateModuleInstallRequest,
+  async (request) => finalizeInstall(request)
+);
+registerOperation(
+  CHANNELS.modules.addDevelopment,
+  (source, event) =>
+    ensureSelectedPath(
+      source,
+      selectedDevelopmentModuleSources,
+      event,
+      'Development module path'
+    ),
+  async (source) => addDevelopmentModule(source)
+);
+registerOperation(
+  CHANNELS.modules.remove,
+  (name) => assertSafeModuleName(name),
+  async (name) => removeModule(name)
+);
+registerOperation(
+  CHANNELS.modules.downloadAndInstall,
+  validateModuleDownloadRequest,
+  async (request) => downloadAndInstallModule(request)
+);
+registerOperation(
+  CHANNELS.modules.abortDownload,
+  (name) => assertSafeModuleName(name),
+  async (name) => abortDownload(name)
+);
+registerOperation(
+  CHANNELS.modules.readStorage,
+  (request) => {
+    const value = validateModuleStorageRequest(request);
+    if (value.data !== undefined) {
+      throw new TypeError('Module storage read does not accept data');
+    }
+    return value.name;
+  },
+  async (name) => readModuleStorage(name)
+);
+registerOperation(
+  CHANNELS.modules.writeStorage,
+  (request) => {
+    const value = validateModuleStorageRequest(request);
+    if (value.data === undefined) {
+      throw new TypeError('Module storage write requires data');
+    }
+    return value;
+  },
+  async ({ name, data }) => writeModuleStorage(name, data)
+);
+registerOperation(
+  CHANNELS.modules.getFeatured,
+  (request) => validateNoArguments(request, 'Featured modules'),
+  async () => getFeaturedModules()
+);
+registerOperation(
+  CHANNELS.modules.checkUpdates,
+  (request) => validateNoArguments(request, 'Module update check'),
+  async () => checkForModuleUpdates()
+);
+registerOperation(
+  CHANNELS.modules.openFailureLocation,
+  (name) => assertString(name, 'Module folder name', { min: 1, max: 255 }),
+  async (name) => openFailureLocation(name)
+);
+// File assets are narrowly scoped to application-owned assets and approved hosts.
+registerOperation(
+  CHANNELS.fileAssets.readModuleIcon,
+  (request) => {
+    const value = assertRecord(request, 'Module icon request');
+    return {
+      moduleName: assertSafeModuleName(value.moduleName),
+      icon: assertString(value.icon, 'Module icon', { min: 1, max: 1024 }),
+    };
+  },
+  async ({ moduleName, icon }) => readModuleIcon(moduleName, icon)
+);
+registerOperation(
+  CHANNELS.fileAssets.fetchExternalIcon,
+  (url) => assertExternalUrl(url, 'External icon URL'),
+  async (url) => fetchExternalIcon(url)
+);
+registerOperation(
+  CHANNELS.fileAssets.loadRecoveryWords,
+  undefined,
+  async () => loadRecoveryWords()
+);
+registerOperation(
+  CHANNELS.fileAssets.lookupGeoIp,
+  (addresses) => addresses,
+  async (addresses) => lookupGeoIp(addresses)
+);
+registerOperation(
+  CHANNELS.fileAssets.lookupPublicGeoIp,
+  (request) => {
+    if (request !== undefined) throw new TypeError('Public Geo IP lookup does not accept arguments');
+    return undefined;
+  },
+  async () => lookupPublicGeoIp()
+);
+registerOperation(
+  CHANNELS.fileAssets.loadTranslation,
+  (locale) => assertString(locale, 'Locale', { min: 2, max: 8 }),
+  async (locale) => loadTranslation(locale)
 );
 
 // START RENDERER
@@ -410,6 +993,7 @@ if (!gotTheLock) {
     const settings = loadSettingsFromFile();
     initializeUpdater(settings);
     global.mainWindow = mainWindow = await createWindow(settings);
+    hardenModuleWebviews(mainWindow);
     mainWindow.on('close', () => {
       mainWindow.webContents.send('window-close');
     });

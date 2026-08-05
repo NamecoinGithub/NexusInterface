@@ -1,5 +1,4 @@
 // External
-import { ipcRenderer } from 'electron';
 import { useAtomValue } from 'jotai';
 
 // Internal
@@ -11,27 +10,13 @@ import {
   updateTheme,
   themeAtom,
 } from 'lib/theme';
-import nexusEnv from 'lib/nexusEnv';
 
 __ = __context('Settings.Style');
 
 async function handleFilePick() {
-  const files = await ipcRenderer.invoke('show-open-dialog', {
-    title: __('Select wallpaper'),
-    properties: ['openFile'],
-    filters: [
-      {
-        name: 'Images',
-        extensions: ['jpg', 'jpeg', 'png', 'webp', 'bmp', 'gif'],
-      },
-    ],
-  });
-  let path = files?.[0];
-  if (path) {
-    if (nexusEnv.platform === 'win32') {
-      path = path.replace(/\\/g, '/');
-    }
-    updateTheme({ wallpaper: path });
+  const wallpaper = await window.nexusElectron.theme.selectWallpaper();
+  if (wallpaper) {
+    updateTheme({ wallpaper });
   }
 }
 

@@ -1,6 +1,5 @@
 import { atom } from 'jotai';
 import { useEffect } from 'react';
-import { ipcRenderer } from 'electron';
 import {
   useNavigate,
   NavigateFunction,
@@ -45,19 +44,19 @@ export const closeWallet = async (beforeExit?: () => void) => {
   }
 
   beforeExit?.();
-  ipcRenderer.invoke('exit-app');
+  await window.nexusElectron.app.exit();
 };
 
 export function prepareWallet() {
-  ipcRenderer.on('window-close', async () => {
+  window.nexusElectron.app.onWindowClose(async () => {
     const { minimizeOnClose } = store.get(settingsAtom);
     // forceQuit is set when user clicks Quit option in the Tray context menu
     if (minimizeOnClose) {
-      const forceQuit = await ipcRenderer.invoke('is-force-quit');
+      const forceQuit = await window.nexusElectron.app.isForceQuit();
       if (!forceQuit) {
-        ipcRenderer.invoke('hide-window');
+        await window.nexusElectron.app.hideWindow();
         if (nexusEnv.platform === 'darwin') {
-          ipcRenderer.invoke('hide-dock');
+          await window.nexusElectron.app.hideDock();
         }
         return;
       }

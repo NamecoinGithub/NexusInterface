@@ -1,4 +1,4 @@
-const bridge = (window as any).nexusElectron;
+const bridge = window.nexusElectron;
 
 if (!bridge) {
   throw new Error('Nexus Electron bridge is not available');
