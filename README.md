@@ -14,6 +14,12 @@ See [Developer's Guide to Nexus Wallet Module](docs/Modules).
 
 See [Translation Guide](docs/Translation.md).
 
+## Design proposals
+
+- [Litecoin co-location pilot](docs/Litecoin_CoLocation_Pilot.md) — a
+  measurement-first proposal for evaluating an isolated Litecoin Core node
+  alongside Nexus Core on one computer.
+
 ## Build and Dev-server Instructions
 
 To get started, install Node.js 22.12.0 or newer and npm 10.9.0 or newer. This repository currently builds against Electron 43. Clone this repository, cd into the NexusInterface directory, run `npm install`, then run `npm run dev` and the dev server will spin up launching the app for you.
