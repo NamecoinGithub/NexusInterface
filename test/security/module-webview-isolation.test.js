@@ -143,13 +143,20 @@ test('wallet context sanitizer strips address book and secrets', () => {
 
 test('module webview hardening enforces isolation preferences', () => {
   const security = read('src', 'main', 'webviewSecurity.js');
+  const broker = read('src', 'main', 'moduleBroker.js');
   assert.match(security, /contextIsolation\s*=\s*true/);
   assert.match(security, /nodeIntegration\s*=\s*false/);
-  assert.match(security, /sandbox\s*=/);
+  assert.match(security, /sandbox\s*=\s*true/);
+  assert.doesNotMatch(security, /NEXUS_DISABLE_MODULE_SANDBOX/);
+  assert.match(security, /loadModuleGuestIdentity/);
   assert.match(security, /registerModuleGuest/);
   assert.match(security, /setWindowOpenHandler/);
   assert.match(security, /setPermissionRequestHandler/);
   assert.doesNotMatch(security, /contextIsolation\s*=\s*false/);
+  // Guest identity is loaded during entry authorization; registration is sync.
+  assert.match(broker, /export async function loadModuleGuestIdentity/);
+  assert.match(broker, /export function registerModuleGuest/);
+  assert.doesNotMatch(broker, /export async function registerModuleGuest/);
 });
 
 test('module preload is a minimal contextBridge surface without React or ipc leaks', () => {

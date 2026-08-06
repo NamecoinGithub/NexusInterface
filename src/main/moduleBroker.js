@@ -87,11 +87,13 @@ async function readPackageInfo(moduleName, development) {
 }
 
 /**
- * Register a guest WebContents as a known module instance.
- * Called from webview attachment hardening — never trust renderer-supplied IDs alone.
+ * Parse/validate module identity + capabilities from the installed manifest.
+ * Call this while authorizing entry (before navigation) so guest registration
+ * can complete synchronously at web-contents-created.
+ *
+ * @returns {Promise<Omit<ModuleGuest, 'webContentsId' | 'registeredAt'>>}
  */
-export async function registerModuleGuest({
-  webContentsId,
+export async function loadModuleGuestIdentity({
   moduleName,
   development = false,
   enabled = true,
@@ -101,7 +103,7 @@ export async function registerModuleGuest({
   let info;
   try {
     info = await readPackageInfo(safeName, development);
-  } catch (error) {
+  } catch {
     throw moduleError(
       ERROR_CODES.MODULE_UNKNOWN,
       `Unable to load module package for ${safeName}`
@@ -115,9 +117,7 @@ export async function registerModuleGuest({
     development &&
     (info.legacyApi === true || capabilities.includes('legacy.api'));
 
-  /** @type {ModuleGuest} */
-  const guest = {
-    webContentsId,
+  return {
     moduleName: safeName,
     displayName:
       typeof info.displayName === 'string' && info.displayName
@@ -129,18 +129,41 @@ export async function registerModuleGuest({
     enabled: !!enabled,
     capabilities,
     legacy: !!legacy,
+  };
+}
+
+/**
+ * Synchronously register a guest WebContents as a known module instance.
+ * Identity must already be loaded via loadModuleGuestIdentity during entry
+ * authorization — never trust renderer-supplied IDs alone.
+ *
+ * @param {number} webContentsId
+ * @param {Omit<ModuleGuest, 'webContentsId' | 'registeredAt'>} identity
+ */
+export function registerModuleGuest(webContentsId, identity) {
+  if (!identity || typeof identity.moduleName !== 'string') {
+    throw moduleError(ERROR_CODES.MODULE_UNKNOWN, 'Missing module guest identity');
+  }
+  if (typeof webContentsId !== 'number') {
+    throw moduleError(ERROR_CODES.UNAUTHORIZED, 'Invalid module webContents id');
+  }
+
+  /** @type {ModuleGuest} */
+  const guest = {
+    ...identity,
+    webContentsId,
     registeredAt: Date.now(),
   };
 
   guestsByWebContentsId.set(webContentsId, guest);
   audit({
-    moduleId: safeName,
+    moduleId: guest.moduleName,
     version: guest.version,
     hash: guest.hash,
     method: 'register',
     capability: null,
     outcome: 'allow',
-    reason: development ? 'development-guest' : 'production-guest',
+    reason: guest.development ? 'development-guest' : 'production-guest',
   });
   return guest;
 }

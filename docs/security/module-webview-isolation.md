@@ -92,16 +92,20 @@ Module page (untrusted)
 
 ### Guest identity
 
-On `will-attach-webview`, main only allows URLs previously authorized via
-`modules:get-entry`. On guest `web-contents-created`, main registers
-`webContents.id → moduleName` after reading the installed manifest. Every
+On `modules:get-entry`, main authorizes the entry URL **and** pre-loads
+validated module identity/capability metadata from the installed manifest.
+On `will-attach-webview`, main only allows those authorized URLs. On guest
+`web-contents-created`, main **synchronously** inserts
+`webContents.id → module identity` from the attach policy (no async
+manifest I/O on the critical path), so the guest's first
+`NEXUS.wallet.getContext()` cannot race an unknown-guest rejection. Every
 `module-api:invoke` verifies `event.sender` is that guest.
 
 ### WebView preferences (production)
 
 - `contextIsolation: true`
 - `nodeIntegration: false`
-- `sandbox: true` (override only with `NEXUS_DISABLE_MODULE_SANDBOX=1` diagnostics)
+- `sandbox: true` (always; not overridable via environment)
 - `webSecurity: true`
 - popups denied; permission requests denied
 - navigation limited to module origin / dev module root

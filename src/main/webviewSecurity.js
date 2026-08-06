@@ -5,6 +5,7 @@ import { getDomain } from './fileServer';
 import { getModulePreloadPath } from './paths';
 import { resolveModuleRoot } from './moduleFiles';
 import {
+  loadModuleGuestIdentity,
   registerModuleGuest,
   unregisterModuleGuest,
 } from './moduleBroker';
@@ -33,20 +34,29 @@ function isAllowedNavigation(url, policy) {
   }
 }
 
+/**
+ * Authorize a module entry URL and pre-load guest identity/capabilities so
+ * registration at web-contents-created is fully synchronous.
+ */
 export async function authorizeModuleEntry(moduleName, entryUrl) {
   const { root, development } = await resolveModuleRoot(moduleName);
-  authorizedEntries.set(entryUrl, {
+  const identity = await loadModuleGuestIdentity({
     moduleName,
+    development,
+    enabled: true,
+  });
+  authorizedEntries.set(entryUrl, {
+    moduleName: identity.moduleName,
     root,
     development,
     separator: process.platform === 'win32' ? '\\' : '/',
+    identity,
   });
 }
 
 /**
  * Force secure WebView preferences regardless of renderer-supplied attributes.
- * Production modules always run with contextIsolation + no nodeIntegration.
- * Sandbox is enabled by default; NEXUS_DISABLE_MODULE_SANDBOX=1 is diagnostics-only.
+ * Production modules always run with contextIsolation, no nodeIntegration, and sandbox.
  */
 export function hardenModuleWebviews(mainWindow) {
   mainWindow.webContents.on(
@@ -61,8 +71,7 @@ export function hardenModuleWebviews(mainWindow) {
 
       webPreferences.nodeIntegration = false;
       webPreferences.contextIsolation = true;
-      webPreferences.sandbox =
-        process.env.NEXUS_DISABLE_MODULE_SANDBOX === '1' ? false : true;
+      webPreferences.sandbox = true;
       webPreferences.enableRemoteModule = false;
       webPreferences.webSecurity = true;
       webPreferences.allowRunningInsecureContent = false;
@@ -78,24 +87,23 @@ export function hardenModuleWebviews(mainWindow) {
 app.on('web-contents-created', (_event, contents) => {
   if (contents.getType() !== 'webview') return;
   const policy = pendingPolicies.shift();
-  if (!policy) {
+  if (!policy?.identity) {
     contents.close();
     return;
   }
 
-  void registerModuleGuest({
-    webContentsId: contents.id,
-    moduleName: policy.moduleName,
-    development: policy.development,
-    enabled: true,
-  }).catch((error) => {
+  // Insert guest record synchronously before the guest can navigate/invoke APIs.
+  try {
+    registerModuleGuest(contents.id, policy.identity);
+  } catch (error) {
     console.error('Failed to register module guest', error);
     try {
       contents.close();
     } catch {
       // ignore
     }
-  });
+    return;
+  }
 
   contents.setWindowOpenHandler(() => ({ action: 'deny' }));
 
