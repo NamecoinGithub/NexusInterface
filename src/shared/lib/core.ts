@@ -13,6 +13,12 @@ export const startCore = async () => {
   const settings = store.get(settingsAtom);
   if (settings.manualDaemon) {
     console.info('Core Manager: Remote Core mode, skipping starting core');
+    // Still load public connection metadata for UI consumers.
+    store.set(
+      coreConfigAtom,
+      await window.nexusElectron.core.getConfiguration()
+    );
+    store.set(coreInfoPausedAtom, false);
     return;
   }
 
@@ -24,13 +30,23 @@ export const startCore = async () => {
   if (!status.exists) {
     throw new Error(status.status?.error || 'Nexus Core binary not found');
   }
-  if (status.running) {
+
+  // Always delegate to main. If a Core process is already running, main probes
+  // the configured local API and restarts Core when P2P is up but the API bind
+  // / auth / port does not match the wallet configuration.
+  const startResult = (await window.nexusElectron.core.start()) as {
+    started?: boolean;
+    reason?: string;
+    apiReachable?: boolean;
+  };
+  if (status.running && startResult?.reason === 'already-running') {
     console.info(
-      'Core Manager: Nexus Core Process already running. Skipping starting core'
+      'Core Manager: Nexus Core Process already running with a reachable API'
     );
-    return;
+  } else if (startResult?.started) {
+    console.info('Core Manager: Nexus Core start requested by wallet');
   }
-  await window.nexusElectron.core.start();
+
   store.set(coreConfigAtom, await window.nexusElectron.core.getConfiguration());
   store.set(coreInfoPausedAtom, false);
 };

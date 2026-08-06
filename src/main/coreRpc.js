@@ -9,80 +9,79 @@ import {
   getCoreTransportOptions,
   validateCoreRpcPath,
 } from './ipc/coreTransport';
+import {
+  fromKeyValues,
+  parseBooleanFlag,
+  resolveEmbeddedCoreConnection,
+  toKeyValues,
+} from './ipc/coreConf';
 
 let cachedEmbeddedConfig;
+let embeddedConfigLoadPromise;
 
-function fromKeyValues(contents) {
-  return contents
-    ? contents.split('\n').reduce((config, line) => {
-        const separator = line.indexOf('=');
-        if (separator > 0) {
-          config[line.slice(0, separator)] = line.slice(separator + 1);
-        }
-        return config;
-      }, {})
-    : {};
-}
-
+/**
+ * Build the connection config the wallet will use, matching historical
+ * NexusInterface behavior:
+ * - credentials always come from nexus.conf (created if missing)
+ * - SSL/port preferences from wallet settings overlay conf values so the GUI
+ *   and the Core process it launches stay aligned
+ */
 async function loadEmbeddedConfig(settings) {
   if (cachedEmbeddedConfig) return cachedEmbeddedConfig;
-  await fs.mkdir(settings.coreDataDir, { recursive: true });
-  const configPath = path.join(settings.coreDataDir, 'nexus.conf');
-  let config = {};
-  try {
-    config = fromKeyValues(await fs.readFile(configPath, 'utf8'));
-  } catch {
-    // A first launch creates the configuration below.
-  }
-  let changed = false;
-  const defaults = {
-    apiuser: 'apiserver',
-    apipassword: crypto.randomBytes(32).toString('hex'),
-    apissl: settings.embeddedCoreUseNonSSL ? 'false' : 'true',
-    apiport: settings.embeddedCoreApiPort || '8080',
-    apiportssl: settings.embeddedCoreApiPortSSL || '7080',
-  };
-  for (const [key, value] of Object.entries(defaults)) {
-    if (config[key] === undefined || config[key] === '') {
-      config[key] = value;
-      changed = true;
+  if (embeddedConfigLoadPromise) return embeddedConfigLoadPromise;
+
+  embeddedConfigLoadPromise = (async () => {
+    await fs.mkdir(settings.coreDataDir, { recursive: true });
+    const configPath = path.join(settings.coreDataDir, 'nexus.conf');
+    let config = {};
+    try {
+      config = fromKeyValues(await fs.readFile(configPath, 'utf8'));
+    } catch {
+      // A first launch creates the configuration below.
     }
+
+    const resolved = resolveEmbeddedCoreConnection(config, {
+      embeddedCoreUseNonSSL: settings.embeddedCoreUseNonSSL,
+      embeddedCoreApiPort: settings.embeddedCoreApiPort,
+      embeddedCoreApiPortSSL: settings.embeddedCoreApiPortSSL,
+      generatedApiPassword: crypto.randomBytes(32).toString('hex'),
+    });
+
+    if (resolved.changed) {
+      await fs.writeFile(configPath, toKeyValues(resolved.conf), {
+        encoding: 'utf8',
+        mode: 0o600,
+      });
+    }
+
+    cachedEmbeddedConfig = resolved.connection;
+    return cachedEmbeddedConfig;
+  })();
+
+  try {
+    return await embeddedConfigLoadPromise;
+  } finally {
+    // Clear the in-flight promise so a failed load can be retried on the next
+    // call. Successful loads are still short-circuited by cachedEmbeddedConfig.
+    embeddedConfigLoadPromise = undefined;
   }
-  if (changed) {
-    await fs.writeFile(
-      configPath,
-      Object.entries(config)
-        .map(([key, value]) => `${key}=${value}`)
-        .join('\n'),
-      { encoding: 'utf8', mode: 0o600 }
-    );
-  }
-  cachedEmbeddedConfig = {
-    ip: '127.0.0.1',
-    apiSSL: config.apissl !== 'false',
-    apiPort: config.apiport,
-    apiPortSSL: config.apiportssl,
-    apiUser: config.apiuser,
-    apiPassword: config.apipassword,
-    txExpiry: Number.parseInt(config.txexpiry, 10) || undefined,
-  };
-  return cachedEmbeddedConfig;
 }
 
 export function clearCoreConfigCache() {
   cachedEmbeddedConfig = undefined;
+  embeddedConfigLoadPromise = undefined;
 }
 
 export async function getCoreConfiguration() {
   const settings = loadSettingsFromFile();
   if (settings.manualDaemon) {
     return {
-      ip: settings.manualDaemonIP,
-      apiSSL: settings.manualDaemonApiSSL,
-      apiPort: settings.manualDaemonApiPort,
-      apiPortSSL: settings.manualDaemonApiPortSSL,
-      apiUser: settings.manualDaemonApiUser,
-      apiPassword: settings.manualDaemonApiPassword,
+      ip: settings.manualDaemonIP || '127.0.0.1',
+      apiSSL: parseBooleanFlag(settings.manualDaemonApiSSL, true),
+      apiPort: String(settings.manualDaemonApiPort || '8080'),
+      apiPortSSL: String(settings.manualDaemonApiPortSSL || '7080'),
+      apiUser: settings.manualDaemonApiUser || 'apiserver',
+      apiPassword: settings.manualDaemonApiPassword || '',
     };
   }
   return loadEmbeddedConfig(settings);
@@ -99,7 +98,7 @@ export async function getPublicCoreConfiguration() {
   };
 }
 
-function requestCore({ method, endpoint, params, config }) {
+function requestCore({ method, endpoint, params, config, timeout = 30000 }) {
   const body = params === undefined ? undefined : JSON.stringify(params);
   const { apiSSL, rejectUnauthorized } = getCoreTransportOptions(config);
   const client = apiSSL ? https : http;
@@ -117,7 +116,7 @@ function requestCore({ method, endpoint, params, config }) {
         ? `${config.apiUser}:${config.apiPassword}`
         : undefined,
     ...(apiSSL ? { rejectUnauthorized } : {}),
-    timeout: 30000,
+    timeout,
   };
 
   return new Promise((resolve, reject) => {
@@ -147,6 +146,32 @@ function requestCore({ method, endpoint, params, config }) {
     if (body) request.write(body);
     request.end();
   });
+}
+
+/**
+ * Probe whether the local Core API accepts the wallet's configured credentials
+ * and port/SSL settings. Used when a Core process is already running so we do
+ * not silently stick to a process that only has P2P up (or uses different
+ * datadir/ports/auth).
+ */
+export async function probeCoreApi(config, { timeout = 2500 } = {}) {
+  const resolved = config || (await getCoreConfiguration());
+  try {
+    const result = await requestCore({
+      method: 'POST',
+      endpoint: 'system/get/info',
+      params: undefined,
+      config: resolved,
+      timeout,
+    });
+    return { ok: true, result, config: resolved };
+  } catch (error) {
+    return {
+      ok: false,
+      error: error?.message || String(error),
+      config: resolved,
+    };
+  }
 }
 
 export async function callCoreRpc({ endpoint, params }) {

@@ -6,7 +6,15 @@ import path from 'path';
 
 import { assetsByPlatformDir } from './paths';
 import { loadSettingsFromFile, updateSettingsFile } from './settings';
-import { clearCoreConfigCache, getCoreConfiguration } from './coreRpc';
+import {
+  clearCoreConfigCache,
+  getCoreConfiguration,
+  probeCoreApi,
+} from './coreRpc';
+
+// After killing a mismatched Core, wait briefly so OS listen sockets (API/P2P)
+// are released before we spawn a replacement on the same ports.
+const CORE_PORT_RELEASE_DELAY_MS = 750;
 
 const coreBinaryName = `nexus-${process.platform}-${process.arch}${
   process.platform === 'win32' ? '.exe' : ''
@@ -343,7 +351,13 @@ export async function isCoreRunning() {
  */
 export function startCore(params) {
   const { path: coreBinaryPath } = getExecutableCoreBinary();
-  log.info('Core Parameters: ' + (params && params.join(' ')));
+  // Never log raw API credentials from the parameter list.
+  const redactedParams = (params || []).map((param) =>
+    /^-api(user|password)=/i.test(param)
+      ? `${param.slice(0, param.indexOf('=') + 1)}********`
+      : param
+  );
+  log.info('Core Parameters: ' + redactedParams.join(' '));
   log.info('Core Manager: Starting core: ' + coreBinaryPath);
   try {
     const coreProcess = spawn(coreBinaryPath, params, {
@@ -352,6 +366,8 @@ export function startCore(params) {
       stdio: ['ignore', 'ignore', 'ignore'],
     });
     if (coreProcess) {
+      // Detach fully so the wallet can exit without waiting on Core.
+      coreProcess.unref();
       log.info(
         `Core Manager: Core has started (process id: ${coreProcess.pid})`
       );
@@ -366,40 +382,29 @@ export function startCore(params) {
   }
 }
 
-/**
- * Starts the bundled core using only settings persisted by the main process.
- * Renderer callers cannot supply executable paths or process arguments.
- */
-export async function startConfiguredCore() {
-  const settings = loadSettingsFromFile();
-  if (settings.manualDaemon) {
-    return { started: false, reason: 'manual-daemon' };
-  }
-
-  const status = getCoreBinaryStatus();
-  if (!status.exists || !status.executable) {
-    throw new Error(status.error || 'Nexus Core binary not found');
-  }
-  if (await isCoreRunning()) {
-    return { started: false, reason: 'already-running' };
-  }
-
-  clearCoreConfigCache();
-  const configuration = await getCoreConfiguration();
+function buildConfiguredCoreParams(settings, configuration) {
   const lockedTestnet =
     typeof LOCK_TESTNET === 'undefined' ? '' : String(LOCK_TESTNET);
   const version = typeof APP_VERSION === 'undefined' ? '' : String(APP_VERSION);
   const preRelease =
     version.includes('alpha') || version.includes('beta') || !!lockedTestnet;
+  const apiSSL = configuration.apiSSL !== false;
+
+  // Pass API auth and bind settings on the CLI as well as via nexus.conf.
+  // Core disables the API entirely when apiuser/apipassword are missing, and
+  // defaults the SSL API port to 8443 unless apisslport is set — both of which
+  // leave the GUI stuck on "Connecting to Nexus Core..." while P2P still works.
   const params = [
     '-daemon',
     '-server',
     '-fastsync',
     '-noterminateauth',
     '-ssl=1',
-    '-apissl=1',
+    `-apissl=${apiSSL ? '1' : '0'}`,
     '-p2pssl=1',
     `-datadir=${settings.coreDataDir}`,
+    `-apiuser=${configuration.apiUser}`,
+    `-apipassword=${configuration.apiPassword}`,
     `-apisslport=${configuration.apiPortSSL}`,
     `-apiport=${configuration.apiPort}`,
     `-verbose=${preRelease ? 3 : settings.verboseLevel}`,
@@ -447,6 +452,63 @@ export async function startConfiguredCore() {
     params.push(...splitCommandParts(settings.advancedCoreParams));
   }
 
+  return { params, lockedTestnet };
+}
+
+/**
+ * Starts the bundled core using only settings persisted by the main process.
+ * Renderer callers cannot supply executable paths or process arguments.
+ *
+ * If a Core process is already running, the wallet probes the local API with
+ * the configured host/port/SSL/credentials. P2P alone is not enough — a Core
+ * started with a different datadir, default SSL port 8443, or without API auth
+ * will keep the GUI disconnected forever unless we recover here.
+ */
+export async function startConfiguredCore() {
+  const settings = loadSettingsFromFile();
+  if (settings.manualDaemon) {
+    return { started: false, reason: 'manual-daemon' };
+  }
+
+  const status = getCoreBinaryStatus();
+  if (!status.exists || !status.executable) {
+    throw new Error(status.error || 'Nexus Core binary not found');
+  }
+
+  clearCoreConfigCache();
+  const configuration = await getCoreConfiguration();
+  if (!configuration.apiUser || !configuration.apiPassword) {
+    throw new Error(
+      'Nexus Core API credentials are missing from nexus.conf; cannot start API server'
+    );
+  }
+
+  if (await isCoreRunning()) {
+    const probe = await probeCoreApi(configuration);
+    if (probe.ok) {
+      log.info(
+        `Core Manager: Existing Core API is reachable at ${configuration.ip}:${
+          configuration.apiSSL ? configuration.apiPortSSL : configuration.apiPort
+        } (${configuration.apiSSL ? 'ssl' : 'plain'})`
+      );
+      return { started: false, reason: 'already-running', apiReachable: true };
+    }
+
+    log.warn(
+      `Core Manager: Core process is running but API is unreachable (${probe.error}). ` +
+        'Restarting Core with wallet API settings so the GUI can connect.'
+    );
+    await killCoreProcess();
+    await new Promise((resolve) =>
+      setTimeout(resolve, CORE_PORT_RELEASE_DELAY_MS)
+    );
+  }
+
+  const { params, lockedTestnet } = buildConfiguredCoreParams(
+    settings,
+    configuration
+  );
+
   if (
     !lockedTestnet &&
     !settings.testnetIteration &&
@@ -457,8 +519,15 @@ export async function startConfiguredCore() {
       recursive: true,
       force: true,
     });
+    // Lite mode keeps API state under datadir/client/_API.
+    if (settings.liteMode) {
+      await fs.promises.rm(path.join(settings.coreDataDir, 'client', '_API'), {
+        recursive: true,
+        force: true,
+      });
+    }
   }
-  return { started: true, pid: startCore(params) };
+  return { started: true, pid: startCore(params), apiReachable: false };
 }
 
 export async function resyncLiteDatabase() {
