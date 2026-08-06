@@ -16,8 +16,15 @@ test('window startup configuration keeps wallet and keyboard renderers isolated'
 
   assert.match(renderer, /nodeIntegration:\s*false/);
   assert.match(renderer, /contextIsolation:\s*true/);
-  // Default remains sandboxed; NEXUS_DISABLE_SANDBOX=1 is diagnostics-only.
+  // Default remains sandboxed; NEXUS_DISABLE_SANDBOX=1 only takes effect in
+  // development/debug builds, not in packaged production builds.
   assert.match(
+    renderer,
+    /NEXUS_DISABLE_SANDBOX[\s\S]{0,200}NODE_ENV.*development/
+  );
+  // The sandbox expression must guard with a dev/debug check so production
+  // builds cannot have sandbox disabled by an environment variable alone.
+  assert.doesNotMatch(
     renderer,
     /sandbox:\s*process\.env\.NEXUS_DISABLE_SANDBOX === '1' \? false : true/
   );
@@ -64,6 +71,10 @@ test('embedded Core start always supplies API auth and probes already-running Co
   // Core only honors apisslport in nexus.conf — never write only apiportssl.
   assert.match(coreConf, /apisslport:\s*desiredPortSSL/);
   assert.match(coreConf, /delete config\.apiportssl/);
+  // Invalid/zero ports must be normalized to the deterministic fallback.
+  assert.match(coreConf, /normalizePort/);
+  // SSL default fallback is 8443 (Core mainnet default), not 7080.
+  assert.match(coreConf, /normalizePort[\s\S]*8443|8443[\s\S]*normalizePort/);
   // Main process must stop Core on quit/exit so orphans are not left behind.
   assert.match(main, /stopEmbeddedCore|ensureEmbeddedCoreStopped|shutdownEmbeddedCoreAndAllowQuit/);
   assert.match(main, /before-quit/);

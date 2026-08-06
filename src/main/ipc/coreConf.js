@@ -58,6 +58,39 @@ function confBooleanString(value) {
   return value ? '1' : '0';
 }
 
+/**
+ * Validate and normalize a port value for embedded-Core wallet configuration.
+ * Accepts only decimal integers in range 1..65535. Treats 0, blank,
+ * non-numeric, negative, and values above 65535 as invalid and resolves to
+ * the supplied fallback, logging a structured diagnostic (no credentials).
+ *
+ * @param {*} value      Raw value from conf or settings.
+ * @param {number|string} fallback  Deterministic fallback port (must be valid).
+ * @param {string} key   Config key name used only in the log entry.
+ * @returns {string}     Valid decimal port string.
+ */
+function normalizePort(value, fallback, key) {
+  const text = String(value ?? '').trim();
+  const port = Number.parseInt(text, 10);
+
+  if (
+    !text ||
+    !/^\d+$/.test(text) ||
+    !Number.isFinite(port) ||
+    port < 1 ||
+    port > 65535
+  ) {
+    console.warn('core.config.invalid_port', {
+      key,
+      configured: text || undefined,
+      fallback: String(fallback),
+    });
+    return String(fallback);
+  }
+
+  return String(port);
+}
+
 function resolveApiPortSSL(config, fallback) {
   // Nexus Core only honors `apisslport` in nexus.conf / CLI. Older wallet builds
   // wrote the non-functional alias `apiportssl`, which Core silently ignores and
@@ -92,11 +125,15 @@ function resolveEmbeddedCoreConnection(configInput, settings = {}) {
   }
 
   const useSSL = !settings.embeddedCoreUseNonSSL;
-  const desiredPort = String(
-    settings.embeddedCoreApiPort || config.apiport || '8080'
+  const desiredPort = normalizePort(
+    settings.embeddedCoreApiPort ?? config.apiport,
+    8080,
+    'apiport'
   );
-  const desiredPortSSL = String(
-    settings.embeddedCoreApiPortSSL || resolveApiPortSSL(config, '7080')
+  const desiredPortSSL = normalizePort(
+    settings.embeddedCoreApiPortSSL ?? resolveApiPortSSL(config, '8443'),
+    8443,
+    'apisslport'
   );
 
   const defaults = {
@@ -153,6 +190,7 @@ function resolveEmbeddedCoreConnection(configInput, settings = {}) {
 module.exports = {
   confBooleanString,
   fromKeyValues,
+  normalizePort,
   parseBooleanFlag,
   resolveApiPortSSL,
   resolveEmbeddedCoreConnection,

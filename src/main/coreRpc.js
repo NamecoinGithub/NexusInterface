@@ -141,6 +141,7 @@ function requestCore({ method, endpoint, params, config, timeout = 30000 }) {
   };
 
   return new Promise((resolve, reject) => {
+    const endpointDesc = `${apiSSL ? 'HTTPS' : 'HTTP'} ${config.ip}:${port}`;
     const fail = (error) => {
       // Probe/wait loops can fail many times while Core is still binding; keep
       // transport failure logs for non-probe callers (callCoreRpc).
@@ -158,7 +159,16 @@ function requestCore({ method, endpoint, params, config, timeout = 30000 }) {
           message,
         });
       }
-      reject(error instanceof Error ? error : new Error(error?.message || String(error)));
+      // Build an enriched error that exposes the safe endpoint context (no
+      // credentials) so the renderer can show a useful diagnostic message.
+      const safeMessage = error?.message || String(error);
+      const enriched = new Error(`${endpointDesc}: ${safeMessage}`);
+      // Preserve metadata so callers can distinguish ECONNREFUSED, timeout,
+      // HTTP status errors, auth failures, and malformed JSON.
+      if (error?.code !== undefined) enriched.code = error.code;
+      if (error?.statusCode !== undefined) enriched.statusCode = error.statusCode;
+      if (error?.errno !== undefined) enriched.errno = error.errno;
+      reject(enriched);
     };
 
     const request = client.request(options, (response) => {
