@@ -4,6 +4,11 @@ import { fileURLToPath } from 'url';
 import { getDomain } from './fileServer';
 import { getModulePreloadPath } from './paths';
 import { resolveModuleRoot } from './moduleFiles';
+import {
+  loadModuleGuestIdentity,
+  registerModuleGuest,
+  unregisterModuleGuest,
+} from './moduleBroker';
 
 const authorizedEntries = new Map();
 const pendingPolicies = [];
@@ -29,16 +34,30 @@ function isAllowedNavigation(url, policy) {
   }
 }
 
+/**
+ * Authorize a module entry URL and pre-load guest identity/capabilities so
+ * registration at web-contents-created is fully synchronous.
+ */
 export async function authorizeModuleEntry(moduleName, entryUrl) {
   const { root, development } = await resolveModuleRoot(moduleName);
-  authorizedEntries.set(entryUrl, {
+  const identity = await loadModuleGuestIdentity({
     moduleName,
+    development,
+    enabled: true,
+  });
+  authorizedEntries.set(entryUrl, {
+    moduleName: identity.moduleName,
     root,
     development,
     separator: process.platform === 'win32' ? '\\' : '/',
+    identity,
   });
 }
 
+/**
+ * Force secure WebView preferences regardless of renderer-supplied attributes.
+ * Production modules always run with contextIsolation, no nodeIntegration, and sandbox.
+ */
 export function hardenModuleWebviews(mainWindow) {
   mainWindow.webContents.on(
     'will-attach-webview',
@@ -49,13 +68,17 @@ export function hardenModuleWebviews(mainWindow) {
         return;
       }
       authorizedEntries.delete(params.src);
-      webPreferences.nodeIntegration = !!policy.development;
-      webPreferences.contextIsolation = false;
-      webPreferences.sandbox = false;
+
+      webPreferences.nodeIntegration = false;
+      webPreferences.contextIsolation = true;
+      webPreferences.sandbox = true;
       webPreferences.enableRemoteModule = false;
-      webPreferences.preload = getModulePreloadPath();
       webPreferences.webSecurity = true;
+      webPreferences.allowRunningInsecureContent = false;
+      webPreferences.experimentalFeatures = false;
+      webPreferences.preload = getModulePreloadPath();
       delete webPreferences.preloadURL;
+
       pendingPolicies.push(policy);
     }
   );
@@ -64,12 +87,39 @@ export function hardenModuleWebviews(mainWindow) {
 app.on('web-contents-created', (_event, contents) => {
   if (contents.getType() !== 'webview') return;
   const policy = pendingPolicies.shift();
-  if (!policy) {
+  if (!policy?.identity) {
     contents.close();
     return;
   }
+
+  // Insert guest record synchronously before the guest can navigate/invoke APIs.
+  try {
+    registerModuleGuest(contents.id, policy.identity);
+  } catch (error) {
+    console.error('Failed to register module guest', error);
+    try {
+      contents.close();
+    } catch {
+      // ignore
+    }
+    return;
+  }
+
   contents.setWindowOpenHandler(() => ({ action: 'deny' }));
+
   contents.on('will-navigate', (event, url) => {
     if (!isAllowedNavigation(url, policy)) event.preventDefault();
+  });
+
+  contents.on('will-redirect', (event, url) => {
+    if (!isAllowedNavigation(url, policy)) event.preventDefault();
+  });
+
+  contents.session.setPermissionRequestHandler((_wc, _permission, callback) => {
+    callback(false);
+  });
+
+  contents.on('destroyed', () => {
+    unregisterModuleGuest(contents.id);
   });
 });

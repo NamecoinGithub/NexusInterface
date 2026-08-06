@@ -14,6 +14,12 @@ export interface WebViewProps extends HTMLAttributes<HTMLWebViewElement> {
   module: Module;
 }
 
+/**
+ * Module guest WebView.
+ * Privileged path resolution and file serving happen in the main process.
+ * Production preferences are forced again in main via will-attach-webview:
+ * contextIsolation=yes, nodeIntegration=no, sandbox=yes.
+ */
 export default function WebView({ module, ...rest }: WebViewProps) {
   const webviewRef = useRef<HTMLWebViewElement>(null);
   const [entryUrl, setEntryUrl] = useState<string>();
@@ -28,7 +34,9 @@ export default function WebView({ module, ...rest }: WebViewProps) {
             module.info.files
           );
         }
-        const entry = await window.nexusElectron.modules.getEntry(module.info.name);
+        const entry = await window.nexusElectron.modules.getEntry(
+          module.info.name
+        );
         if (active && typeof entry === 'string') setEntryUrl(entry);
       } catch (error) {
         console.error('Unable to prepare module WebView', error);
@@ -42,7 +50,7 @@ export default function WebView({ module, ...rest }: WebViewProps) {
   }, [module]);
 
   useEffect(() => {
-    if (!webviewRef.current) return;
+    if (!webviewRef.current || !entryUrl) return;
     setActiveAppModule(webviewRef.current as WebviewTag, module.info.name);
     return () => {
       unsetActiveAppModule();
@@ -56,11 +64,8 @@ export default function WebView({ module, ...rest }: WebViewProps) {
       {...rest}
       ref={webviewRef}
       src={entryUrl}
-      /* Can't enable contextIsolation because it will
-      mess with react-dom and emotion */
-      webpreferences={`contextIsolation=no${
-        module.development ? ', nodeIntegration=yes' : ''
-      }`}
+      // Renderer hint only — main process overwrites these securely.
+      webpreferences="contextIsolation=yes, nodeIntegration=no, sandbox=yes, webSecurity=yes"
     />
   );
 }
