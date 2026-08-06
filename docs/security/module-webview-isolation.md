@@ -38,7 +38,7 @@ the isolated NEXUS v2 preload (`contextIsolation: true`, `nodeIntegration: false
 | Forged module IPC | Main associates guest `webContents.id` → module identity at attach time; ignores caller-selected identity |
 | Renderer compromise forging module auth | Main authorizes privileged actions; host UI actions require main-issued request IDs |
 | User approval confusion (spend) | `wallet.requestSend` only navigates to wallet-owned Send review; no silent sign/broadcast |
-| Generic proxy SSRF / redirects | `proxyRequest` disabled; no generic network API in v2 |
+| Generic proxy SSRF / redirects | `proxyRequest` disabled; exchange APIs use provider-key allowlist resolved in main (`exchange.*`), never caller-supplied URLs |
 | External URL abuse | Protocol allowlist `http:`, `https:`, `mailto:` only; blocks `file:`, `javascript:`, `data:` |
 
 ## NEXUS API inventory (v1 → v2)
@@ -61,6 +61,8 @@ the isolated NEXUS v2 preload (`contextIsolation: true`, `nodeIntegration: false
 | `utilities.copyToClipboard` | clipboard | yes | medium | `ui.copyText` | replaced |
 | `utilities.openInBrowser` | shell | yes | medium | `ui.openExternal` | replaced |
 | `utilities.color` | pure helpers | no | none | **removed** (bundle locally) | removed |
+| *(new in v2)* | brokered provider call | yes | high | `exchange.getQuote` / `exchange.getSwapStatus` (`exchange.quote`) | allowlist-only |
+| *(new in v2)* | brokered provider submit | yes | high | `exchange.submitSwap` (`exchange.submitSwap`) | no signing/broadcast |
 | `proxyRequest` (main helper) | axios | yes | critical | **disabled** | removed |
 
 ### Wallet context allowed fields (v2)
@@ -135,6 +137,8 @@ Optional `capabilities` array in `nxs_package.json`. Default:
 ```
 
 `legacy.api` is rejected for production modules.
+`exchange.quote` and `exchange.submitSwap` are optional and must be declared
+explicitly (not part of defaults).
 
 ## Audit events
 

@@ -137,5 +137,13 @@ Information about the module's author.
 Declares which isolated NEXUS v2 capabilities this module may use. Unknown values
 are rejected. `legacy.api` is not allowed for production modules.
 
+Additional optional exchange capabilities:
+
+- `exchange.quote` — enables `exchange.getQuote` and `exchange.getSwapStatus`
+- `exchange.submitSwap` — enables `exchange.submitSwap`
+
+`exchange.*` capabilities are **not** included in defaults and must be declared
+explicitly by modules that need them.
+
 See [NEXUS v2 migration](./nexus-v2-migration.md) and
 [Module WebView isolation](../security/module-webview-isolation.md).

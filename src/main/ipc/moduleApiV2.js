@@ -30,6 +30,8 @@ const CAPABILITIES = Object.freeze({
   STORAGE: 'storage',
   STATE: 'state',
   WALLET_REQUEST_SEND: 'wallet.requestSend',
+  EXCHANGE_QUOTE: 'exchange.quote',
+  EXCHANGE_SUBMIT_SWAP: 'exchange.submitSwap',
   // Explicitly insecure; never granted to production modules.
   LEGACY_API: 'legacy.api',
 });
@@ -56,6 +58,9 @@ const METHODS = Object.freeze({
   STATE_GET: 'state.get',
   STATE_SET: 'state.set',
   WALLET_REQUEST_SEND: 'wallet.requestSend',
+  EXCHANGE_GET_QUOTE: 'exchange.getQuote',
+  EXCHANGE_GET_SWAP_STATUS: 'exchange.getSwapStatus',
+  EXCHANGE_SUBMIT_SWAP: 'exchange.submitSwap',
 });
 
 const METHOD_CAPABILITY = Object.freeze({
@@ -69,6 +74,9 @@ const METHOD_CAPABILITY = Object.freeze({
   [METHODS.STATE_GET]: CAPABILITIES.STATE,
   [METHODS.STATE_SET]: CAPABILITIES.STATE,
   [METHODS.WALLET_REQUEST_SEND]: CAPABILITIES.WALLET_REQUEST_SEND,
+  [METHODS.EXCHANGE_GET_QUOTE]: CAPABILITIES.EXCHANGE_QUOTE,
+  [METHODS.EXCHANGE_GET_SWAP_STATUS]: CAPABILITIES.EXCHANGE_QUOTE,
+  [METHODS.EXCHANGE_SUBMIT_SWAP]: CAPABILITIES.EXCHANGE_SUBMIT_SWAP,
 });
 
 const CHANNELS = Object.freeze({
@@ -88,6 +96,14 @@ const MAX_STATE_JSON_BYTES = 256_000;
 const MAX_COPY_TEXT = 100_000;
 const MAX_RECIPIENTS = 25;
 const MAX_NESTING = 8;
+const MAX_PROVIDER_KEY = 64;
+const MAX_PAIR = 32;
+const MAX_AMOUNT = 64;
+const MAX_OPAQUE_TOKEN = 128;
+const PROVIDER_PATTERN = /^[a-z0-9][a-z0-9-]{0,62}[a-z0-9]$/;
+const PAIR_PATTERN = /^[A-Z0-9]{2,10}\/[A-Z0-9]{2,10}$/;
+const DECIMAL_AMOUNT_PATTERN = /^\d+(\.\d+)?$/;
+const OPAQUE_TOKEN_PATTERN = /^[A-Za-z0-9_-]+$/;
 
 function fail(code, message) {
   const error = new TypeError(message);
@@ -354,6 +370,100 @@ function validateSendDraft(value) {
   };
 }
 
+function normalizeExchangeAmount(value) {
+  if (typeof value !== 'string' && typeof value !== 'number') {
+    fail(ERROR_CODES.VALIDATION_FAILED, 'amount must be a string or number');
+  }
+  const amount = String(value);
+  if (!amount || amount.length > MAX_AMOUNT) {
+    fail(
+      ERROR_CODES.VALIDATION_FAILED,
+      `amount must be a string between 1 and ${MAX_AMOUNT} characters`
+    );
+  }
+  if (!DECIMAL_AMOUNT_PATTERN.test(amount) || Number(amount) <= 0) {
+    fail(ERROR_CODES.VALIDATION_FAILED, 'amount must be a positive decimal');
+  }
+  return amount;
+}
+
+function validateExchangeQuote(value) {
+  const request = assertRecord(value, 'Exchange quote request');
+  const allowed = new Set(['provider', 'pair', 'amount']);
+  for (const key of Object.keys(request)) {
+    if (!allowed.has(key)) {
+      fail(ERROR_CODES.VALIDATION_FAILED, `Unknown quote field: ${key}`);
+    }
+  }
+
+  const provider = assertString(request.provider, 'provider', {
+    min: 1,
+    max: MAX_PROVIDER_KEY,
+  });
+  if (!PROVIDER_PATTERN.test(provider)) {
+    fail(ERROR_CODES.VALIDATION_FAILED, 'provider has invalid format');
+  }
+
+  const pair = assertString(request.pair, 'pair', { min: 3, max: MAX_PAIR });
+  if (!PAIR_PATTERN.test(pair)) {
+    fail(ERROR_CODES.VALIDATION_FAILED, 'pair has invalid format');
+  }
+
+  const amount = normalizeExchangeAmount(request.amount);
+  return { provider, pair, amount };
+}
+
+function validateExchangeSwap(value) {
+  const request = assertRecord(value, 'Exchange swap request');
+  const allowed = new Set(['provider', 'pair', 'amount', 'quoteId']);
+  for (const key of Object.keys(request)) {
+    if (!allowed.has(key)) {
+      fail(ERROR_CODES.VALIDATION_FAILED, `Unknown swap field: ${key}`);
+    }
+  }
+
+  const quote = validateExchangeQuote({
+    provider: request.provider,
+    pair: request.pair,
+    amount: request.amount,
+  });
+  const quoteId = assertString(request.quoteId, 'quoteId', {
+    min: 1,
+    max: MAX_OPAQUE_TOKEN,
+  });
+  if (!OPAQUE_TOKEN_PATTERN.test(quoteId)) {
+    fail(ERROR_CODES.VALIDATION_FAILED, 'quoteId has invalid format');
+  }
+  return { ...quote, quoteId };
+}
+
+function validateExchangeSwapStatus(value) {
+  const request = assertRecord(value, 'Exchange swap status request');
+  const allowed = new Set(['provider', 'orderId']);
+  for (const key of Object.keys(request)) {
+    if (!allowed.has(key)) {
+      fail(ERROR_CODES.VALIDATION_FAILED, `Unknown swap status field: ${key}`);
+    }
+  }
+
+  const provider = assertString(request.provider, 'provider', {
+    min: 1,
+    max: MAX_PROVIDER_KEY,
+  });
+  if (!PROVIDER_PATTERN.test(provider)) {
+    fail(ERROR_CODES.VALIDATION_FAILED, 'provider has invalid format');
+  }
+
+  const orderId = assertString(request.orderId, 'orderId', {
+    min: 1,
+    max: MAX_OPAQUE_TOKEN,
+  });
+  if (!OPAQUE_TOKEN_PATTERN.test(orderId)) {
+    fail(ERROR_CODES.VALIDATION_FAILED, 'orderId has invalid format');
+  }
+  return { provider, orderId };
+}
+
 function validateInvokeRequest(value) {
   const request = assertRecord(value, 'Module API request');
   const method = assertString(request.method, 'method', { min: 1, max: 64 });
@@ -421,6 +531,15 @@ function validateInvokeRequest(value) {
       break;
     case METHODS.WALLET_REQUEST_SEND:
       normalizedPayload = validateSendDraft(payload);
+      break;
+    case METHODS.EXCHANGE_GET_QUOTE:
+      normalizedPayload = validateExchangeQuote(payload);
+      break;
+    case METHODS.EXCHANGE_SUBMIT_SWAP:
+      normalizedPayload = validateExchangeSwap(payload);
+      break;
+    case METHODS.EXCHANGE_GET_SWAP_STATUS:
+      normalizedPayload = validateExchangeSwapStatus(payload);
       break;
     default:
       fail(ERROR_CODES.UNKNOWN_METHOD, `Unknown module API method: ${method}`);
@@ -533,6 +652,9 @@ module.exports = {
   normalizeManifestCapabilities,
   sanitizeWalletContext,
   validateConfirmOptions,
+  validateExchangeQuote,
+  validateExchangeSwap,
+  validateExchangeSwapStatus,
   validateInvokeRequest,
   validateModuleOpenUrl,
   validateNotifyOptions,

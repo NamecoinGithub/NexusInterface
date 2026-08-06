@@ -14,9 +14,13 @@ const {
   CAPABILITIES,
   DEFAULT_CAPABILITIES,
   ERROR_CODES,
+  METHOD_CAPABILITY,
   METHODS,
   normalizeManifestCapabilities,
   sanitizeWalletContext,
+  validateExchangeQuote,
+  validateExchangeSwap,
+  validateExchangeSwapStatus,
   validateInvokeRequest,
   validateModuleOpenUrl,
   validateSendDraft,
@@ -26,11 +30,26 @@ test('NEXUS v2 contract exports a frozen method/capability map', () => {
   assert.equal(API_VERSION, 2);
   assert.ok(DEFAULT_CAPABILITIES.includes(CAPABILITIES.WALLET_CONTEXT));
   assert.ok(DEFAULT_CAPABILITIES.includes(CAPABILITIES.WALLET_REQUEST_SEND));
+  assert.equal(DEFAULT_CAPABILITIES.includes(CAPABILITIES.EXCHANGE_QUOTE), false);
+  assert.equal(
+    DEFAULT_CAPABILITIES.includes(CAPABILITIES.EXCHANGE_SUBMIT_SWAP),
+    false
+  );
   assert.equal(
     DEFAULT_CAPABILITIES.includes(CAPABILITIES.LEGACY_API),
     false
   );
   assert.equal(METHODS.WALLET_GET_CONTEXT, 'wallet.getContext');
+  assert.equal(METHODS.EXCHANGE_GET_QUOTE, 'exchange.getQuote');
+  assert.equal(METHOD_CAPABILITY[METHODS.EXCHANGE_GET_QUOTE], 'exchange.quote');
+  assert.equal(
+    METHOD_CAPABILITY[METHODS.EXCHANGE_GET_SWAP_STATUS],
+    'exchange.quote'
+  );
+  assert.equal(
+    METHOD_CAPABILITY[METHODS.EXCHANGE_SUBMIT_SWAP],
+    'exchange.submitSwap'
+  );
 });
 
 test('invoke validation accepts only documented methods and plain payloads', () => {
@@ -94,6 +113,121 @@ test('send drafts require recipients and reject unknown fields', () => {
   assert.throws(() => validateSendDraft({ recipients: [] }), TypeError);
 });
 
+test('exchange validators enforce provider/pair/amount/token formats', () => {
+  assert.deepEqual(
+    validateExchangeQuote({
+      provider: 'test-only-provider',
+      pair: 'NXS/LTC',
+      amount: '1.5',
+    }),
+    {
+      provider: 'test-only-provider',
+      pair: 'NXS/LTC',
+      amount: '1.5',
+    }
+  );
+  assert.deepEqual(
+    validateExchangeSwap({
+      provider: 'test-only-provider',
+      pair: 'NXS/LTC',
+      amount: 2,
+      quoteId: 'quote_abc-123',
+    }),
+    {
+      provider: 'test-only-provider',
+      pair: 'NXS/LTC',
+      amount: '2',
+      quoteId: 'quote_abc-123',
+    }
+  );
+  assert.deepEqual(
+    validateExchangeSwapStatus({
+      provider: 'test-only-provider',
+      orderId: 'order_abc-123',
+    }),
+    {
+      provider: 'test-only-provider',
+      orderId: 'order_abc-123',
+    }
+  );
+
+  assert.throws(
+    () =>
+      validateExchangeQuote({
+        provider: 'https://evil.invalid',
+        pair: 'NXS/LTC',
+        amount: '1',
+      }),
+    TypeError
+  );
+  assert.throws(
+    () =>
+      validateExchangeQuote({
+        provider: 'test-only-provider',
+        pair: 'nxs/ltc',
+        amount: '1',
+      }),
+    TypeError
+  );
+  assert.throws(
+    () =>
+      validateExchangeQuote({
+        provider: 'test-only-provider',
+        pair: 'NXS/LTC',
+        amount: '-1',
+      }),
+    TypeError
+  );
+  assert.throws(
+    () =>
+      validateExchangeSwap({
+        provider: 'test-only-provider',
+        pair: 'NXS/LTC',
+        amount: '1',
+        quoteId: '../oops',
+      }),
+    TypeError
+  );
+  assert.throws(
+    () =>
+      validateExchangeSwapStatus({
+        provider: 'test-only-provider',
+        orderId: 'bad token',
+      }),
+    TypeError
+  );
+});
+
+test('invoke validation supports exchange methods and rejects malformed payloads', () => {
+  assert.deepEqual(
+    validateInvokeRequest({
+      method: 'exchange.getQuote',
+      payload: {
+        provider: 'test-only-provider',
+        pair: 'NXS/LTC',
+        amount: '1',
+      },
+    }).payload,
+    {
+      provider: 'test-only-provider',
+      pair: 'NXS/LTC',
+      amount: '1',
+    }
+  );
+  assert.throws(
+    () =>
+      validateInvokeRequest({
+        method: 'exchange.submitSwap',
+        payload: {
+          provider: 'test-only-provider',
+          pair: 'NXS/LTC',
+          amount: '1',
+        },
+      }),
+    TypeError
+  );
+});
+
 test('manifest capabilities default safely and reject production legacy.api', () => {
   assert.deepEqual(
     normalizeManifestCapabilities(undefined),
@@ -150,6 +284,8 @@ test('module webview hardening enforces isolation preferences', () => {
   assert.doesNotMatch(security, /NEXUS_DISABLE_MODULE_SANDBOX/);
   assert.match(security, /loadModuleGuestIdentity/);
   assert.match(security, /registerModuleGuest/);
+  assert.match(security, /--nexus-capabilities=/);
+  assert.match(security, /additionalArguments/);
   assert.match(security, /setWindowOpenHandler/);
   assert.match(security, /setPermissionRequestHandler/);
   assert.doesNotMatch(security, /contextIsolation\s*=\s*false/);
@@ -161,17 +297,61 @@ test('module webview hardening enforces isolation preferences', () => {
 
 test('module preload is a minimal contextBridge surface without React or ipc leaks', () => {
   const bridge = read('src', 'module', 'preload', 'bridge.ts');
+  const capabilities = read('src', 'module', 'preload', 'capabilities.ts');
+  const validation = read('src', 'module', 'preload', 'validation.ts');
   const index = read('src', 'module', 'preload', 'index.ts');
   const webpack = read('configs', 'webpack.config.base.preload.babel.js');
 
   assert.match(bridge, /contextBridge\.exposeInMainWorld\(\s*['"]NEXUS['"]/);
   assert.match(bridge, /module-api:invoke/);
+  assert.match(bridge, /hasCapability\('exchange\.quote'\)/);
+  assert.match(bridge, /hasCapability\('exchange\.submitSwap'\)/);
+  assert.match(bridge, /const canQuote = hasCapability\('exchange\.quote'\)/);
+  assert.match(
+    bridge,
+    /const canSubmitSwap = hasCapability\('exchange\.submitSwap'\)/
+  );
+  assert.match(bridge, /\.\.\.\(exchange \? \{ exchange \} : \{\}\)/);
+  assert.match(capabilities, /--nexus-capabilities=/);
+  assert.match(capabilities, /decodeURIComponent/);
+  assert.match(validation, /assertExchangeProvider/);
+  assert.match(validation, /assertExchangePair/);
+  assert.match(validation, /assertExchangeAmount/);
+  assert.match(validation, /assertExchangeOpaqueToken/);
   assert.doesNotMatch(bridge, /from ['"]react['"]/);
   assert.doesNotMatch(bridge, /from ['"]@emotion\//);
   assert.doesNotMatch(bridge, /global\.NEXUS\s*=/);
   assert.doesNotMatch(index, /from ['"]react['"]/);
   assert.match(webpack, /electron-preload/);
   assert.match(webpack, /src\/module\/preload\/index\.ts/);
+});
+
+test('exchange broker keeps capability enforcement server-side with allowlist + throttling + timeout', () => {
+  const broker = read('src', 'main', 'moduleBroker.js');
+  const invokeStart = broker.indexOf('async function handleInvoke');
+  const capabilityCheck = broker.indexOf(
+    'const capability = assertCapability(guest, method);'
+  );
+  const switchStart = broker.indexOf('switch (method)');
+  assert.ok(invokeStart >= 0);
+  assert.ok(capabilityCheck > invokeStart);
+  assert.ok(switchStart > capabilityCheck);
+
+  assert.match(broker, /const EXCHANGE_PROVIDERS = Object\.freeze/);
+  assert.match(
+    broker,
+    /throw moduleError\(\s*ERROR_CODES\.VALIDATION_FAILED,\s*`Unknown exchange provider:/
+  );
+  assert.match(broker, /function consumeRateLimit/);
+  assert.match(broker, /EXCHANGE_QUOTE_LIMIT = 20/);
+  assert.match(broker, /EXCHANGE_SUBMIT_LIMIT = 5/);
+  assert.match(broker, /ERROR_CODES\.RATE_LIMITED/);
+  assert.match(broker, /AbortController/);
+  assert.match(broker, /controller\.abort/);
+  assert.match(broker, /ERROR_CODES\.HOST_UNAVAILABLE/);
+  assert.match(broker, /METHODS\.EXCHANGE_GET_QUOTE/);
+  assert.match(broker, /METHODS\.EXCHANGE_SUBMIT_SWAP/);
+  assert.match(broker, /METHODS\.EXCHANGE_GET_SWAP_STATUS/);
 });
 
 test('host module relay rejects generic privileged legacy channels', () => {

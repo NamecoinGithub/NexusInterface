@@ -7,14 +7,25 @@ import { contextBridge, ipcRenderer } from 'electron';
 
 import type {
   NexusConfirmOptions,
+  NexusExchangeQuote,
+  NexusExchangeQuoteRequest,
+  NexusExchangeSwapRequest,
+  NexusExchangeSwapResult,
+  NexusExchangeSwapStatus,
+  NexusExchangeSwapStatusRequest,
   NexusModuleApiV2,
   NexusModuleWalletContext,
   NexusNotifyOptions,
   NexusSendDraft,
 } from '../../shared/modules/nexusApiV2';
+import { hasCapability } from './capabilities';
 import { addContextListener, clearContextListeners, emitContextChanged } from './events';
 import {
   assertCopyText,
+  assertExchangeAmount,
+  assertExchangeOpaqueToken,
+  assertExchangePair,
+  assertExchangeProvider,
   assertFunction,
   assertOpenableUrl,
   assertRecord,
@@ -51,6 +62,46 @@ async function invoke<T = unknown>(
 }
 
 function createApi(): NexusModuleApiV2 {
+  const canQuote = hasCapability('exchange.quote');
+  const canSubmitSwap = hasCapability('exchange.submitSwap');
+  const exchange =
+    canQuote || canSubmitSwap
+      ? {
+          ...(canQuote
+            ? {
+                getQuote: async (request: NexusExchangeQuoteRequest) => {
+                  const payload = assertRecord(request, 'request');
+                  return invoke<NexusExchangeQuote>('exchange.getQuote', {
+                    provider: assertExchangeProvider(payload.provider),
+                    pair: assertExchangePair(payload.pair),
+                    amount: assertExchangeAmount(payload.amount),
+                  });
+                },
+                getSwapStatus: async (request: NexusExchangeSwapStatusRequest) => {
+                  const payload = assertRecord(request, 'request');
+                  return invoke<NexusExchangeSwapStatus>('exchange.getSwapStatus', {
+                    provider: assertExchangeProvider(payload.provider),
+                    orderId: assertExchangeOpaqueToken(payload.orderId, 'orderId'),
+                  });
+                },
+              }
+            : {}),
+          ...(canSubmitSwap
+            ? {
+                submitSwap: async (request: NexusExchangeSwapRequest) => {
+                  const payload = assertRecord(request, 'request');
+                  return invoke<NexusExchangeSwapResult>('exchange.submitSwap', {
+                    provider: assertExchangeProvider(payload.provider),
+                    pair: assertExchangePair(payload.pair),
+                    amount: assertExchangeAmount(payload.amount),
+                    quoteId: assertExchangeOpaqueToken(payload.quoteId, 'quoteId'),
+                  });
+                },
+              }
+            : {}),
+        }
+      : undefined;
+
   const api: NexusModuleApiV2 = {
     apiVersion: 2,
     walletVersion: typeof APP_VERSION === 'string' ? APP_VERSION : '',
@@ -105,15 +156,18 @@ function createApi(): NexusModuleApiV2 {
         await invoke('state.set', { value });
       },
     },
+    ...(exchange ? { exchange } : {}),
   };
 
-  return Object.freeze({
+  const frozen = {
     ...api,
     wallet: Object.freeze({ ...api.wallet }),
     ui: Object.freeze({ ...api.ui }),
     storage: Object.freeze({ ...api.storage }),
     state: Object.freeze({ ...api.state }),
-  });
+    ...(exchange ? { exchange: Object.freeze({ ...exchange }) } : {}),
+  };
+  return Object.freeze(frozen);
 }
 
 export function exposeNexusModuleApi(): void {

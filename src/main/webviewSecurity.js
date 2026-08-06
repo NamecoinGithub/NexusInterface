@@ -12,9 +12,19 @@ import {
 
 const authorizedEntries = new Map();
 const pendingPolicies = [];
+const CAPABILITIES_ARG_PREFIX = '--nexus-capabilities=';
 
 function moduleUrlPrefix(moduleName) {
   return `${getDomain()}/modules/${encodeURIComponent(moduleName)}/`;
+}
+
+function encodeCapabilitiesArgument(capabilities) {
+  const normalized = Array.isArray(capabilities)
+    ? capabilities.filter((entry) => typeof entry === 'string')
+    : [];
+  return `${CAPABILITIES_ARG_PREFIX}${encodeURIComponent(
+    JSON.stringify(normalized)
+  )}`;
 }
 
 function isAllowedNavigation(url, policy) {
@@ -78,6 +88,17 @@ export function hardenModuleWebviews(mainWindow) {
       webPreferences.experimentalFeatures = false;
       webPreferences.preload = getModulePreloadPath();
       delete webPreferences.preloadURL;
+      const existingArgs = Array.isArray(webPreferences.additionalArguments)
+        ? webPreferences.additionalArguments.filter(
+            (arg) =>
+              typeof arg === 'string' &&
+              !arg.startsWith(CAPABILITIES_ARG_PREFIX)
+          )
+        : [];
+      webPreferences.additionalArguments = [
+        ...existingArgs,
+        encodeCapabilitiesArgument(policy.identity?.capabilities),
+      ];
 
       pendingPolicies.push(policy);
     }

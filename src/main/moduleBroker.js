@@ -36,12 +36,27 @@ import { assertSafeModuleName } from './ipc/contracts';
 const guestsByWebContentsId = new Map();
 const pendingHostRequests = new Map();
 const storageWriteBuckets = new Map();
+const exchangeQuoteBuckets = new Map();
+const exchangeSubmitBuckets = new Map();
 const auditLog = [];
 
 const STORAGE_WRITE_LIMIT = 30;
 const STORAGE_WRITE_WINDOW_MS = 60_000;
+const EXCHANGE_QUOTE_LIMIT = 20;
+const EXCHANGE_QUOTE_WINDOW_MS = 60_000;
+const EXCHANGE_SUBMIT_LIMIT = 5;
+const EXCHANGE_SUBMIT_WINDOW_MS = 60_000;
 const HOST_REQUEST_TIMEOUT_MS = 120_000;
 const MAX_AUDIT_ENTRIES = 500;
+const EXCHANGE_PROVIDER_TIMEOUT_MS = 8000;
+
+const EXCHANGE_PROVIDERS = Object.freeze({
+  'test-only-provider': Object.freeze({
+    baseUrl: 'https://example.invalid/exchange/',
+    pairs: Object.freeze(['NXS/LTC', 'LTC/NXS']),
+    timeoutMs: EXCHANGE_PROVIDER_TIMEOUT_MS,
+  }),
+});
 
 function audit(entry) {
   const record = {
@@ -69,6 +84,70 @@ function moduleError(code, message) {
   const error = new Error(message);
   error.code = code;
   return error;
+}
+
+function consumeRateLimit(bucketMap, key, limit, windowMs, label) {
+  const now = Date.now();
+  const bucket = bucketMap.get(key) || [];
+  const recent = bucket.filter((ts) => now - ts < windowMs);
+  if (recent.length >= limit) {
+    throw moduleError(ERROR_CODES.RATE_LIMITED, `${label} rate limit exceeded`);
+  }
+  recent.push(now);
+  bucketMap.set(key, recent);
+}
+
+function consumeStorageWriteQuota(moduleName) {
+  consumeRateLimit(
+    storageWriteBuckets,
+    moduleName,
+    STORAGE_WRITE_LIMIT,
+    STORAGE_WRITE_WINDOW_MS,
+    'Module storage write'
+  );
+}
+
+function resolveProvider(providerKey) {
+  const provider = EXCHANGE_PROVIDERS[providerKey];
+  if (!provider) {
+    throw moduleError(
+      ERROR_CODES.VALIDATION_FAILED,
+      `Unknown exchange provider: ${providerKey}`
+    );
+  }
+  return provider;
+}
+
+async function fetchProviderJson(provider, pathName, { method = 'POST', body } = {}) {
+  if (!provider?.baseUrl || !provider?.timeoutMs) {
+    throw moduleError(ERROR_CODES.HOST_UNAVAILABLE, 'Invalid exchange provider');
+  }
+  const url = new URL(pathName, provider.baseUrl).toString();
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), provider.timeoutMs);
+  try {
+    const response = await fetch(url, {
+      method,
+      headers: { 'content-type': 'application/json' },
+      body: body === undefined ? undefined : JSON.stringify(body),
+      signal: controller.signal,
+    });
+    if (!response.ok) {
+      throw moduleError(
+        ERROR_CODES.HOST_UNAVAILABLE,
+        `Exchange provider responded with ${response.status}`
+      );
+    }
+    return await response.json();
+  } catch (error) {
+    if (error?.name === 'AbortError') {
+      throw moduleError(ERROR_CODES.HOST_UNAVAILABLE, 'Exchange provider timed out');
+    }
+    if (error?.code) throw error;
+    throw moduleError(ERROR_CODES.HOST_UNAVAILABLE, 'Exchange provider unavailable');
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 function resultOk(value) {
@@ -228,18 +307,14 @@ function assertCapability(guest, method) {
   return capability;
 }
 
-function consumeStorageWriteQuota(moduleName) {
-  const now = Date.now();
-  const bucket = storageWriteBuckets.get(moduleName) || [];
-  const recent = bucket.filter((ts) => now - ts < STORAGE_WRITE_WINDOW_MS);
-  if (recent.length >= STORAGE_WRITE_LIMIT) {
-    throw moduleError(
-      ERROR_CODES.RATE_LIMITED,
-      'Module storage write rate limit exceeded'
-    );
-  }
-  recent.push(now);
-  storageWriteBuckets.set(moduleName, recent);
+function buildExchangeAuditReason(payload) {
+  if (!payload || typeof payload !== 'object') return undefined;
+  const provider =
+    typeof payload.provider === 'string' && payload.provider ? payload.provider : null;
+  const pair = typeof payload.pair === 'string' && payload.pair ? payload.pair : null;
+  if (provider && pair) return `provider=${provider};pair=${pair}`;
+  if (provider) return `provider=${provider}`;
+  return undefined;
 }
 
 function getMainWindowContents() {
@@ -374,6 +449,73 @@ async function handleInvoke(guest, request) {
         value = undefined;
         break;
       }
+      case METHODS.EXCHANGE_GET_QUOTE: {
+        consumeRateLimit(
+          exchangeQuoteBuckets,
+          guest.moduleName,
+          EXCHANGE_QUOTE_LIMIT,
+          EXCHANGE_QUOTE_WINDOW_MS,
+          'Exchange quote/status'
+        );
+        const provider = resolveProvider(payload.provider);
+        if (!provider.pairs.includes(payload.pair)) {
+          throw moduleError(
+            ERROR_CODES.VALIDATION_FAILED,
+            `Unsupported exchange pair: ${payload.pair}`
+          );
+        }
+        value = await fetchProviderJson(provider, 'quote', {
+          method: 'POST',
+          body: {
+            pair: payload.pair,
+            amount: payload.amount,
+          },
+        });
+        break;
+      }
+      case METHODS.EXCHANGE_SUBMIT_SWAP: {
+        consumeRateLimit(
+          exchangeSubmitBuckets,
+          guest.moduleName,
+          EXCHANGE_SUBMIT_LIMIT,
+          EXCHANGE_SUBMIT_WINDOW_MS,
+          'Exchange submit'
+        );
+        const provider = resolveProvider(payload.provider);
+        if (!provider.pairs.includes(payload.pair)) {
+          throw moduleError(
+            ERROR_CODES.VALIDATION_FAILED,
+            `Unsupported exchange pair: ${payload.pair}`
+          );
+        }
+        value = await fetchProviderJson(provider, 'swap', {
+          method: 'POST',
+          body: {
+            pair: payload.pair,
+            amount: payload.amount,
+            quoteId: payload.quoteId,
+            originatingModule: guest.moduleName,
+          },
+        });
+        break;
+      }
+      case METHODS.EXCHANGE_GET_SWAP_STATUS: {
+        consumeRateLimit(
+          exchangeQuoteBuckets,
+          guest.moduleName,
+          EXCHANGE_QUOTE_LIMIT,
+          EXCHANGE_QUOTE_WINDOW_MS,
+          'Exchange quote'
+        );
+        const provider = resolveProvider(payload.provider);
+        value = await fetchProviderJson(provider, 'swap/status', {
+          method: 'POST',
+          body: {
+            orderId: payload.orderId,
+          },
+        });
+        break;
+      }
       default:
         throw moduleError(ERROR_CODES.UNKNOWN_METHOD, `Unhandled method ${method}`);
     }
@@ -385,11 +527,13 @@ async function handleInvoke(guest, request) {
       method,
       capability,
       outcome: 'allow',
+      reason: buildExchangeAuditReason(payload),
     });
     return resultOk(value);
   } catch (error) {
     const code = error?.code || ERROR_CODES.INTERNAL;
     const message = error?.message || 'Module API request failed';
+    const exchangeReason = buildExchangeAuditReason(payload);
     audit({
       moduleId: guest.moduleName,
       version: guest.version,
@@ -397,7 +541,7 @@ async function handleInvoke(guest, request) {
       method,
       capability,
       outcome: 'deny',
-      reason: code,
+      reason: exchangeReason ? `${code};${exchangeReason}` : code,
     });
     return resultErr(code, message);
   }

@@ -93,6 +93,34 @@ await NEXUS.wallet.requestSend({
 This only opens the wallet-owned Send review screen. The user must confirm in
 the wallet UI. Modules never receive a generic sign/broadcast API.
 
+### Exchange (optional)
+
+```js
+if (NEXUS.exchange) {
+  const quote = await NEXUS.exchange.getQuote({
+    provider: 'test-only-provider',
+    pair: 'NXS/LTC',
+    amount: '10',
+  });
+
+  const submitted = await NEXUS.exchange.submitSwap({
+    provider: 'test-only-provider',
+    pair: quote.pair,
+    amount: quote.amountIn,
+    quoteId: quote.quoteId,
+  });
+
+  const status = await NEXUS.exchange.getSwapStatus({
+    provider: 'test-only-provider',
+    orderId: submitted.orderId,
+  });
+}
+```
+
+Exchange calls are brokered by the main process against an allowlisted provider
+key (never a raw URL). This API does not sign or broadcast funds; fund movement
+remains `wallet.requestSend` only.
+
 ## Manifest capabilities
 
 Optional field in `nxs_package.json`:
@@ -114,6 +142,14 @@ Optional field in `nxs_package.json`:
 ```
 
 If omitted, the default set above is granted. Unknown capabilities are rejected.
+`exchange.*` capabilities are optional and not part of defaults. Add them only
+when needed:
+
+```json
+{
+  "capabilities": ["exchange.quote", "exchange.submitSwap"]
+}
+```
 
 ## Bundling your own UI
 

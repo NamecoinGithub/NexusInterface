@@ -27,6 +27,8 @@ export type NexusModuleCapability =
   | 'storage'
   | 'state'
   | 'wallet.requestSend'
+  | 'exchange.quote'
+  | 'exchange.submitSwap'
   | 'legacy.api';
 
 export type NexusModuleMethod =
@@ -39,7 +41,10 @@ export type NexusModuleMethod =
   | 'storage.set'
   | 'state.get'
   | 'state.set'
-  | 'wallet.requestSend';
+  | 'wallet.requestSend'
+  | 'exchange.getQuote'
+  | 'exchange.getSwapStatus'
+  | 'exchange.submitSwap';
 
 export interface NexusModuleSettingsSummary {
   locale: string;
@@ -100,6 +105,59 @@ export interface NexusSendDraft {
   advancedOptions?: boolean;
 }
 
+export type NexusExchangePair = `${string}/${string}`;
+
+export interface NexusExchangeQuoteRequest {
+  provider: string;
+  pair: NexusExchangePair;
+  amount: string | number;
+}
+
+export interface NexusExchangeQuote {
+  quoteId: string;
+  pair: NexusExchangePair;
+  amountIn: string;
+  amountOut: string;
+  fee?: string;
+  expiresAt?: string;
+  provider?: string;
+  [key: string]: unknown;
+}
+
+export interface NexusExchangeSwapRequest extends NexusExchangeQuoteRequest {
+  quoteId: string;
+}
+
+export type NexusExchangeSwapState =
+  | 'created'
+  | 'pending'
+  | 'quoted'
+  | 'submitted'
+  | 'awaiting_deposit'
+  | 'deposit_confirmed'
+  | 'exchanging'
+  | 'completed'
+  | 'failed'
+  | 'cancelled'
+  | 'expired'
+  | (string & {});
+
+export interface NexusExchangeSwapResult {
+  orderId: string;
+  state: NexusExchangeSwapState;
+  provider?: string;
+  [key: string]: unknown;
+}
+
+export interface NexusExchangeSwapStatusRequest {
+  provider: string;
+  orderId: string;
+}
+
+export interface NexusExchangeSwapStatus extends NexusExchangeSwapResult {
+  quoteId?: string;
+}
+
 export type Unsubscribe = () => void;
 
 /**
@@ -130,6 +188,15 @@ export interface NexusModuleApiV2 {
   state: {
     get(): Promise<Record<string, unknown> | null>;
     set(value: Record<string, unknown>): Promise<void>;
+  };
+  exchange?: {
+    getQuote?: (request: NexusExchangeQuoteRequest) => Promise<NexusExchangeQuote>;
+    submitSwap?: (
+      request: NexusExchangeSwapRequest
+    ) => Promise<NexusExchangeSwapResult>;
+    getSwapStatus?: (
+      request: NexusExchangeSwapStatusRequest
+    ) => Promise<NexusExchangeSwapStatus>;
   };
 }
 
