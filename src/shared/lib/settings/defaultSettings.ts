@@ -60,6 +60,12 @@ export type Settings = {
   allowSymLink: boolean;
   devModulePaths: string[];
 
+  // External chains (user-managed; monitoring only)
+  litecoinMonitoringEnabled: boolean;
+  litecoinMonitoringHost: '127.0.0.1' | '::1';
+  litecoinMonitoringRpcPort: string;
+  litecoinMonitoringCookiePath: string;
+
   // Others
   showUnusedNames: boolean;
 
@@ -144,6 +150,12 @@ export const defaultSettings: Settings = {
   disabledModules: [],
   allowSymLink: false,
   devModulePaths: [],
+
+  // External chains (user-managed; monitoring only)
+  litecoinMonitoringEnabled: false,
+  litecoinMonitoringHost: '127.0.0.1',
+  litecoinMonitoringRpcPort: '9332',
+  litecoinMonitoringCookiePath: '',
 
   // Others
   showUnusedNames: true,
