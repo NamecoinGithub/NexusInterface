@@ -47,7 +47,7 @@ function setSecurityHeaders(res) {
   }
 }
 
-function rateLimitMiddleware(req, res, next) {
+function isRateLimited(req) {
   const key = String(req.ip || req.socket?.remoteAddress || 'local');
   const now = Date.now();
   let bucket = rateBuckets.get(key);
@@ -55,12 +55,11 @@ function rateLimitMiddleware(req, res, next) {
     bucket = { count: 0, resetAt: now + RATE_LIMIT_WINDOW_MS };
     rateBuckets.set(key, bucket);
   }
-  bucket.count += 1;
-  if (bucket.count > RATE_LIMIT_MAX) {
-    setSecurityHeaders(res);
-    return res.status(429).end('Too many requests');
+  if (bucket.count >= RATE_LIMIT_MAX) {
+    return true;
   }
-  return next();
+  bucket.count += 1;
+  return false;
 }
 
 function resolveAssetAbsolute(moduleName, relativeFile) {
@@ -82,9 +81,13 @@ function resolveAssetAbsolute(moduleName, relativeFile) {
   return realFile;
 }
 
-server.use('/modules', rateLimitMiddleware);
-
 server.get('/modules/:moduleName/*', (req, res) => {
+  // Rate-limit this filesystem-serving route before any work.
+  if (isRateLimited(req)) {
+    setSecurityHeaders(res);
+    return res.status(429).end('Too many requests');
+  }
+
   setSecurityHeaders(res);
 
   let moduleName;
@@ -101,7 +104,6 @@ server.get('/modules/:moduleName/*', (req, res) => {
 
   let relative;
   try {
-    // express 4: wildcard may be in req.params[0]
     const wildcard = req.params[0] || '';
     relative = normalizeRelativeFile(decodeURIComponent(wildcard));
   } catch {
