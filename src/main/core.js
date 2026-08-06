@@ -497,7 +497,8 @@ export async function stopEmbeddedCore() {
   }
 
   try {
-    await callCoreRpc({ endpoint: 'system/stop' });
+    // Keep quit-path latency bounded; force-kill handles a stuck Core.
+    await callCoreRpc({ endpoint: 'system/stop', timeout: 5000 });
   } catch (error) {
     log.info(
       `Core Manager: Graceful stop request failed (${

@@ -174,9 +174,9 @@ export async function probeCoreApi(config, { timeout = 2500 } = {}) {
   }
 }
 
-export async function callCoreRpc({ endpoint, params }) {
+export async function callCoreRpc({ endpoint, params, timeout }) {
   const config = await getCoreConfiguration();
-  return requestCore({ method: 'POST', endpoint, params, config });
+  return requestCore({ method: 'POST', endpoint, params, config, timeout });
 }
 
 export async function callCoreRpcByUrl(url) {
