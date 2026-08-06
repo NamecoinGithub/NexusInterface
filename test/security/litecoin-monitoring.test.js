@@ -143,6 +143,8 @@ test('fixed RPC allowlist only; no renderer method input channel', () => {
       'getnetworkinfo',
     ].sort()
   );
+  assert.equal(ALLOWED_RPC_METHODS.has('getwalletinfo'), false);
+  assert.equal(ALLOWED_RPC_METHODS.has('getblockchaininfo'), true);
 
   const preload = read('src/main/preload.js');
   const contracts = read('src/main/ipc/contracts.js');

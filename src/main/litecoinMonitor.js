@@ -14,12 +14,14 @@ const path = require('path');
 /** Litecoin Core versions below 0.18.0 are not reviewed for this surface. */
 const MINIMUM_LITECOIN_CORE_VERSION = 180000;
 
-const ALLOWED_RPC_METHODS = Object.freeze([
-  'getblockchaininfo',
-  'getnetworkinfo',
-  'getmempoolinfo',
-  'getconnectioncount',
-]);
+const ALLOWED_RPC_METHODS = Object.freeze(
+  new Set([
+    'getblockchaininfo',
+    'getnetworkinfo',
+    'getmempoolinfo',
+    'getconnectioncount',
+  ])
+);
 
 const ALLOWED_HOSTS = new Set(['127.0.0.1', '::1']);
 
@@ -165,8 +167,10 @@ function asNonNegativeInt(value) {
 }
 
 function jsonRpcRequest({ host, port, authHeader, method, id }) {
-  if (!ALLOWED_RPC_METHODS.includes(method)) {
-    return Promise.reject(Object.assign(new Error('Method not allowed'), { code: 'invalid_response' }));
+  if (!ALLOWED_RPC_METHODS.has(method)) {
+    return Promise.reject(
+      Object.assign(new Error('Method not allowed'), { code: 'unavailable' })
+    );
   }
 
   const body = JSON.stringify({
@@ -280,7 +284,7 @@ function jsonRpcRequest({ host, port, authHeader, method, id }) {
         );
         return;
       }
-      if (code === 'ETIMEDOUT' || error?.code === 'timeout') {
+      if (code === 'ETIMEDOUT' || code === 'timeout') {
         reject(Object.assign(new Error('Request timed out'), { code: 'timeout' }));
         return;
       }

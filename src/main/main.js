@@ -840,7 +840,11 @@ registerOperation(
 registerOperation(
   CHANNELS.externalChains.litecoinGetStatus,
   undefined,
-  async () => getLitecoinNodeStatus({ bypassCache: false })
+  async () =>
+    getLitecoinNodeStatus({
+      bypassCache: false,
+      settings: loadSettingsFromFile(),
+    })
 );
 
 // Core lifecycle and console operations.
