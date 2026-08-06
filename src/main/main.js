@@ -532,13 +532,19 @@ registerOperation(CHANNELS.app.isForceQuit, undefined, async () => global.forceQ
 // Always stop the wallet-managed Core from the main process on quit/exit.
 // Renderer stopCore is best-effort; if the API is down or the renderer is
 // already tearing down, Core must not be left as an orphan requiring OS kill.
+//
+// Main window `close` is always preventDefault'd (renderer.js), so app.quit()
+// alone cannot terminate the process. After Core cleanup we must app.exit().
+// Setting allowingFinalQuit before app.quit() would also disable the
+// before-quit hard-exit fallback and leave a stuck process if the renderer
+// never completes closeWallet.
 registerOperation(CHANNELS.app.quit, undefined, async () => {
   await shutdownEmbeddedCoreAndAllowQuit();
-  app.quit();
+  app.exit(0);
 });
 registerOperation(CHANNELS.app.exit, undefined, async () => {
   await shutdownEmbeddedCoreAndAllowQuit();
-  app.exit();
+  app.exit(0);
 });
 registerOperation(CHANNELS.app.hideWindow, undefined, async () => mainWindow.hide());
 registerOperation(CHANNELS.app.hideDock, undefined, async () => {
@@ -853,7 +859,19 @@ registerOperation(
   },
   async ({ isSilent, isForceRunAfter }) => {
     await shutdownEmbeddedCoreAndAllowQuit();
-    autoUpdater.quitAndInstall(isSilent, isForceRunAfter);
+    try {
+      autoUpdater.quitAndInstall(isSilent, isForceRunAfter);
+    } catch (error) {
+      log.error(
+        `Updater quitAndInstall failed: ${error?.message || error}`
+      );
+    }
+    // Window close is always preventDefault'd; quitAndInstall relies on
+    // app.quit() which cannot destroy the window. Force-exit after giving the
+    // installer a moment to spawn.
+    setTimeout(() => {
+      app.exit(0);
+    }, 1500);
   }
 );
 registerOperation(

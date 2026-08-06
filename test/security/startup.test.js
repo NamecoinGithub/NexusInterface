@@ -62,6 +62,12 @@ test('embedded Core start always supplies API auth and probes already-running Co
   // Main process must stop Core on quit/exit so orphans are not left behind.
   assert.match(main, /stopEmbeddedCore|ensureEmbeddedCoreStopped|shutdownEmbeddedCoreAndAllowQuit/);
   assert.match(main, /before-quit/);
+  // Menu/IPC quit must hard-exit: window close is always preventDefault'd so
+  // app.quit() alone cannot terminate after allowingFinalQuit is set.
+  assert.match(
+    main,
+    /registerOperation\(\s*CHANNELS\.app\.quit,\s*undefined,\s*async \(\) => \{\s*await shutdownEmbeddedCoreAndAllowQuit\(\);\s*app\.exit\(0\);\s*\}\)/
+  );
   // Renderer stop must still force-kill when system/stop fails.
   assert.match(rendererCore, /window\.nexusElectron\.core\.kill\(\)/);
   assert.match(
