@@ -504,8 +504,6 @@ function sanitizeWalletContext(raw = {}) {
     walletVersion:
       typeof raw.walletVersion === 'string'
         ? raw.walletVersion.slice(0, 32)
-        : typeof APP_VERSION === 'string'
-        ? APP_VERSION
         : '',
     theme,
     settings,

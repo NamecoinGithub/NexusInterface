@@ -56,17 +56,17 @@ const getActiveModule = () => {
   return module && module.enabled ? module : null;
 };
 
-function buildSanitizedContextExtras() {
+function buildSanitizedContextExtras(moduleName?: string | null) {
   const settings = store.get(settingsAtom);
   const { locale, fiatCurrency, addressStyle } = settings;
-  const moduleName = store.get(activeAppModuleNameAtom);
+  const name = moduleName ?? store.get(activeAppModuleNameAtom);
   return {
     walletVersion: typeof APP_VERSION === 'string' ? APP_VERSION : '',
     theme: store.get(themeAtom),
     settings: getSettingsForModules(locale, fiatCurrency, addressStyle),
     coreInfo: store.get(coreInfoQuery.valueAtom),
     userStatus: store.get(userStatusQuery.valueAtom),
-    moduleState: moduleName ? store.get(moduleStatesAtom)[moduleName] : null,
+    moduleState: name ? store.get(moduleStatesAtom)[name] : null,
   };
 }
 
@@ -203,11 +203,11 @@ async function handleHostRequest(request: HostRequest) {
   try {
     switch (request.action) {
       case 'getContext': {
-        const extras = buildSanitizedContextExtras();
-        const activeModule = getActiveModule();
-        const storageData = activeModule
-          ? await readModuleStorage(activeModule)
-          : {};
+        const extras = buildSanitizedContextExtras(request.moduleName);
+        const modulesMap = store.get(modulesMapAtom);
+        const module = modulesMap[request.moduleName];
+        const storageData =
+          module && module.enabled ? await readModuleStorage(module) : {};
         await respond(true, {
           ...extras,
           storageData,
@@ -357,7 +357,15 @@ async function publishContextUpdate(partial?: Partial<WalletData>) {
   }
 }
 
+export function disposeModuleHostRelay() {
+  if (hostRequestUnsub) {
+    hostRequestUnsub();
+    hostRequestUnsub = null;
+  }
+}
+
 export function prepareWebView() {
+
   subscribe(activeAppModuleNameAtom, (moduleName) => {
     const webview = getActiveWebView();
     if (webview) {
@@ -371,13 +379,15 @@ export function prepareWebView() {
     }
   });
 
-  if (!hostRequestUnsub) {
-    hostRequestUnsub = window.nexusElectron.modules.onModuleApiHostRequest(
-      (request: HostRequest) => {
-        void handleHostRequest(request);
-      }
-    );
+  if (hostRequestUnsub) {
+    hostRequestUnsub();
+    hostRequestUnsub = null;
   }
+  hostRequestUnsub = window.nexusElectron.modules.onModuleApiHostRequest(
+    (request: HostRequest) => {
+      void handleHostRequest(request);
+    }
+  );
 
   subscribeWithPrevious(settingsAtom, (newSettings, oldSettings) => {
     if (settingsChanged(oldSettings, newSettings)) {

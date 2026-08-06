@@ -119,13 +119,15 @@ function createApi(): NexusModuleApiV2 {
 export function exposeNexusModuleApi(): void {
   const api = createApi();
 
-  ipcRenderer.on(CHANNELS.contextChanged, (_event, context) => {
+  const onContextChanged = (_event: Electron.IpcRendererEvent, context: unknown) => {
     if (context && typeof context === 'object') {
       emitContextChanged(context as NexusModuleWalletContext);
     }
-  });
+  };
+  ipcRenderer.on(CHANNELS.contextChanged, onContextChanged);
 
   window.addEventListener('unload', () => {
+    ipcRenderer.removeListener(CHANNELS.contextChanged, onContextChanged);
     clearContextListeners();
   });
 
