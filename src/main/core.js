@@ -7,6 +7,7 @@ import path from 'path';
 import { assetsByPlatformDir } from './paths';
 import { loadSettingsFromFile, updateSettingsFile } from './settings';
 import {
+  callCoreRpc,
   clearCoreConfigCache,
   getCoreConfiguration,
   probeCoreApi,
@@ -15,6 +16,13 @@ import {
 // After killing a mismatched Core, wait briefly so OS listen sockets (API/P2P)
 // are released before we spawn a replacement on the same ports.
 const CORE_PORT_RELEASE_DELAY_MS = 750;
+// Fresh Core processes need a moment before the local API accepts connections.
+// Keep this short so renderer bootstrap is not blocked for a full-node cold
+// start; coreInfoQuery continues polling after start returns.
+const CORE_API_READY_TIMEOUT_MS = 15000;
+const CORE_API_READY_POLL_MS = 500;
+const CORE_STOP_GRACE_ATTEMPTS = 10;
+const CORE_STOP_GRACE_DELAY_MS = 1000;
 
 const coreBinaryName = `nexus-${process.platform}-${process.arch}${
   process.platform === 'win32' ? '.exe' : ''
@@ -455,6 +463,71 @@ function buildConfiguredCoreParams(settings, configuration) {
   return { params, lockedTestnet };
 }
 
+async function waitForCoreApi(configuration, {
+  timeoutMs = CORE_API_READY_TIMEOUT_MS,
+  pollMs = CORE_API_READY_POLL_MS,
+} = {}) {
+  const startedAt = Date.now();
+  let lastError = 'API not ready';
+  while (Date.now() - startedAt < timeoutMs) {
+    const probe = await probeCoreApi(configuration, {
+      timeout: Math.min(pollMs, 2500),
+    });
+    if (probe.ok) {
+      return { ok: true, probe };
+    }
+    lastError = probe.error || lastError;
+    await new Promise((resolve) => setTimeout(resolve, pollMs));
+  }
+  return { ok: false, error: lastError };
+}
+
+/**
+ * Gracefully stop embedded Core via API, then force-kill if it stays up.
+ * Safe when the API is unreachable (kill path still runs).
+ */
+export async function stopEmbeddedCore() {
+  const settings = loadSettingsFromFile();
+  if (settings.manualDaemon) {
+    return { stopped: false, reason: 'manual-daemon' };
+  }
+
+  if (!(await isCoreRunning())) {
+    return { stopped: true, reason: 'not-running' };
+  }
+
+  try {
+    // Keep quit-path latency bounded; force-kill handles a stuck Core.
+    await callCoreRpc({ endpoint: 'system/stop', timeout: 5000 });
+  } catch (error) {
+    log.info(
+      `Core Manager: Graceful stop request failed (${
+        error?.message || error
+      }); will force-kill if still running`
+    );
+  }
+
+  for (let attempt = 0; attempt < CORE_STOP_GRACE_ATTEMPTS; attempt += 1) {
+    if (!(await isCoreRunning())) {
+      log.info('Core Manager: Core stopped gracefully');
+      return { stopped: true, reason: 'graceful' };
+    }
+    await new Promise((resolve) =>
+      setTimeout(resolve, CORE_STOP_GRACE_DELAY_MS)
+    );
+  }
+
+  if (await isCoreRunning()) {
+    const killed = await killCoreProcess();
+    return {
+      stopped: killed,
+      reason: killed ? 'killed' : 'kill-failed',
+    };
+  }
+
+  return { stopped: true, reason: 'graceful' };
+}
+
 /**
  * Starts the bundled core using only settings persisted by the main process.
  * Renderer callers cannot supply executable paths or process arguments.
@@ -527,7 +600,27 @@ export async function startConfiguredCore() {
       });
     }
   }
-  return { started: true, pid: startCore(params), apiReachable: false };
+
+  const pid = startCore(params);
+  const ready = await waitForCoreApi(configuration);
+  if (!ready.ok) {
+    log.warn(
+      `Core Manager: Core process started (pid ${pid}) but API is not reachable yet (${ready.error}). ` +
+        'The GUI will keep retrying system/get/info.'
+    );
+  } else {
+    log.info(
+      `Core Manager: Core API is reachable at ${configuration.ip}:${
+        configuration.apiSSL ? configuration.apiPortSSL : configuration.apiPort
+      } (${configuration.apiSSL ? 'ssl' : 'plain'})`
+    );
+  }
+  return {
+    started: true,
+    pid,
+    apiReachable: ready.ok,
+    apiError: ready.ok ? undefined : ready.error,
+  };
 }
 
 export async function resyncLiteDatabase() {

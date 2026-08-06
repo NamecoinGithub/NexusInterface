@@ -8,8 +8,7 @@ import {
 } from 'react-router';
 
 import { store, subscribe } from 'lib/store';
-import { stopCore } from 'lib/core';
-import { coreConnectedAtom } from 'lib/coreInfo';
+import { coreInfoPausedAtom, coreConnectedAtom } from 'lib/coreInfo';
 import { logOut, loggedInAtom } from 'lib/session';
 import { settingsAtom } from 'lib/settings';
 import nexusEnv from 'lib/nexusEnv';
@@ -38,7 +37,10 @@ export const closeWallet = async (beforeExit?: () => void) => {
   store.set(walletClosingAtom, true);
 
   if (!manualDaemon) {
-    await stopCore();
+    // Main-process app.exit/quit stops the embedded Core (graceful API stop
+    // then force-kill). Doing it only there avoids a double 10s wait and still
+    // works when the renderer can no longer reach the Core API.
+    store.set(coreInfoPausedAtom, true);
   } else if (manualDaemonLogOutOnClose) {
     await logOut(); //TODO: Ask for pin/session
   }

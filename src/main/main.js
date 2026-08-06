@@ -13,6 +13,7 @@ import {
   killCoreProcess,
   resyncLiteDatabase,
   startConfiguredCore,
+  stopEmbeddedCore,
 } from './core';
 import { getDomain, serveModuleFiles } from './fileServer';
 import { createWindow } from './renderer';
@@ -99,11 +100,34 @@ import {
 
 let mainWindow;
 global.forceQuit = false;
+// Guards against re-entrant Core shutdown during quit/exit (IPC + before-quit).
+let embeddedCoreShutdownPromise = null;
+// Once Core cleanup finished, allow Electron to complete quit/exit/install.
+let allowingFinalQuit = false;
 app.setAppUserModelId(APP_ID);
 ensureApplicationDirectories();
 initialize('A-US-0744437796'); // This doesn't send anything so it is safe to fire even if the user has turned tracking off
 
 log.initialize();
+
+async function ensureEmbeddedCoreStopped() {
+  if (!embeddedCoreShutdownPromise) {
+    embeddedCoreShutdownPromise = stopEmbeddedCore().catch((error) => {
+      log.warn(
+        `Core Manager: shutdown during app quit failed: ${
+          error?.message || error
+        }`
+      );
+    });
+  }
+  return embeddedCoreShutdownPromise;
+}
+
+async function shutdownEmbeddedCoreAndAllowQuit() {
+  global.forceQuit = true;
+  await ensureEmbeddedCoreStopped();
+  allowingFinalQuit = true;
+}
 
 const allowedOpenDialogProperties = new Set([
   'openFile',
@@ -505,8 +529,23 @@ registerSynchronousOperation(
 
 // App/window operations
 registerOperation(CHANNELS.app.isForceQuit, undefined, async () => global.forceQuit);
-registerOperation(CHANNELS.app.quit, undefined, async () => app.quit());
-registerOperation(CHANNELS.app.exit, undefined, async () => app.exit());
+// Always stop the wallet-managed Core from the main process on quit/exit.
+// Renderer stopCore is best-effort; if the API is down or the renderer is
+// already tearing down, Core must not be left as an orphan requiring OS kill.
+//
+// Main window `close` is always preventDefault'd (renderer.js), so app.quit()
+// alone cannot terminate the process. After Core cleanup we must app.exit().
+// Setting allowingFinalQuit before app.quit() would also disable the
+// before-quit hard-exit fallback and leave a stuck process if the renderer
+// never completes closeWallet.
+registerOperation(CHANNELS.app.quit, undefined, async () => {
+  await shutdownEmbeddedCoreAndAllowQuit();
+  app.exit(0);
+});
+registerOperation(CHANNELS.app.exit, undefined, async () => {
+  await shutdownEmbeddedCoreAndAllowQuit();
+  app.exit(0);
+});
 registerOperation(CHANNELS.app.hideWindow, undefined, async () => mainWindow.hide());
 registerOperation(CHANNELS.app.hideDock, undefined, async () => {
   if (process.platform === 'darwin') app.dock.hide();
@@ -818,8 +857,22 @@ registerOperation(
       ),
     };
   },
-  async ({ isSilent, isForceRunAfter }) =>
-    autoUpdater.quitAndInstall(isSilent, isForceRunAfter)
+  async ({ isSilent, isForceRunAfter }) => {
+    await shutdownEmbeddedCoreAndAllowQuit();
+    try {
+      autoUpdater.quitAndInstall(isSilent, isForceRunAfter);
+    } catch (error) {
+      log.error(
+        `Updater quitAndInstall failed: ${error?.message || error}`
+      );
+    }
+    // Window close is always preventDefault'd; quitAndInstall relies on
+    // app.quit() which cannot destroy the window. Force-exit after giving the
+    // installer a moment to spawn.
+    setTimeout(() => {
+      app.exit(0);
+    }, 1500);
+  }
 );
 registerOperation(
   CHANNELS.updater.setAllowPrerelease,
@@ -1005,6 +1058,20 @@ if (!gotTheLock) {
       if (mainWindow.isMinimized()) mainWindow.restore();
       mainWindow.focus();
     }
+  });
+
+  // Last-resort Core cleanup for tray Quit / OS quit paths that never reach the
+  // renderer closeWallet flow. before-quit is synchronous, so we briefly delay
+  // the quit, stop Core, then exit for real.
+  app.on('before-quit', (event) => {
+    global.forceQuit = true;
+    if (allowingFinalQuit) {
+      return;
+    }
+    event.preventDefault();
+    shutdownEmbeddedCoreAndAllowQuit().finally(() => {
+      app.exit(0);
+    });
   });
 
   // Application Startup
