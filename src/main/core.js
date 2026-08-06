@@ -642,7 +642,7 @@ export async function startConfiguredCore() {
       `Core Manager: Core process started (pid ${pid}) but API is not reachable yet (${ready.error}). ` +
         'The GUI will keep retrying system/get/info.'
     );
-    log.warn('core.api.wait.timeout', {
+    log.warn('core.api.wait.timeout.spawn', {
       pid,
       error: ready.error,
       timeoutMs: CORE_API_READY_TIMEOUT_MS,

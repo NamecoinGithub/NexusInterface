@@ -485,8 +485,13 @@ function registerOperation(channel, validateRequest, operation) {
       log.info('ipc.core.enter', {
         channel,
         // Never log credentials or full RPC params — endpoint only when present.
+        // For string requests (call-by-url), log only the query-free relative path.
         endpoint:
-          request && typeof request === 'object' ? request.endpoint : undefined,
+          request && typeof request === 'object'
+            ? request.endpoint
+            : typeof request === 'string'
+            ? request.split('?')[0]
+            : undefined,
       });
     }
     try {
