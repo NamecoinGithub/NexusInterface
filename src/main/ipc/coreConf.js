@@ -32,6 +32,7 @@ function fromKeyValues(contents) {
 
 function toKeyValues(config) {
   return Object.entries(config)
+    .filter(([, value]) => value !== undefined && value !== null)
     .map(([key, value]) => `${key}=${value}`)
     .join('\n');
 }
@@ -82,7 +83,7 @@ function resolveEmbeddedCoreConnection(configInput, settings = {}) {
     config.apiportssl = trimConfValue(config.apisslport);
   }
 
-  const useSSL = settings.embeddedCoreUseNonSSL ? false : true;
+  const useSSL = !settings.embeddedCoreUseNonSSL;
   const desiredPort = String(
     settings.embeddedCoreApiPort || config.apiport || '8080'
   );

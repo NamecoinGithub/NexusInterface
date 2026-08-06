@@ -61,6 +61,8 @@ async function loadEmbeddedConfig(settings) {
   try {
     return await embeddedConfigLoadPromise;
   } finally {
+    // Clear the in-flight promise so a failed load can be retried on the next
+    // call. Successful loads are still short-circuited by cachedEmbeddedConfig.
     embeddedConfigLoadPromise = undefined;
   }
 }

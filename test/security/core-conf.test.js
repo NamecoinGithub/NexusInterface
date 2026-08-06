@@ -29,6 +29,16 @@ test('fromKeyValues strips a leading UTF-8 BOM from the first key', () => {
   assert.equal(conf['\uFEFFapiuser'], undefined);
 });
 
+test('toKeyValues skips undefined and null values', () => {
+  const text = toKeyValues({
+    apiuser: 'apiserver',
+    apipassword: undefined,
+    apisslport: null,
+    apiport: '8080',
+  });
+  assert.equal(text, 'apiuser=apiserver\napiport=8080');
+});
+
 test('resolveApiPortSSL accepts both conf key spellings', () => {
   assert.equal(resolveApiPortSSL({ apiportssl: '7080' }, '8443'), '7080');
   assert.equal(resolveApiPortSSL({ apisslport: '7099' }, '8443'), '7099');
