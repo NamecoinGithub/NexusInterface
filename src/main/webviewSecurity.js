@@ -4,6 +4,10 @@ import { fileURLToPath } from 'url';
 import { getDomain } from './fileServer';
 import { getModulePreloadPath } from './paths';
 import { resolveModuleRoot } from './moduleFiles';
+import {
+  registerModuleGuest,
+  unregisterModuleGuest,
+} from './moduleBroker';
 
 const authorizedEntries = new Map();
 const pendingPolicies = [];
@@ -39,6 +43,11 @@ export async function authorizeModuleEntry(moduleName, entryUrl) {
   });
 }
 
+/**
+ * Force secure WebView preferences regardless of renderer-supplied attributes.
+ * Production modules always run with contextIsolation + no nodeIntegration.
+ * Sandbox is enabled by default; NEXUS_DISABLE_MODULE_SANDBOX=1 is diagnostics-only.
+ */
 export function hardenModuleWebviews(mainWindow) {
   mainWindow.webContents.on(
     'will-attach-webview',
@@ -49,13 +58,18 @@ export function hardenModuleWebviews(mainWindow) {
         return;
       }
       authorizedEntries.delete(params.src);
-      webPreferences.nodeIntegration = !!policy.development;
-      webPreferences.contextIsolation = false;
-      webPreferences.sandbox = false;
+
+      webPreferences.nodeIntegration = false;
+      webPreferences.contextIsolation = true;
+      webPreferences.sandbox =
+        process.env.NEXUS_DISABLE_MODULE_SANDBOX === '1' ? false : true;
       webPreferences.enableRemoteModule = false;
-      webPreferences.preload = getModulePreloadPath();
       webPreferences.webSecurity = true;
+      webPreferences.allowRunningInsecureContent = false;
+      webPreferences.experimentalFeatures = false;
+      webPreferences.preload = getModulePreloadPath();
       delete webPreferences.preloadURL;
+
       pendingPolicies.push(policy);
     }
   );
@@ -68,8 +82,36 @@ app.on('web-contents-created', (_event, contents) => {
     contents.close();
     return;
   }
+
+  void registerModuleGuest({
+    webContentsId: contents.id,
+    moduleName: policy.moduleName,
+    development: policy.development,
+    enabled: true,
+  }).catch((error) => {
+    console.error('Failed to register module guest', error);
+    try {
+      contents.close();
+    } catch {
+      // ignore
+    }
+  });
+
   contents.setWindowOpenHandler(() => ({ action: 'deny' }));
+
   contents.on('will-navigate', (event, url) => {
     if (!isAllowedNavigation(url, policy)) event.preventDefault();
+  });
+
+  contents.on('will-redirect', (event, url) => {
+    if (!isAllowedNavigation(url, policy)) event.preventDefault();
+  });
+
+  contents.session.setPermissionRequestHandler((_wc, _permission, callback) => {
+    callback(false);
+  });
+
+  contents.on('destroyed', () => {
+    unregisterModuleGuest(contents.id);
   });
 });

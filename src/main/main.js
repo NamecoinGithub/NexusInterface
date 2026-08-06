@@ -18,6 +18,10 @@ import {
 import { getDomain, serveModuleFiles } from './fileServer';
 import { createWindow } from './renderer';
 import { authorizeModuleEntry, hardenModuleWebviews } from './webviewSecurity';
+import {
+  registerModuleBrokerHandlers,
+  pushContextToGuest,
+} from './moduleBroker';
 import { setupTray } from './tray';
 import { setApplicationMenu, popupContextMenu } from './menu';
 import { openVirtualKeyboard } from './keyboard';
@@ -1074,6 +1078,36 @@ registerOperation(
   CHANNELS.fileAssets.loadTranslation,
   (locale) => assertString(locale, 'Locale', { min: 2, max: 8 }),
   async (locale) => loadTranslation(locale)
+);
+
+// Module API broker (isolated WebView guests)
+// =============================================================================
+registerModuleBrokerHandlers();
+
+registerOperation(
+  CHANNELS.modules.pushModuleContext,
+  (request) => {
+    const value = assertRecord(request, 'Module context push');
+    const webContentsId = value.webContentsId;
+    if (!Number.isInteger(webContentsId) || webContentsId <= 0) {
+      throw new TypeError('webContentsId must be a positive integer');
+    }
+    return {
+      webContentsId,
+      context:
+        value.context && typeof value.context === 'object'
+          ? value.context
+          : {},
+    };
+  },
+  async ({ webContentsId, context }, event) => {
+    // Only the wallet host may push context.
+    if (!global.mainWindow || event.sender.id !== global.mainWindow.webContents.id) {
+      throw new Error('Unauthorized module context push');
+    }
+    pushContextToGuest(webContentsId, context);
+    return true;
+  }
 );
 
 // START RENDERER

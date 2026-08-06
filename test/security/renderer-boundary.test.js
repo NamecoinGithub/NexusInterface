@@ -11,6 +11,7 @@ const ALLOWED_NODE_FILE_PREFIXES = [
   path.join('src', 'main') + path.sep,
   path.join('src', 'keyboard', 'preload.js'),
   path.join('src', 'module_preload.js'),
+  path.join('src', 'module') + path.sep,
 ];
 
 const FORBIDDEN_IMPORT_RE =

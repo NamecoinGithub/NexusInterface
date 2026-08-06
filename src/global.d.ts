@@ -113,6 +113,25 @@ interface NexusElectronBridge {
         downloading: boolean;
       }) => void
     ): () => void;
+    pushModuleContext(request: {
+      webContentsId: number;
+      context: Record<string, unknown>;
+    }): Promise<boolean>;
+    respondModuleApiHost(response: {
+      requestId: string;
+      ok: boolean;
+      value?: unknown;
+      error?: { code?: string; message?: string };
+    }): Promise<boolean>;
+    onModuleApiHostRequest(
+      listener: (request: {
+        requestId: string;
+        action: string;
+        moduleName: string;
+        displayName: string;
+        payload?: unknown;
+      }) => void
+    ): () => void;
   };
   updater: {
     check(): Promise<unknown>;

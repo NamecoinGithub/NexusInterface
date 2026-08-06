@@ -161,6 +161,12 @@ const nexusElectron = {
         listener,
         'Module download progress'
       ),
+    pushModuleContext: (request) =>
+      invoke(CHANNELS.modules.pushModuleContext, request),
+    respondModuleApiHost: (response) =>
+      invoke('module-api:host-response', response),
+    onModuleApiHostRequest: (listener) =>
+      subscribe('module-api:host-request', listener, 'Module API host request'),
   },
   updater: {
     check: () => invoke(CHANNELS.updater.check),

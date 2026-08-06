@@ -1015,7 +1015,10 @@ export async function checkForModuleUpdates() {
  * =============================================================================
  */
 
-export async function proxyRequest(...params) {
-  const { data, status, statusText, headers } = await axios(...params);
-  return { data, status, statusText, headers };
+export async function proxyRequest() {
+  // Removed for third-party modules: generic network proxy enables SSRF and
+  // data exfiltration. Modules must not receive unrestricted network access.
+  throw new Error(
+    'proxyRequest is disabled. NEXUS v2 does not expose a generic network proxy.'
+  );
 }

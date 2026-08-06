@@ -63,6 +63,7 @@ const CHANNELS = Object.freeze({
     getFeatured: 'modules:get-featured',
     checkUpdates: 'modules:check-updates',
     openFailureLocation: 'modules:open-failure-location',
+    pushModuleContext: 'modules:push-module-context',
   }),
   updater: Object.freeze({
     check: 'updater:check',
