@@ -193,6 +193,9 @@ test('file server uses per-module allowlists and security headers', () => {
   assert.match(server, /allowedFilesByModule/);
   assert.match(server, /assertRelativeModulePath/);
   assert.match(server, /assertSafeModuleName/);
+  assert.match(server, /resolveAuthorizedModuleFile/);
+  assert.match(server, /realpathSync/);
+  assert.match(server, /RATE_LIMIT_MAX/);
   assert.doesNotMatch(server, /express\.static\(modulesDir\)/);
 });
 
