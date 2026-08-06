@@ -26,6 +26,10 @@ function stopCoreOutput(webContentsId) {
   if (!subscription) return;
   fs.unwatchFile(subscription.logPath, subscription.listener);
   subscriptions.delete(webContentsId);
+  console.info('core.output.stop', {
+    webContentsId,
+    logPath: subscription.logPath,
+  });
 }
 
 function startCoreOutput(webContents) {
@@ -33,6 +37,7 @@ function startCoreOutput(webContents) {
   const logPath = getCoreLogPath();
   let position = 0;
   let reading = false;
+  let pathExists = false;
   const listener = (current, previous) => {
     if (reading || current.size <= position) {
       if (current.size < position) position = current.size;
@@ -50,8 +55,12 @@ function startCoreOutput(webContents) {
     stream.on('data', (chunk) => {
       output += chunk;
     });
-    stream.once('error', () => {
+    stream.once('error', (error) => {
       reading = false;
+      console.warn('core.output.read.failed', {
+        logPath,
+        message: error?.message || String(error),
+      });
     });
     stream.once('end', () => {
       reading = false;
@@ -63,17 +72,27 @@ function startCoreOutput(webContents) {
 
   try {
     position = fs.statSync(logPath).size;
+    pathExists = true;
   } catch {
     position = 0;
+    pathExists = false;
   }
+
+  if (!pathExists) {
+    console.warn('core.output.path_missing', { logPath });
+  } else {
+    console.info('core.output.path_ready', { logPath, position });
+  }
+
   fs.watchFile(logPath, { interval: 1000 }, listener);
   subscriptions.set(webContents.id, { logPath, listener });
   webContents.once('destroyed', () => stopCoreOutput(webContents.id));
 }
 
 export function subscribeCoreOutput(webContents) {
+  console.info('core.output.subscribe', { webContentsId: webContents?.id });
   startCoreOutput(webContents);
-  return { subscribed: true };
+  return { subscribed: true, logPath: getCoreLogPath() };
 }
 
 export function unsubscribeCoreOutput(webContents) {

@@ -466,15 +466,51 @@ function operationError(err) {
   return ipcError('OPERATION_FAILED', message);
 }
 
+const CORE_TRACE_CHANNELS = new Set([
+  CHANNELS.core.getStatus,
+  CHANNELS.core.getConfiguration,
+  CHANNELS.core.start,
+  CHANNELS.core.kill,
+  CHANNELS.core.subscribeOutput,
+  CHANNELS.core.unsubscribeOutput,
+  CHANNELS.coreRpc.call,
+  CHANNELS.coreRpc.callByUrl,
+]);
+
 function registerOperation(channel, validateRequest, operation) {
   ipcMain.handle(channel, async (event, request) => {
     if (!isMainWindowSender(event)) return senderError();
+    const traceCore = CORE_TRACE_CHANNELS.has(channel);
+    if (traceCore) {
+      log.info('ipc.core.enter', {
+        channel,
+        // Never log credentials or full RPC params — endpoint only when present.
+        endpoint:
+          request && typeof request === 'object' ? request.endpoint : undefined,
+      });
+    }
     try {
       const validatedRequest = validateRequest
         ? validateRequest(request, event)
         : validateNoArguments(request, channel);
-      return ipcResult(await operation(validatedRequest, event));
+      const value = await operation(validatedRequest, event);
+      if (traceCore) {
+        log.info('ipc.core.exit', {
+          channel,
+          ok: true,
+          apiReachable:
+            value && typeof value === 'object' ? value.apiReachable : undefined,
+        });
+      }
+      return ipcResult(value);
     } catch (err) {
+      if (traceCore) {
+        log.warn('ipc.core.exit', {
+          channel,
+          ok: false,
+          message: err instanceof Error ? err.message : String(err),
+        });
+      }
       return operationError(err);
     }
   });

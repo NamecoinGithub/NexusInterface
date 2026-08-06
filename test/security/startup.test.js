@@ -16,12 +16,17 @@ test('window startup configuration keeps wallet and keyboard renderers isolated'
 
   assert.match(renderer, /nodeIntegration:\s*false/);
   assert.match(renderer, /contextIsolation:\s*true/);
-  assert.match(renderer, /sandbox:\s*true/);
+  // Default remains sandboxed; NEXUS_DISABLE_SANDBOX=1 is diagnostics-only.
+  assert.match(
+    renderer,
+    /sandbox:\s*process\.env\.NEXUS_DISABLE_SANDBOX === '1' \? false : true/
+  );
   assert.match(renderer, /enableRemoteModule:\s*false/);
   assert.match(keyboard, /nodeIntegration:\s*false/);
   assert.match(keyboard, /contextIsolation:\s*true/);
   assert.match(keyboard, /sandbox:\s*true/);
   assert.match(preload, /contextBridge\.exposeInMainWorld/);
+  assert.match(preload, /preload\.init/);
   assert.doesNotMatch(preload, /from ['"]electron['"].*clipboard|clipboard.*from ['"]electron['"]/);
   assert.doesNotMatch(preload, /@aptabase\/electron\/renderer/);
 });
@@ -83,4 +88,54 @@ test('embedded Core start always supplies API auth and probes already-running Co
     rendererCore,
     /if \(status\.running\) \{\s*console\.info\([\s\S]*Skipping starting core/
   );
+  // Startup/probe failures must be returned and surfaced, not only logged.
+  assert.match(core, /apiError:\s*ready\.ok \? undefined : ready\.error/);
+  assert.match(core, /core\.api\.wait\.timeout|core\.api\.wait\.ready/);
+  assert.match(rendererCore, /setCoreConnectionError|apiReachable === false/);
+});
+
+test('renderer surfaces Core connection failures instead of silent spinner', () => {
+  const index = read('src', 'index.js');
+  const coreInfo = read('src', 'shared', 'lib', 'coreInfo.ts');
+  const coreStatus = read('src', 'shared', 'components', 'CoreStatus.ts');
+  const rendererCore = read('src', 'shared', 'lib', 'core.ts');
+
+  assert.match(index, /renderer\.bootstrap\.start/);
+  assert.match(index, /renderer\.bootstrap\.startCore\.error/);
+  assert.match(index, /renderer\.bridge\.selftest\.core_get_status/);
+  assert.match(coreInfo, /coreConnectionErrorAtom/);
+  assert.match(coreInfo, /core\.rpc\.system_get_info\.failed/);
+  assert.match(coreInfo, /setCoreConnectionError/);
+  assert.match(coreStatus, /coreConnectionErrorAtom/);
+  assert.match(coreStatus, /Unable to connect to Nexus Core/);
+  assert.match(rendererCore, /core\.start\.requested/);
+  assert.match(rendererCore, /apiReachable === false/);
+});
+
+test('Core output subscription starts even when already connected', () => {
+  const coreOutput = read('src', 'shared', 'lib', 'coreOutput.ts');
+  const mainOutput = read('src', 'main', 'coreOutput.js');
+
+  // Change-only store.sub is not enough; module load must sync immediately.
+  assert.match(coreOutput, /syncCoreOutputWatch/);
+  assert.match(coreOutput, /syncCoreOutputWatch\(\)/);
+  assert.match(coreOutput, /subscribe\(coreConnectedAtom,\s*syncCoreOutputWatch\)/);
+  assert.match(coreOutput, /core\.output\.subscribe/);
+  assert.match(mainOutput, /core\.output\.path_missing|core\.output\.path_ready/);
+  assert.match(mainOutput, /core\.output\.subscribe/);
+});
+
+test('main process emits structured Core lifecycle diagnostics', () => {
+  const core = read('src', 'main', 'core.js');
+  const coreRpc = read('src', 'main', 'coreRpc.js');
+  const main = read('src', 'main', 'main.js');
+
+  assert.match(core, /core\.start\.requested/);
+  assert.match(core, /core\.spawned/);
+  assert.match(core, /core\.api\.ready|core\.api\.wait\.timeout/);
+  assert.match(coreRpc, /core\.probe\.begin|core\.probe\.failed|core\.probe\.ok/);
+  assert.match(coreRpc, /summarizeConfig/);
+  assert.match(main, /ipc\.core\.enter/);
+  assert.match(main, /ipc\.core\.exit/);
+  assert.match(main, /CORE_TRACE_CHANNELS/);
 });
