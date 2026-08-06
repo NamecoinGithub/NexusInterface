@@ -13,8 +13,13 @@ import { assertRelativeModulePath, assertSafeModuleName } from './ipc/contracts'
 const server = express();
 let port = null;
 
-/** @type {Map<string, Set<string>>} moduleName -> allowed relative file paths */
-const allowedFilesByModule = new Map();
+/**
+ * Precomputed authorized assets.
+ * moduleName -> Map(relativePath -> absolute real path)
+ * Request handling never joins user path segments into filesystem paths.
+ */
+/** @type {Map<string, Map<string, string>>} */
+const authorizedAssets = new Map();
 
 const SECURITY_HEADERS = {
   'X-Content-Type-Options': 'nosniff',
@@ -25,10 +30,9 @@ const SECURITY_HEADERS = {
     "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self' data:; connect-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'",
 };
 
-// Simple per-IP token bucket for local module asset reads.
 const RATE_LIMIT_WINDOW_MS = 1000;
 const RATE_LIMIT_MAX = 120;
-/** @type {Map<string, number[]>} */
+/** @type {Map<string, { count: number, resetAt: number }>} */
 const rateBuckets = new Map();
 
 function normalizeRelativeFile(file) {
@@ -43,66 +47,45 @@ function setSecurityHeaders(res) {
   }
 }
 
-function allowRequest(req) {
+function rateLimitMiddleware(req, res, next) {
   const key = String(req.ip || req.socket?.remoteAddress || 'local');
   const now = Date.now();
-  const recent = (rateBuckets.get(key) || []).filter(
-    (ts) => now - ts < RATE_LIMIT_WINDOW_MS
-  );
-  if (recent.length >= RATE_LIMIT_MAX) {
-    rateBuckets.set(key, recent);
-    return false;
+  let bucket = rateBuckets.get(key);
+  if (!bucket || now >= bucket.resetAt) {
+    bucket = { count: 0, resetAt: now + RATE_LIMIT_WINDOW_MS };
+    rateBuckets.set(key, bucket);
   }
-  recent.push(now);
-  rateBuckets.set(key, recent);
-  return true;
+  bucket.count += 1;
+  if (bucket.count > RATE_LIMIT_MAX) {
+    setSecurityHeaders(res);
+    return res.status(429).end('Too many requests');
+  }
+  return next();
 }
 
-/**
- * Resolve a module file only if it is on the allowlist and stays under the
- * module root after realpath normalization (rejects symlink escapes).
- */
-function resolveAuthorizedModuleFile(moduleName, relativeFile) {
-  const allow = allowedFilesByModule.get(moduleName);
-  if (!allow || !allow.has(relativeFile)) {
-    return null;
-  }
-
+function resolveAssetAbsolute(moduleName, relativeFile) {
   const moduleRoot = path.resolve(modulesDir, moduleName);
   const candidate = path.resolve(moduleRoot, relativeFile);
   if (candidate !== moduleRoot && !candidate.startsWith(`${moduleRoot}${sep}`)) {
-    return null;
+    throw new Error('Module file escapes module root');
   }
 
-  let realRoot;
-  let realFile;
-  try {
-    realRoot = fs.realpathSync(moduleRoot);
-    // lstat first: reject symlinks at the leaf before following them.
-    const leafStat = fs.lstatSync(candidate);
-    if (leafStat.isSymbolicLink()) {
-      return null;
-    }
-    if (!leafStat.isFile()) {
-      return null;
-    }
-    realFile = fs.realpathSync(candidate);
-  } catch {
-    return null;
+  const realRoot = fs.realpathSync(moduleRoot);
+  const leafStat = fs.lstatSync(candidate);
+  if (leafStat.isSymbolicLink() || !leafStat.isFile()) {
+    throw new Error('Module file must be a regular non-symlink file');
   }
-
+  const realFile = fs.realpathSync(candidate);
   if (realFile !== realRoot && !realFile.startsWith(`${realRoot}${sep}`)) {
-    return null;
+    throw new Error('Module file realpath escapes module root');
   }
   return realFile;
 }
 
-server.use('/modules/:moduleName', (req, res) => {
-  setSecurityHeaders(res);
+server.use('/modules', rateLimitMiddleware);
 
-  if (!allowRequest(req)) {
-    return res.status(429).end('Too many requests');
-  }
+server.get('/modules/:moduleName/*', (req, res) => {
+  setSecurityHeaders(res);
 
   let moduleName;
   try {
@@ -111,21 +94,26 @@ server.use('/modules/:moduleName', (req, res) => {
     return res.status(400).end('Invalid module');
   }
 
+  const assets = authorizedAssets.get(moduleName);
+  if (!assets || !assets.size) {
+    return res.status(404).end('Module files not prepared');
+  }
+
   let relative;
   try {
-    const rawPath = decodeURIComponent(req.path || '');
-    relative = normalizeRelativeFile(rawPath.replace(/^\/+/, ''));
+    // express 4: wildcard may be in req.params[0]
+    const wildcard = req.params[0] || '';
+    relative = normalizeRelativeFile(decodeURIComponent(wildcard));
   } catch {
     return res.status(400).end('Invalid path');
   }
 
-  const absolute = resolveAuthorizedModuleFile(moduleName, relative);
+  // Lookup only — absolute path was authorized when the module was prepared.
+  const absolute = assets.get(relative);
   if (!absolute) {
     return res.status(404).end('Not found');
   }
 
-  // absolute is produced only from validated module root + allowlisted relative
-  // path after realpath checks; never from raw user path segments alone.
   return res.sendFile(absolute, (error) => {
     if (error && !res.headersSent) res.status(404).end('Not found');
   });
@@ -142,10 +130,12 @@ export function getDomain() {
 
 /**
  * Authorize a module's static files for serving.
+ * Computes and stores absolute real paths up front so request handlers never
+ * build filesystem paths from request input.
  * @param {string[]} files paths like `${moduleName}/${relativeFile}`
  */
 export function serveModuleFiles(files) {
-  /** @type {Map<string, Set<string>>} */
+  /** @type {Map<string, Map<string, string>>} */
   const next = new Map();
 
   for (const file of files || []) {
@@ -154,17 +144,18 @@ export function serveModuleFiles(files) {
     if (parts.length < 2) continue;
     const moduleName = assertSafeModuleName(parts[0]);
     const relative = normalizeRelativeFile(parts.slice(1).join('/'));
-    if (!next.has(moduleName)) next.set(moduleName, new Set());
-    next.get(moduleName).add(relative);
+    const absolute = resolveAssetAbsolute(moduleName, relative);
+    if (!next.has(moduleName)) next.set(moduleName, new Map());
+    next.get(moduleName).set(relative, absolute);
   }
 
-  allowedFilesByModule.clear();
-  for (const [moduleName, set] of next) {
-    allowedFilesByModule.set(moduleName, set);
+  authorizedAssets.clear();
+  for (const [moduleName, map] of next) {
+    authorizedAssets.set(moduleName, map);
   }
 }
 
 export function getAllowedModuleFiles(moduleName) {
-  const set = allowedFilesByModule.get(moduleName);
-  return set ? [...set] : [];
+  const map = authorizedAssets.get(moduleName);
+  return map ? [...map.keys()] : [];
 }

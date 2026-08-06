@@ -190,11 +190,12 @@ test('proxyRequest remains disabled for modules', () => {
 test('file server uses per-module allowlists and security headers', () => {
   const server = read('src', 'main', 'fileServer.js');
   assert.match(server, /Content-Security-Policy/);
-  assert.match(server, /allowedFilesByModule/);
+  assert.match(server, /authorizedAssets/);
   assert.match(server, /assertRelativeModulePath/);
   assert.match(server, /assertSafeModuleName/);
-  assert.match(server, /resolveAuthorizedModuleFile/);
+  assert.match(server, /resolveAssetAbsolute/);
   assert.match(server, /realpathSync/);
+  assert.match(server, /rateLimitMiddleware/);
   assert.match(server, /RATE_LIMIT_MAX/);
   assert.doesNotMatch(server, /express\.static\(modulesDir\)/);
 });
