@@ -104,10 +104,15 @@ export const startCore = async () => {
 export const stopCore = async (forRestart?: boolean) => {
   console.info('Core Manager: Stop function called');
   const { manualDaemon } = store.get(settingsAtom);
+
+  // Pause info polling before shutdown so transient ECONNREFUSED during stop
+  // is not recorded as a connection failure in the UI.
+  if (!forRestart) {
+    store.set(coreInfoPausedAtom, true);
+    clearCoreConnectionError();
+  }
+
   if (manualDaemon) {
-    if (!forRestart) {
-      store.set(coreInfoPausedAtom, true);
-    }
     return;
   }
 
@@ -149,10 +154,6 @@ export const stopCore = async (forRestart?: boolean) => {
     } catch (err) {
       console.error('Core Manager: Failed to kill Core process', err);
     }
-  }
-
-  if (!forRestart) {
-    store.set(coreInfoPausedAtom, true);
   }
 };
 

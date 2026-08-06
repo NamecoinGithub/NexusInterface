@@ -52,7 +52,11 @@ export const coreInfoQuery = jotaiQuery<CoreInfo>({
       } catch (error) {
         const message = errorMessage(error);
         console.error('core.rpc.system_get_info.failed', message);
-        setCoreConnectionError(message);
+        // Ignore failures that complete after an intentional pause/stop so
+        // shutdown races do not overwrite a clean stopped state.
+        if (!store.get(coreInfoPausedAtom)) {
+          setCoreConnectionError(message);
+        }
         throw error;
       }
     },

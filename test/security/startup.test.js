@@ -110,6 +110,11 @@ test('renderer surfaces Core connection failures instead of silent spinner', () 
   assert.match(coreStatus, /Unable to connect to Nexus Core/);
   assert.match(rendererCore, /core\.start\.requested/);
   assert.match(rendererCore, /apiReachable === false/);
+  // Intentional stop must pause polling before kill so shutdown errors stay quiet.
+  assert.match(
+    rendererCore,
+    /if \(!forRestart\) \{\s*store\.set\(coreInfoPausedAtom,\s*true\);\s*clearCoreConnectionError\(\);/
+  );
 });
 
 test('Core output subscription starts even when already connected', () => {
