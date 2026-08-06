@@ -5,6 +5,7 @@ import styled from '@emotion/styled';
 // Internal
 import {
   formatSyncPercent,
+  isLitecoinStatusConnected,
   litecoinMonitoringEnabledAtom,
   litecoinNodeStatusQuery,
 } from 'lib/externalChains/litecoin';
@@ -57,7 +58,7 @@ export function LitecoinNodeStats() {
     return null;
   }
 
-  const connected = !!(status?.connected && status.freshness === 'live');
+  const connected = isLitecoinStatusConnected(status);
   const statusText = connected ? __('Connected') : __('Unavailable');
   const blocksText =
     typeof status?.blocks === 'number' && typeof status?.headers === 'number'

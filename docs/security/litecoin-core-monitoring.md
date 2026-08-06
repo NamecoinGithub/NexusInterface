@@ -71,11 +71,26 @@ Any other method is unreachable through this feature.
 
 | Item | Value |
 |------|--------|
-| Minimum reviewed Litecoin Core version integer | `180000` (0.18.0) |
-| Below minimum | DTO includes `warning.code = unsupported_version` with a safe upgrade message |
-| Network | Mainnet is the default expected network; test/regtest/unknown are labeled and never presented as mainnet |
+| Minimum reviewed Litecoin Core version integer | `210506` (**0.21.5.6**) |
+| Source | [Litecoin Core v0.21.5.6 release](https://github.com/litecoin-project/litecoin/releases/tag/v0.21.5.6) (critical security upgrades required for safe Litecoin operation) |
+| Owner for future bumps | Nexus Interface maintainers of the External Chains monitoring surface (update this table + `MINIMUM_LITECOIN_CORE_VERSION` together) |
+| Below minimum | Node remains reachable; DTO includes `warning.code = unsupported_version` (warning only) |
+| Version missing/unparseable | Monitoring may still work; DTO includes `warning.code = unknown_version` |
+| Network | Mainnet is the default expected network; test/regtest/unknown are labeled with `warning.code = unexpected_network` and never presented as mainnet |
+| Malformed payload | `freshness = unavailable` with `error.code = invalid_response` |
 
 Operators should keep Litecoin Core updated independently. Nexus Interface does not auto-update Litecoin Core.
+
+## 7.1 Status freshness
+
+| `freshness` | Meaning |
+|-------------|---------|
+| `live` | Fresh main-process RPC success for the current configuration |
+| `cached` | Reused recent successful result for the **same** configuration fingerprint |
+| `stale` | Last-good metrics retained after a later probe failure (same configuration) |
+| `unavailable` | Failure with no retained good data |
+
+The in-memory cache is keyed by enabled flag, host, RPC port, and cookie **path**. Any persisted change to those settings resets the cache so Status / Test connection cannot show another endpoint’s result.
 
 ## 8. Safe DTO / error codes
 

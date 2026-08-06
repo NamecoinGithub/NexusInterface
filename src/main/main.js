@@ -97,6 +97,8 @@ import {
 } from './modules';
 import {
   getLitecoinNodeStatus,
+  resetLitecoinMonitorCache,
+  settingsAffectLitecoinMonitor,
 } from './litecoinMonitor';
 import {
   callCoreRpc,
@@ -805,6 +807,12 @@ registerOperation(
   async (updates) => {
     updateSettingsFile(updates);
     clearCoreConfigCache();
+    // Litecoin monitoring cache must not outlive a config change. Reset after
+    // validated settings are persisted so Test connection / status reads the
+    // new host, port, cookie path, or enabled flag.
+    if (settingsAffectLitecoinMonitor(updates)) {
+      resetLitecoinMonitorCache();
+    }
     return getRendererSettings();
   }
 );

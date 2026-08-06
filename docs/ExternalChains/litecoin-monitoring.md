@@ -56,11 +56,18 @@ If the node is down, misconfigured, or the cookie is wrong, the wallet stays ful
 
 ## Supported Litecoin Core versions
 
-Nexus reviews this monitoring path against Litecoin Core **0.18.0 and newer** (version integer `>= 180000` as reported by `getnetworkinfo`). Older versions may connect but will surface an **unsupported version** warning. Keep your node updated independently; the wallet will not upgrade Litecoin Core for you.
+Nexus reviews this monitoring path against Litecoin Core **0.21.5.6 and newer** (version integer `>= 210506` as reported by `getnetworkinfo`).
+
+- **Source:** [Litecoin Core v0.21.5.6](https://github.com/litecoin-project/litecoin/releases/tag/v0.21.5.6) (critical security upgrades).
+- Older reachable nodes still show status but surface an **unsupported version** warning.
+- If the node omits a parseable version, status may still work with an **unknown version** warning.
+- Testnet/regtest connections are labeled and are not treated as mainnet.
+
+Keep your node updated independently; the wallet will not upgrade Litecoin Core for you.
 
 ## Polling and performance
 
-The UI polls on a conservative interval (about 30–60 seconds) and the main process applies a short in-memory cache/backoff so a downed node is not hammered. Requests use short timeouts so a stuck RPC cannot freeze the wallet UI.
+The UI polls on a conservative interval (about 30–60 seconds) and the main process applies a short in-memory cache/backoff so a downed node is not hammered. Cache entries are tied to the current host/port/cookie/enabled configuration and are cleared when those settings are saved. Status freshness is labeled `live`, `cached`, `stale`, or `unavailable`. **Test connection** always flushes the current Settings values to the main process before probing. Requests use short timeouts so a stuck RPC cannot freeze the wallet UI.
 
 ## Future exchange research (not implemented here)
 

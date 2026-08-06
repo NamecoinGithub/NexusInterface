@@ -15,9 +15,16 @@ export type LitecoinNodeStatus = {
   mempoolTransactions?: number;
   mempoolBytes?: number;
   fetchedAt: string;
-  freshness: 'live' | 'unavailable';
+  /**
+   * Freshness of the DTO relative to the main-process probe:
+   * - live: just obtained from a successful RPC sequence
+   * - cached: reused recent successful result for the same configuration
+   * - stale: last-good data retained after a later probe failure
+   * - unavailable: failure with no retained good data
+   */
+  freshness: 'live' | 'cached' | 'stale' | 'unavailable';
   warning?: {
-    code: 'unsupported_version' | 'unexpected_network';
+    code: 'unsupported_version' | 'unexpected_network' | 'unknown_version';
     message: string;
   };
   error?: {
@@ -42,26 +49,40 @@ export type LitecoinNodeStatus = {
  * Intentionally independent of Nexus Core connection state and core
  * bootstrap. Failures here must never affect Core startup, login, send
  * flow, market data, or app bootstrap.
+ *
+ * Query identity includes the monitored configuration so a host/port/cookie
+ * or enabled change does not keep displaying a prior endpoint's status.
  */
 export const litecoinNodeStatusQuery = jotaiQuery<LitecoinNodeStatus>({
   condition: (get) => !!get(settingsAtom).litecoinMonitoringEnabled,
-  getQueryConfig: () => ({
-    queryKey: ['externalChains', 'litecoin', 'status'],
-    queryFn: async () => {
-      const status =
-        await window.nexusElectron.externalChains.litecoin.getStatus();
-      return status as LitecoinNodeStatus;
-    },
-    // Conservative polling — local node status does not need frequent refresh.
-    refetchInterval: 45000,
-    staleTime: 30000,
-    retry: 1,
-    retryDelay: 10000,
-    refetchOnWindowFocus: false,
-    refetchOnReconnect: false,
-    // Keep prior DTO while refetching, but UI must honor freshness labels.
-    placeholderData: (previousData) => previousData,
-  }),
+  getQueryConfig: (get) => {
+    const settings = get(settingsAtom);
+    return {
+      queryKey: [
+        'externalChains',
+        'litecoin',
+        'status',
+        !!settings.litecoinMonitoringEnabled,
+        settings.litecoinMonitoringHost,
+        settings.litecoinMonitoringRpcPort,
+        settings.litecoinMonitoringCookiePath,
+      ],
+      queryFn: async () => {
+        const status =
+          await window.nexusElectron.externalChains.litecoin.getStatus();
+        return status as LitecoinNodeStatus;
+      },
+      // Conservative polling — local node status does not need frequent refresh.
+      refetchInterval: 45000,
+      staleTime: 30000,
+      retry: 1,
+      retryDelay: 10000,
+      refetchOnWindowFocus: false,
+      refetchOnReconnect: false,
+      // Keep prior DTO while refetching, but UI must honor freshness labels.
+      placeholderData: (previousData) => previousData,
+    };
+  },
 });
 
 export const litecoinMonitoringEnabledAtom = atom(
@@ -118,5 +139,33 @@ export function describeLitecoinError(
       return 'Unsupported Core version.';
     default:
       return status.error.message || 'Litecoin monitoring unavailable.';
+  }
+}
+
+export function isLitecoinStatusConnected(
+  status?: LitecoinNodeStatus | null
+): boolean {
+  if (!status?.connected) return false;
+  return (
+    status.freshness === 'live' ||
+    status.freshness === 'cached' ||
+    status.freshness === 'stale'
+  );
+}
+
+export function freshnessLabel(
+  freshness?: LitecoinNodeStatus['freshness']
+): string | undefined {
+  switch (freshness) {
+    case 'live':
+      return 'live';
+    case 'cached':
+      return 'cached';
+    case 'stale':
+      return 'stale';
+    case 'unavailable':
+      return 'unavailable';
+    default:
+      return undefined;
   }
 }

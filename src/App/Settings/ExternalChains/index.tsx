@@ -4,11 +4,17 @@ import { useAtomValue } from 'jotai';
 import styled from '@emotion/styled';
 
 // Internal
-import { updateSettings, settingsAtom } from 'lib/settings';
+import {
+  updateSettings,
+  settingsAtom,
+  persistLitecoinMonitoringSettings,
+} from 'lib/settings';
 import {
   describeLitecoinError,
   formatLitecoinVersion,
   formatSyncPercent,
+  freshnessLabel,
+  isLitecoinStatusConnected,
   litecoinNodeStatusQuery,
   type LitecoinNodeStatus,
 } from 'lib/externalChains/litecoin';
@@ -87,7 +93,7 @@ function networkLabel(network?: LitecoinNodeStatus['network']) {
 
 function connectionLabel(status?: LitecoinNodeStatus) {
   if (!status) return __('Unknown');
-  if (status.connected && status.freshness === 'live') {
+  if (isLitecoinStatusConnected(status)) {
     return __('Connected');
   }
   return __('Unavailable');
@@ -116,6 +122,10 @@ export default function SettingsExternalChains() {
     setTesting(true);
     setTestError(undefined);
     try {
+      // Persist validated Litecoin settings to main before probing. The
+      // no-argument getStatus IPC correctly reads main-process settings only;
+      // flushing avoids testing a stale cookie/port still on disk.
+      await persistLitecoinMonitoringSettings(settings);
       const result =
         await window.nexusElectron.externalChains.litecoin.getStatus();
       setTestStatus(result as LitecoinNodeStatus);
@@ -241,7 +251,10 @@ export default function SettingsExternalChains() {
         <StatusPanel>
           <InfoField label={__('Status')}>
             {connectionLabel(displayedStatus)}
-            {displayedStatus?.freshness === 'live' ? ` (${__('live')})` : ''}
+            {displayedStatus?.freshness &&
+            displayedStatus.freshness !== 'unavailable'
+              ? ` (${__(freshnessLabel(displayedStatus.freshness) || displayedStatus.freshness)})`
+              : ''}
           </InfoField>
           <InfoField label={__('Network')}>
             {networkLabel(displayedStatus?.network)}

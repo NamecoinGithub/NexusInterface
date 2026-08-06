@@ -11,8 +11,18 @@ const fs = require('fs');
 const http = require('http');
 const path = require('path');
 
-/** Litecoin Core versions below 0.18.0 are not reviewed for this surface. */
-const MINIMUM_LITECOIN_CORE_VERSION = 180000;
+/**
+ * Minimum reviewed Litecoin Core version integer (Bitcoin-style encoding).
+ * 0.21.5.6 => 210506
+ *
+ * Source: Litecoin Core v0.21.5.6 release notes (critical security upgrades):
+ * https://github.com/litecoin-project/litecoin/releases/tag/v0.21.5.6
+ *
+ * Owner for future bumps: Nexus Interface maintainers reviewing the
+ * External Chains monitoring surface (docs/security/litecoin-core-monitoring.md).
+ */
+const MINIMUM_LITECOIN_CORE_VERSION = 210506;
+const MINIMUM_LITECOIN_CORE_VERSION_LABEL = '0.21.5.6';
 
 const ALLOWED_RPC_METHODS = Object.freeze(
   new Set([
@@ -31,10 +41,17 @@ const SUCCESS_CACHE_MS = 15000;
 const FAILURE_BACKOFF_MS = 30000;
 const MAX_RESPONSE_BYTES = 256 * 1024;
 
+/**
+ * Process-wide cache. Always keyed to the active monitoring configuration so a
+ * host/port/cookie/enabled change cannot reuse a prior endpoint's result.
+ */
 let cache = {
+  configKey: null,
   status: null,
   expiresAt: 0,
   inflight: null,
+  /** @type {null | { configKey: string, status: object }} */
+  lastGood: null,
 };
 
 function nowIso() {
@@ -90,6 +107,28 @@ function validateCookiePath(cookiePath) {
     return { ok: false, reason: 'invalid_configuration' };
   }
   return { ok: true, cookiePath: trimmed };
+}
+
+/**
+ * Stable fingerprint of the monitoring endpoint configuration.
+ * Cookie *path* only — never cookie contents.
+ */
+function buildConfigKey(settings = {}) {
+  const enabled = settings.litecoinMonitoringEnabled ? '1' : '0';
+  const host =
+    typeof settings.litecoinMonitoringHost === 'string'
+      ? settings.litecoinMonitoringHost.trim()
+      : '';
+  const port =
+    settings.litecoinMonitoringRpcPort === undefined ||
+    settings.litecoinMonitoringRpcPort === null
+      ? ''
+      : String(settings.litecoinMonitoringRpcPort).trim();
+  const cookiePath =
+    typeof settings.litecoinMonitoringCookiePath === 'string'
+      ? settings.litecoinMonitoringCookiePath.trim()
+      : '';
+  return `${enabled}|${host}|${port}|${cookiePath}`;
 }
 
 /**
@@ -379,6 +418,18 @@ function normalizeProbeResult({ blockchain, network, mempool, connections }) {
   const mempoolTransactions = asNonNegativeInt(mempool?.size);
   const mempoolBytes = asNonNegativeInt(mempool?.bytes);
 
+  // Malformed core payloads: reachable transport but unusable monitoring data.
+  if (
+    !blockchain ||
+    typeof blockchain !== 'object' ||
+    !network ||
+    typeof network !== 'object' ||
+    blocks === undefined ||
+    headers === undefined
+  ) {
+    return mapFailure('invalid_response');
+  }
+
   const status = safeStatusBase({
     configured: true,
     connected: true,
@@ -394,17 +445,23 @@ function normalizeProbeResult({ blockchain, network, mempool, connections }) {
     freshness: 'live',
   });
 
-  if (version !== undefined && version < MINIMUM_LITECOIN_CORE_VERSION) {
+  if (version === undefined) {
+    status.warning = {
+      code: 'unknown_version',
+      message:
+        'Litecoin Core version could not be determined. Monitoring works but the node version is unknown.',
+    };
+  } else if (version < MINIMUM_LITECOIN_CORE_VERSION) {
     status.warning = {
       code: 'unsupported_version',
-      message:
-        'Litecoin Core version is below the reviewed minimum. Upgrade Litecoin Core to continue relying on this monitor.',
+      message: `Litecoin Core version is below the reviewed minimum (${MINIMUM_LITECOIN_CORE_VERSION_LABEL}). Upgrade Litecoin Core to continue relying on this monitor.`,
     };
     console.info('litecoin.monitor.unsupported_version', {
       version,
       minimum: MINIMUM_LITECOIN_CORE_VERSION,
     });
   } else if (networkName !== 'main') {
+    // Reachable but non-mainnet: warning only, still connected.
     status.warning = {
       code: 'unexpected_network',
       message:
@@ -496,12 +553,19 @@ async function probeOnce({
     cookie.username = undefined;
     cookie.password = undefined;
     const status = normalizeProbeResult(result);
-    console.info('litecoin.monitor.probe.ok', {
-      network: status.network,
-      version: status.version,
-      blocks: status.blocks,
-      connections: status.connections,
-    });
+    if (status.connected) {
+      console.info('litecoin.monitor.probe.ok', {
+        network: status.network,
+        version: status.version,
+        blocks: status.blocks,
+        connections: status.connections,
+        freshness: status.freshness,
+      });
+    } else {
+      console.info('litecoin.monitor.probe.failed', {
+        code: status.error?.code || 'invalid_response',
+      });
+    }
     return status;
   } catch (error) {
     const code =
@@ -519,56 +583,164 @@ async function probeOnce({
   }
 }
 
+function asCachedStatus(status) {
+  if (!status || typeof status !== 'object') return status;
+  if (status.connected && status.freshness === 'live') {
+    return { ...status, freshness: 'cached' };
+  }
+  // Failures / already-labeled statuses keep their freshness.
+  return { ...status };
+}
+
+function asStaleFromLastGood(lastGoodStatus) {
+  if (!lastGoodStatus || typeof lastGoodStatus !== 'object') return null;
+  return {
+    ...lastGoodStatus,
+    connected: true,
+    freshness: 'stale',
+    // Preserve original successful fetchedAt; do not pretend this is a new probe.
+    error: undefined,
+  };
+}
+
+function ensureCacheConfig(configKey) {
+  if (cache.configKey !== configKey) {
+    cache = {
+      configKey,
+      status: null,
+      expiresAt: 0,
+      inflight: null,
+      lastGood:
+        cache.lastGood && cache.lastGood.configKey === configKey
+          ? cache.lastGood
+          : null,
+    };
+  }
+}
+
 async function getLitecoinNodeStatus({
   bypassCache = false,
-  settings,
+  settings: providedSettings,
   readCookie,
   rpcCall,
 } = {}) {
+  const settings = providedSettings || defaultLoadSettings();
+  const configKey = buildConfigKey(settings);
+  ensureCacheConfig(configKey);
+
   const now = Date.now();
-  if (!bypassCache && cache.status && cache.expiresAt > now) {
-    return cache.status;
+  if (
+    !bypassCache &&
+    cache.status &&
+    cache.expiresAt > now &&
+    cache.configKey === configKey
+  ) {
+    return asCachedStatus(cache.status);
   }
-  if (cache.inflight) {
+  if (cache.inflight && cache.configKey === configKey) {
     return cache.inflight;
   }
 
-  cache.inflight = probeOnce({ settings, readCookie, rpcCall })
+  cache.inflight = probeOnce({
+    settings,
+    readCookie,
+    rpcCall,
+  })
     .then((status) => {
+      // Another settings change may have reset the cache while we were probing.
+      if (cache.configKey !== configKey) {
+        return status;
+      }
+
+      let finalStatus = status;
+      if (
+        !status.connected &&
+        cache.lastGood &&
+        cache.lastGood.configKey === configKey &&
+        cache.lastGood.status
+      ) {
+        // Retain last-good metrics for this configuration as stale data.
+        const stale = asStaleFromLastGood(cache.lastGood.status);
+        if (stale) {
+          finalStatus = stale;
+        }
+      }
+
+      if (status.connected && status.freshness === 'live') {
+        cache.lastGood = { configKey, status: { ...status } };
+      }
+
       const backoff =
         status.connected && status.freshness === 'live'
           ? SUCCESS_CACHE_MS
           : FAILURE_BACKOFF_MS;
-      cache = {
-        status,
-        expiresAt: Date.now() + backoff,
-        inflight: null,
-      };
-      return status;
+
+      // Cache the raw live outcome when connected so hits can become 'cached'.
+      cache.status = status.connected ? status : finalStatus;
+      cache.expiresAt = Date.now() + backoff;
+      cache.inflight = null;
+      return finalStatus;
     })
     .catch(() => {
-      cache.inflight = null;
+      if (cache.configKey === configKey) {
+        cache.inflight = null;
+      }
       console.info('litecoin.monitor.probe.failed', { code: 'unavailable' });
+      if (
+        cache.lastGood &&
+        cache.lastGood.configKey === configKey &&
+        cache.lastGood.status
+      ) {
+        return asStaleFromLastGood(cache.lastGood.status);
+      }
       return mapFailure('unavailable');
     });
 
   return cache.inflight;
 }
 
+/**
+ * Drop in-memory probe state. Called when any litecoinMonitoring* setting is
+ * persisted so the next status read cannot reuse a prior endpoint result.
+ */
 function resetLitecoinMonitorCache() {
-  cache = { status: null, expiresAt: 0, inflight: null };
+  cache = {
+    configKey: null,
+    status: null,
+    expiresAt: 0,
+    inflight: null,
+    lastGood: null,
+  };
+}
+
+/**
+ * True when a settings patch touches Litecoin monitoring configuration.
+ */
+function settingsAffectLitecoinMonitor(updates) {
+  if (!updates || typeof updates !== 'object') return false;
+  return (
+    Object.prototype.hasOwnProperty.call(updates, 'litecoinMonitoringEnabled') ||
+    Object.prototype.hasOwnProperty.call(updates, 'litecoinMonitoringHost') ||
+    Object.prototype.hasOwnProperty.call(updates, 'litecoinMonitoringRpcPort') ||
+    Object.prototype.hasOwnProperty.call(updates, 'litecoinMonitoringCookiePath')
+  );
 }
 
 module.exports = {
   ALLOWED_HOSTS,
   ALLOWED_RPC_METHODS,
   MINIMUM_LITECOIN_CORE_VERSION,
+  MINIMUM_LITECOIN_CORE_VERSION_LABEL,
+  REQUEST_TIMEOUT_MS,
+  MAX_RESPONSE_BYTES,
+  buildConfigKey,
   classifyNetwork,
   getLitecoinNodeStatus,
   mapFailure,
   normalizeProbeResult,
   parseCookieContents,
   resetLitecoinMonitorCache,
+  settingsAffectLitecoinMonitor,
   validateCookiePath,
   validateHost,
   validatePort,
