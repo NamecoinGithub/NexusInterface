@@ -42,14 +42,35 @@ test('embedded Core start always supplies API auth and probes already-running Co
   const core = read('src', 'main', 'core.js');
   const coreRpc = read('src', 'main', 'coreRpc.js');
   const rendererCore = read('src', 'shared', 'lib', 'core.ts');
+  const main = read('src', 'main', 'main.js');
+  const coreConf = read('src', 'main', 'ipc', 'coreConf.js');
+  const wallet = read('src', 'shared', 'lib', 'wallet.ts');
 
   assert.match(core, /apiuser=\$\{configuration\.apiUser\}/);
   assert.match(core, /apipassword=\$\{configuration\.apiPassword\}/);
   assert.match(core, /apissl=\$\{apiSSL \? '1' : '0'\}/);
+  assert.match(core, /apisslport=\$\{configuration\.apiPortSSL\}/);
   assert.match(core, /probeCoreApi/);
   assert.match(core, /apiReachable/);
+  assert.match(core, /waitForCoreApi|CORE_API_READY_TIMEOUT_MS/);
+  assert.match(core, /stopEmbeddedCore/);
   assert.match(coreRpc, /probeCoreApi/);
   assert.match(coreRpc, /resolveEmbeddedCoreConnection/);
+  // Core only honors apisslport in nexus.conf — never write only apiportssl.
+  assert.match(coreConf, /apisslport:\s*desiredPortSSL/);
+  assert.match(coreConf, /delete config\.apiportssl/);
+  // Main process must stop Core on quit/exit so orphans are not left behind.
+  assert.match(main, /stopEmbeddedCore|ensureEmbeddedCoreStopped|shutdownEmbeddedCoreAndAllowQuit/);
+  assert.match(main, /before-quit/);
+  // Renderer stop must still force-kill when system/stop fails.
+  assert.match(rendererCore, /window\.nexusElectron\.core\.kill\(\)/);
+  assert.match(
+    rendererCore,
+    /Graceful stop request failed[\s\S]*core\.kill\(\)/
+  );
+  // Wallet close relies on main-process exit to stop Core (no double wait).
+  assert.match(wallet, /app\.exit\(\)/);
+  assert.doesNotMatch(wallet, /await stopCore\(\)/);
   // Renderer must not short-circuit before main can probe/restart a mismatched Core.
   assert.match(rendererCore, /window\.nexusElectron\.core\.start\(\)/);
   assert.doesNotMatch(

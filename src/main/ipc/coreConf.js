@@ -59,9 +59,12 @@ function confBooleanString(value) {
 }
 
 function resolveApiPortSSL(config, fallback) {
+  // Nexus Core only honors `apisslport` in nexus.conf / CLI. Older wallet builds
+  // wrote the non-functional alias `apiportssl`, which Core silently ignores and
+  // then binds the SSL API on its default port 8443.
   return (
-    trimConfValue(config?.apiportssl) ||
     trimConfValue(config?.apisslport) ||
+    trimConfValue(config?.apiportssl) ||
     fallback
   );
 }
@@ -72,15 +75,20 @@ function resolveApiPortSSL(config, fallback) {
  *
  * Historical behavior (pre-isolation loadNexusConf): credentials come from
  * conf; SSL/port preferences from wallet settings overlay conf values.
+ *
+ * IMPORTANT: Core's recognized SSL API port key is `apisslport` (verified
+ * against the bundled nexus binary). Writing only `apiportssl` leaves Core on
+ * 8443 while the GUI connects to 7080 → permanent "Connecting to Nexus Core…".
  */
 function resolveEmbeddedCoreConnection(configInput, settings = {}) {
   const config = { ...(configInput || {}) };
 
+  // Migrate the historical wallet-only alias to the Core-recognized key.
   if (
-    (config.apiportssl === undefined || config.apiportssl === '') &&
-    config.apisslport
+    (config.apisslport === undefined || config.apisslport === '') &&
+    config.apiportssl
   ) {
-    config.apiportssl = trimConfValue(config.apisslport);
+    config.apisslport = trimConfValue(config.apiportssl);
   }
 
   const useSSL = !settings.embeddedCoreUseNonSSL;
@@ -97,7 +105,7 @@ function resolveEmbeddedCoreConnection(configInput, settings = {}) {
     apipassword: settings.generatedApiPassword,
     apissl: confBooleanString(useSSL),
     apiport: desiredPort,
-    apiportssl: desiredPortSSL,
+    apisslport: desiredPortSSL,
   };
 
   let changed = false;
@@ -112,7 +120,7 @@ function resolveEmbeddedCoreConnection(configInput, settings = {}) {
   const desiredConf = {
     apissl: confBooleanString(useSSL),
     apiport: desiredPort,
-    apiportssl: desiredPortSSL,
+    apisslport: desiredPortSSL,
   };
   for (const [key, value] of Object.entries(desiredConf)) {
     if (String(config[key]) !== String(value)) {
@@ -121,8 +129,9 @@ function resolveEmbeddedCoreConnection(configInput, settings = {}) {
     }
   }
 
-  if (config.apisslport !== undefined) {
-    delete config.apisslport;
+  // Drop the non-functional alias so conf matches what Core actually reads.
+  if (config.apiportssl !== undefined) {
+    delete config.apiportssl;
     changed = true;
   }
 

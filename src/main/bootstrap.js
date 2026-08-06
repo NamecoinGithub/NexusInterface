@@ -6,11 +6,9 @@ import path from 'path';
 
 import {
   coreBinaryExists,
-  isCoreRunning,
-  killCoreProcess,
   startConfiguredCore,
+  stopEmbeddedCore,
 } from './core';
-import { callCoreRpc } from './coreRpc';
 import { extractSafeZip } from './ipc/safeZip';
 import { loadSettingsFromFile } from './settings';
 
@@ -58,19 +56,6 @@ async function moveDirectoryContents(source, destination) {
       await moveFile(sourcePath, destinationPath);
     }
   }
-}
-
-async function stopCore() {
-  try {
-    await callCoreRpc({ endpoint: 'system/stop' });
-  } catch {
-    // A disconnected Core cannot receive a graceful shutdown request.
-  }
-  for (let attempt = 0; attempt < 10; attempt += 1) {
-    if (!(await isCoreRunning())) return;
-    await new Promise((resolve) => setTimeout(resolve, 1000));
-  }
-  if (await isCoreRunning()) await killCoreProcess();
 }
 
 function downloadArchive(archivePath, onProgress, availableSpace) {
@@ -190,7 +175,7 @@ export async function startBootstrap(sendStatus) {
     await fs.promises.rm(extractDir, { recursive: true, force: true });
     await fs.promises.rm(archivePath, { force: true });
     emitStatus(sendStatus, 'stopping_core');
-    await stopCore();
+    await stopEmbeddedCore();
     shouldRestartCore = true;
     if (activeBootstrap.aborted) return { aborted: true };
 

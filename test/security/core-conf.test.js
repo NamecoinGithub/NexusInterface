@@ -39,9 +39,14 @@ test('toKeyValues skips undefined and null values', () => {
   assert.equal(text, 'apiuser=apiserver\napiport=8080');
 });
 
-test('resolveApiPortSSL accepts both conf key spellings', () => {
-  assert.equal(resolveApiPortSSL({ apiportssl: '7080' }, '8443'), '7080');
+test('resolveApiPortSSL prefers Core apisslport over wallet apiportssl alias', () => {
+  // Core only honors apisslport; apiportssl is a historical wallet-only alias.
   assert.equal(resolveApiPortSSL({ apisslport: '7099' }, '8443'), '7099');
+  assert.equal(resolveApiPortSSL({ apiportssl: '7080' }, '8443'), '7080');
+  assert.equal(
+    resolveApiPortSSL({ apisslport: '7099', apiportssl: '7080' }, '8443'),
+    '7099'
+  );
   assert.equal(resolveApiPortSSL({}, '7080'), '7080');
 });
 
@@ -62,7 +67,7 @@ test('settings overlay forces SSL/port alignment even when conf is stale', () =>
       // started with -apissl=1 (historical wallet launch flags).
       apissl: '0',
       apiport: '18080',
-      // Core CLI-style key only — must be recognized and canonicalized.
+      // Core CLI-style key — must be preserved as the written conf key.
       apisslport: '8443',
     },
     {
@@ -79,14 +84,15 @@ test('settings overlay forces SSL/port alignment even when conf is stale', () =>
   // Existing conf SSL port is preserved when settings do not override it.
   assert.equal(resolved.connection.apiPortSSL, '8443');
   assert.equal(resolved.connection.apiPassword, 'existing-secret');
-  assert.equal(resolved.conf.apiportssl, '8443');
+  assert.equal(resolved.conf.apisslport, '8443');
   assert.equal(resolved.conf.apissl, '1');
-  assert.equal(resolved.conf.apisslport, undefined);
+  assert.equal(resolved.conf.apiportssl, undefined);
 
-  // Serialized conf keeps a single SSL port key the GUI and Core both understand.
+  // Serialized conf must use the Core-recognized key. Writing only apiportssl
+  // leaves Core on default SSL port 8443 while the GUI dials 7080.
   const serialized = toKeyValues(resolved.conf);
-  assert.match(serialized, /apiportssl=8443/);
-  assert.doesNotMatch(serialized, /apisslport=/);
+  assert.match(serialized, /apisslport=8443/);
+  assert.doesNotMatch(serialized, /apiportssl=/);
 });
 
 test('wallet SSL port setting overrides a default Core 8443 conf value', () => {
@@ -96,7 +102,7 @@ test('wallet SSL port setting overrides a default Core 8443 conf value', () => {
       apipassword: 'secret',
       apissl: '1',
       apiport: '8080',
-      apiportssl: '8443',
+      apisslport: '8443',
     },
     {
       embeddedCoreUseNonSSL: false,
@@ -106,7 +112,31 @@ test('wallet SSL port setting overrides a default Core 8443 conf value', () => {
   );
 
   assert.equal(resolved.connection.apiPortSSL, '7080');
-  assert.equal(resolved.conf.apiportssl, '7080');
+  assert.equal(resolved.conf.apisslport, '7080');
+});
+
+test('historical apiportssl conf alias is migrated to Core apisslport', () => {
+  const resolved = resolveEmbeddedCoreConnection(
+    {
+      apiuser: 'apiserver',
+      apipassword: 'secret',
+      apissl: '1',
+      apiport: '8080',
+      // Wallet-only alias Core ignores — must be rewritten.
+      apiportssl: '7080',
+    },
+    {
+      embeddedCoreUseNonSSL: false,
+      generatedApiPassword: 'unused',
+    }
+  );
+
+  assert.equal(resolved.changed, true);
+  assert.equal(resolved.connection.apiPortSSL, '7080');
+  assert.equal(resolved.conf.apisslport, '7080');
+  assert.equal(resolved.conf.apiportssl, undefined);
+  assert.match(toKeyValues(resolved.conf), /apisslport=7080/);
+  assert.doesNotMatch(toKeyValues(resolved.conf), /apiportssl=/);
 });
 
 test('missing credentials are created so Core enables its API server', () => {
@@ -124,4 +154,5 @@ test('missing credentials are created so Core enables its API server', () => {
   assert.equal(resolved.connection.apiSSL, true);
   assert.equal(resolved.connection.apiPort, '8080');
   assert.equal(resolved.connection.apiPortSSL, '7080');
+  assert.equal(resolved.conf.apisslport, '7080');
 });
