@@ -12,6 +12,10 @@ import {
   probeCoreApi,
 } from './coreRpc';
 
+// After killing a mismatched Core, wait briefly so OS listen sockets (API/P2P)
+// are released before we spawn a replacement on the same ports.
+const CORE_PORT_RELEASE_DELAY_MS = 750;
+
 const coreBinaryName = `nexus-${process.platform}-${process.arch}${
   process.platform === 'win32' ? '.exe' : ''
 }`;
@@ -495,8 +499,9 @@ export async function startConfiguredCore() {
         'Restarting Core with wallet API settings so the GUI can connect.'
     );
     await killCoreProcess();
-    // Brief pause so the previous process can release listen ports.
-    await new Promise((resolve) => setTimeout(resolve, 750));
+    await new Promise((resolve) =>
+      setTimeout(resolve, CORE_PORT_RELEASE_DELAY_MS)
+    );
   }
 
   const { params, lockedTestnet } = buildConfiguredCoreParams(

@@ -5,27 +5,29 @@ function trimConfValue(value) {
 }
 
 function fromKeyValues(contents) {
-  return contents
-    ? contents.split(/\r?\n/).reduce((config, line) => {
-        const trimmedLine = line.trim();
-        if (
-          !trimmedLine ||
-          trimmedLine.startsWith('#') ||
-          trimmedLine.startsWith(';')
-        ) {
-          return config;
-        }
-        const separator = trimmedLine.indexOf('=');
-        if (separator > 0) {
-          const key = trimmedLine.slice(0, separator).trim();
-          const value = trimConfValue(trimmedLine.slice(separator + 1));
-          if (key) {
-            config[key] = value;
-          }
-        }
-        return config;
-      }, {})
-    : {};
+  if (!contents) return {};
+  // Strip a leading UTF-8 BOM from the file contents so the first key is not
+  // poisoned (e.g. "\uFEFFapiuser"). Value-level trim still removes embedded BOM.
+  const normalized = String(contents).replace(/^\uFEFF/, '');
+  return normalized.split(/\r?\n/).reduce((config, line) => {
+    const trimmedLine = line.trim();
+    if (
+      !trimmedLine ||
+      trimmedLine.startsWith('#') ||
+      trimmedLine.startsWith(';')
+    ) {
+      return config;
+    }
+    const separator = trimmedLine.indexOf('=');
+    if (separator > 0) {
+      const key = trimmedLine.slice(0, separator).trim();
+      const value = trimConfValue(trimmedLine.slice(separator + 1));
+      if (key) {
+        config[key] = value;
+      }
+    }
+    return config;
+  }, {});
 }
 
 function toKeyValues(config) {
