@@ -3,6 +3,7 @@
  * Only manifest-listed, path-normalized module files are reachable.
  */
 import path, { normalize, sep } from 'path';
+import fs from 'fs';
 import express from 'express';
 import log from 'electron-log';
 
@@ -24,6 +25,12 @@ const SECURITY_HEADERS = {
     "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self' data:; connect-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'",
 };
 
+// Simple per-IP token bucket for local module asset reads.
+const RATE_LIMIT_WINDOW_MS = 1000;
+const RATE_LIMIT_MAX = 120;
+/** @type {Map<string, number[]>} */
+const rateBuckets = new Map();
+
 function normalizeRelativeFile(file) {
   let filePath = normalize(String(file)).replace(/\\/g, '/');
   while (filePath.startsWith('/')) filePath = filePath.slice(1);
@@ -36,19 +43,72 @@ function setSecurityHeaders(res) {
   }
 }
 
-server.use('/modules/:moduleName', (req, res, next) => {
+function allowRequest(req) {
+  const key = String(req.ip || req.socket?.remoteAddress || 'local');
+  const now = Date.now();
+  const recent = (rateBuckets.get(key) || []).filter(
+    (ts) => now - ts < RATE_LIMIT_WINDOW_MS
+  );
+  if (recent.length >= RATE_LIMIT_MAX) {
+    rateBuckets.set(key, recent);
+    return false;
+  }
+  recent.push(now);
+  rateBuckets.set(key, recent);
+  return true;
+}
+
+/**
+ * Resolve a module file only if it is on the allowlist and stays under the
+ * module root after realpath normalization (rejects symlink escapes).
+ */
+function resolveAuthorizedModuleFile(moduleName, relativeFile) {
+  const allow = allowedFilesByModule.get(moduleName);
+  if (!allow || !allow.has(relativeFile)) {
+    return null;
+  }
+
+  const moduleRoot = path.resolve(modulesDir, moduleName);
+  const candidate = path.resolve(moduleRoot, relativeFile);
+  if (candidate !== moduleRoot && !candidate.startsWith(`${moduleRoot}${sep}`)) {
+    return null;
+  }
+
+  let realRoot;
+  let realFile;
+  try {
+    realRoot = fs.realpathSync(moduleRoot);
+    // lstat first: reject symlinks at the leaf before following them.
+    const leafStat = fs.lstatSync(candidate);
+    if (leafStat.isSymbolicLink()) {
+      return null;
+    }
+    if (!leafStat.isFile()) {
+      return null;
+    }
+    realFile = fs.realpathSync(candidate);
+  } catch {
+    return null;
+  }
+
+  if (realFile !== realRoot && !realFile.startsWith(`${realRoot}${sep}`)) {
+    return null;
+  }
+  return realFile;
+}
+
+server.use('/modules/:moduleName', (req, res) => {
   setSecurityHeaders(res);
+
+  if (!allowRequest(req)) {
+    return res.status(429).end('Too many requests');
+  }
 
   let moduleName;
   try {
     moduleName = assertSafeModuleName(req.params.moduleName);
   } catch {
     return res.status(400).end('Invalid module');
-  }
-
-  const allow = allowedFilesByModule.get(moduleName);
-  if (!allow || !allow.size) {
-    return res.status(404).end('Module files not prepared');
   }
 
   let relative;
@@ -59,23 +119,15 @@ server.use('/modules/:moduleName', (req, res, next) => {
     return res.status(400).end('Invalid path');
   }
 
-  if (!allow.has(relative)) {
+  const absolute = resolveAuthorizedModuleFile(moduleName, relative);
+  if (!absolute) {
     return res.status(404).end('Not found');
   }
 
-  const absolute = path.resolve(modulesDir, moduleName, relative);
-  const moduleRoot = path.resolve(modulesDir, moduleName);
-  if (
-    absolute !== moduleRoot &&
-    !absolute.startsWith(`${moduleRoot}${sep}`)
-  ) {
-    return res.status(400).end('Invalid path');
-  }
-
+  // absolute is produced only from validated module root + allowlisted relative
+  // path after realpath checks; never from raw user path segments alone.
   return res.sendFile(absolute, (error) => {
-    if (error) {
-      if (!res.headersSent) res.status(404).end('Not found');
-    }
+    if (error && !res.headersSent) res.status(404).end('Not found');
   });
 });
 
