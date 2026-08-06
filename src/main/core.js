@@ -469,16 +469,31 @@ async function waitForCoreApi(configuration, {
 } = {}) {
   const startedAt = Date.now();
   let lastError = 'API not ready';
+  let attempts = 0;
+  log.info('core.api.wait.begin', {
+    timeoutMs,
+    pollMs,
+    target: `${configuration.ip}:${
+      configuration.apiSSL !== false
+        ? configuration.apiPortSSL
+        : configuration.apiPort
+    }`,
+  });
   while (Date.now() - startedAt < timeoutMs) {
+    attempts += 1;
     const probe = await probeCoreApi(configuration, {
       timeout: Math.min(pollMs, 2500),
+      // Avoid spamming probe logs on every 500ms poll; final timeout logs below.
+      log: attempts === 1,
     });
     if (probe.ok) {
+      log.info('core.api.wait.ready', { attempts, elapsedMs: Date.now() - startedAt });
       return { ok: true, probe };
     }
     lastError = probe.error || lastError;
     await new Promise((resolve) => setTimeout(resolve, pollMs));
   }
+  log.warn('core.api.wait.timeout', { attempts, error: lastError, timeoutMs });
   return { ok: false, error: lastError };
 }
 
@@ -538,18 +553,34 @@ export async function stopEmbeddedCore() {
  * will keep the GUI disconnected forever unless we recover here.
  */
 export async function startConfiguredCore() {
+  log.info('core.start.requested');
   const settings = loadSettingsFromFile();
   if (settings.manualDaemon) {
+    log.info('core.start.skipped', { reason: 'manual-daemon' });
     return { started: false, reason: 'manual-daemon' };
   }
 
   const status = getCoreBinaryStatus();
+  log.info('core.binary.resolved', {
+    exists: !!status.exists,
+    executable: !!status.executable,
+    path: status.path,
+    error: status.error,
+  });
   if (!status.exists || !status.executable) {
     throw new Error(status.error || 'Nexus Core binary not found');
   }
 
   clearCoreConfigCache();
   const configuration = await getCoreConfiguration();
+  log.info('core.config.resolved', {
+    ip: configuration.ip,
+    apiSSL: configuration.apiSSL !== false,
+    apiPort: configuration.apiPort,
+    apiPortSSL: configuration.apiPortSSL,
+    hasAuth: !!(configuration.apiUser && configuration.apiPassword),
+    coreDataDir: settings.coreDataDir,
+  });
   if (!configuration.apiUser || !configuration.apiPassword) {
     throw new Error(
       'Nexus Core API credentials are missing from nexus.conf; cannot start API server'
@@ -564,6 +595,7 @@ export async function startConfiguredCore() {
           configuration.apiSSL ? configuration.apiPortSSL : configuration.apiPort
         } (${configuration.apiSSL ? 'ssl' : 'plain'})`
       );
+      log.info('core.api.ready', { reason: 'already-running' });
       return { started: false, reason: 'already-running', apiReachable: true };
     }
 
@@ -571,6 +603,7 @@ export async function startConfiguredCore() {
       `Core Manager: Core process is running but API is unreachable (${probe.error}). ` +
         'Restarting Core with wallet API settings so the GUI can connect.'
     );
+    log.warn('core.restart.mismatched_api', { error: probe.error });
     await killCoreProcess();
     await new Promise((resolve) =>
       setTimeout(resolve, CORE_PORT_RELEASE_DELAY_MS)
@@ -602,18 +635,25 @@ export async function startConfiguredCore() {
   }
 
   const pid = startCore(params);
+  log.info('core.spawned', { pid, coreDataDir: settings.coreDataDir });
   const ready = await waitForCoreApi(configuration);
   if (!ready.ok) {
     log.warn(
       `Core Manager: Core process started (pid ${pid}) but API is not reachable yet (${ready.error}). ` +
         'The GUI will keep retrying system/get/info.'
     );
+    log.warn('core.api.wait.timeout', {
+      pid,
+      error: ready.error,
+      timeoutMs: CORE_API_READY_TIMEOUT_MS,
+    });
   } else {
     log.info(
       `Core Manager: Core API is reachable at ${configuration.ip}:${
         configuration.apiSSL ? configuration.apiPortSSL : configuration.apiPort
       } (${configuration.apiSSL ? 'ssl' : 'plain'})`
     );
+    log.info('core.api.ready', { pid });
   }
   return {
     started: true,

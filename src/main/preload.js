@@ -7,11 +7,17 @@ import {
   validateTrackEventRequest,
 } from './ipc/contracts';
 
-function unwrap(result) {
+function unwrap(result, channel) {
   if (!result || typeof result !== 'object' || typeof result.ok !== 'boolean') {
+    console.error('preload.unwrap.invalid', { channel });
     throw new Error('Invalid response from the Nexus main-process bridge');
   }
   if (!result.ok) {
+    console.error('preload.unwrap.failed', {
+      channel,
+      code: result.error?.code,
+      message: result.error?.message,
+    });
     const error = new Error(result.error?.message || 'Nexus operation failed');
     error.code = result.error?.code;
     throw error;
@@ -20,11 +26,13 @@ function unwrap(result) {
 }
 
 function invoke(channel, request) {
-  return ipcRenderer.invoke(channel, request).then(unwrap);
+  return ipcRenderer.invoke(channel, request).then((result) =>
+    unwrap(result, channel)
+  );
 }
 
 function invokeSync(channel, request) {
-  return unwrap(ipcRenderer.sendSync(channel, request));
+  return unwrap(ipcRenderer.sendSync(channel, request), channel);
 }
 
 function assertString(value, name, { min = 0, max = 4096 } = {}) {
@@ -240,3 +248,11 @@ const nexusElectron = {
 
 exposeInMainWorld('nexusEnv', environment);
 exposeInMainWorld('nexusElectron', nexusElectron);
+
+// Preload-time init marker. The full core:get-status bridge self-test runs from
+// the renderer bootstrap after mainWindow is assigned (avoids sender races).
+console.info('preload.init', {
+  contextIsolated: !!process.contextIsolated,
+  platform: environment.platform,
+  nodeEnv: environment.NODE_ENV,
+});

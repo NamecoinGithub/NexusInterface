@@ -59,7 +59,9 @@ export async function createWindow(settings) {
           : path.resolve(__dirname, 'main_preload.prod.js'),
       nodeIntegration: false,
       contextIsolation: true,
-      sandbox: true,
+      // Diagnostic-only: NEXUS_DISABLE_SANDBOX=1 leaves isolation on while
+      // turning sandbox off to compare bridge behavior.
+      sandbox: process.env.NEXUS_DISABLE_SANDBOX === '1' ? false : true,
       webviewTag: true,
       enableRemoteModule: false,
     },

@@ -52,9 +52,18 @@ async function loadEmbeddedConfig(settings) {
         encoding: 'utf8',
         mode: 0o600,
       });
+      console.info('core.config.written', {
+        configPath,
+        ...summarizeConfig(resolved.connection),
+      });
     }
 
     cachedEmbeddedConfig = resolved.connection;
+    console.info('core.config.resolved', {
+      mode: 'embedded',
+      configPath,
+      ...summarizeConfig(resolved.connection),
+    });
     return cachedEmbeddedConfig;
   })();
 
@@ -70,6 +79,17 @@ async function loadEmbeddedConfig(settings) {
 export function clearCoreConfigCache() {
   cachedEmbeddedConfig = undefined;
   embeddedConfigLoadPromise = undefined;
+}
+
+function summarizeConfig(config) {
+  if (!config) return null;
+  return {
+    ip: config.ip,
+    apiSSL: !!config.apiSSL,
+    apiPort: config.apiPort,
+    apiPortSSL: config.apiPortSSL,
+    hasAuth: !!(config.apiUser && config.apiPassword),
+  };
 }
 
 export async function getCoreConfiguration() {
@@ -102,10 +122,11 @@ function requestCore({ method, endpoint, params, config, timeout = 30000 }) {
   const body = params === undefined ? undefined : JSON.stringify(params);
   const { apiSSL, rejectUnauthorized } = getCoreTransportOptions(config);
   const client = apiSSL ? https : http;
+  const port = apiSSL ? config.apiPortSSL : config.apiPort;
   const options = {
     method,
     hostname: config.ip,
-    port: apiSSL ? config.apiPortSSL : config.apiPort,
+    port,
     path: `/${endpoint}`,
     headers: {
       'Content-Type': 'application/json',
@@ -120,6 +141,26 @@ function requestCore({ method, endpoint, params, config, timeout = 30000 }) {
   };
 
   return new Promise((resolve, reject) => {
+    const fail = (error) => {
+      // Probe/wait loops can fail many times while Core is still binding; keep
+      // transport failure logs for non-probe callers (callCoreRpc).
+      if (endpoint !== 'system/get/info' || timeout > 2500) {
+        const code = error?.code || error?.errno;
+        const message = error?.message || String(error);
+        console.warn('core.rpc.request.failed', {
+          endpoint,
+          method,
+          target: `${config.ip}:${port}`,
+          apiSSL: !!apiSSL,
+          timeout,
+          statusCode: error?.statusCode,
+          code,
+          message,
+        });
+      }
+      reject(error instanceof Error ? error : new Error(error?.message || String(error)));
+    };
+
     const request = client.request(options, (response) => {
       let data = '';
       response.setEncoding('utf8');
@@ -131,18 +172,25 @@ function requestCore({ method, endpoint, params, config, timeout = 30000 }) {
         try {
           parsed = data ? JSON.parse(data) : undefined;
         } catch {
-          reject(new Error('Core response is not valid JSON'));
+          fail(new Error('Core response is not valid JSON'));
           return;
         }
         if (response.statusCode && response.statusCode >= 200 && response.statusCode < 300) {
           resolve(parsed?.result);
         } else {
-          reject(parsed?.error || new Error(`Core returned ${response.statusCode}`));
+          const error =
+            parsed?.error || new Error(`Core returned ${response.statusCode}`);
+          if (error && typeof error === 'object') {
+            error.statusCode = response.statusCode;
+          }
+          fail(error);
         }
       });
     });
-    request.once('timeout', () => request.destroy(new Error('Core request timed out')));
-    request.once('error', reject);
+    request.once('timeout', () =>
+      request.destroy(new Error('Core request timed out'))
+    );
+    request.once('error', fail);
     if (body) request.write(body);
     request.end();
   });
@@ -154,8 +202,14 @@ function requestCore({ method, endpoint, params, config, timeout = 30000 }) {
  * not silently stick to a process that only has P2P up (or uses different
  * datadir/ports/auth).
  */
-export async function probeCoreApi(config, { timeout = 2500 } = {}) {
+export async function probeCoreApi(
+  config,
+  { timeout = 2500, log = true } = {}
+) {
   const resolved = config || (await getCoreConfiguration());
+  if (log) {
+    console.info('core.probe.begin', summarizeConfig(resolved));
+  }
   try {
     const result = await requestCore({
       method: 'POST',
@@ -164,11 +218,22 @@ export async function probeCoreApi(config, { timeout = 2500 } = {}) {
       config: resolved,
       timeout,
     });
+    if (log) {
+      console.info('core.probe.ok', summarizeConfig(resolved));
+    }
     return { ok: true, result, config: resolved };
   } catch (error) {
+    const message = error?.message || String(error);
+    if (log) {
+      console.warn('core.probe.failed', {
+        ...summarizeConfig(resolved),
+        error: message,
+        code: error?.code,
+      });
+    }
     return {
       ok: false,
-      error: error?.message || String(error),
+      error: message,
       config: resolved,
     };
   }
