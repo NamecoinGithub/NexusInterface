@@ -13,7 +13,6 @@ import {
   describeLitecoinError,
   formatLitecoinVersion,
   formatSyncPercent,
-  freshnessLabel,
   isLitecoinStatusConnected,
   litecoinNodeStatusQuery,
   type LitecoinNodeStatus,
@@ -253,7 +252,7 @@ export default function SettingsExternalChains() {
             {connectionLabel(displayedStatus)}
             {displayedStatus?.freshness &&
             displayedStatus.freshness !== 'unavailable'
-              ? ` (${__(freshnessLabel(displayedStatus.freshness) || displayedStatus.freshness)})`
+              ? ` (${__(displayedStatus.freshness)})`
               : ''}
           </InfoField>
           <InfoField label={__('Network')}>

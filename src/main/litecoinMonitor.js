@@ -594,12 +594,13 @@ function asCachedStatus(status) {
 
 function asStaleFromLastGood(lastGoodStatus) {
   if (!lastGoodStatus || typeof lastGoodStatus !== 'object') return null;
+  // Drop any residual error key explicitly (do not leave error: undefined).
+  const { error: _omitError, ...rest } = lastGoodStatus;
   return {
-    ...lastGoodStatus,
+    ...rest,
     connected: true,
     freshness: 'stale',
     // Preserve original successful fetchedAt; do not pretend this is a new probe.
-    error: undefined,
   };
 }
 
@@ -675,7 +676,9 @@ async function getLitecoinNodeStatus({
           ? SUCCESS_CACHE_MS
           : FAILURE_BACKOFF_MS;
 
-      // Cache the raw live outcome when connected so hits can become 'cached'.
+      // Prefer caching the live success DTO so later hits become 'cached'.
+      // On failure, cache the returned DTO (unavailable or stale). Stale hits
+      // intentionally keep freshness 'stale' rather than being re-labeled cached.
       cache.status = status.connected ? status : finalStatus;
       cache.expiresAt = Date.now() + backoff;
       cache.inflight = null;

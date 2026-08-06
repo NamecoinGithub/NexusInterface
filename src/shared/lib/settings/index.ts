@@ -47,10 +47,15 @@ subscribeWithPrevious(userSettingsAtom, (settings, previousSettings) => {
  * (for example Litecoin Test connection).
  */
 export async function ensureSettingsPersisted(): Promise<void> {
-  // Allow the debounced setTimeout(0) subscriber to schedule its IPC write.
+  // Yield twice so any already-queued setTimeout(0) settings subscriber
+  // callbacks can enqueue their IPC writes onto persistChain before we await.
   await new Promise<void>((resolve) => {
     setTimeout(resolve, 0);
   });
+  await new Promise<void>((resolve) => {
+    setTimeout(resolve, 0);
+  });
+  // Re-read the chain after yields so newly appended IPC promises are included.
   await persistChain;
 }
 

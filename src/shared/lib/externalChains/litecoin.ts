@@ -152,20 +152,3 @@ export function isLitecoinStatusConnected(
     status.freshness === 'stale'
   );
 }
-
-export function freshnessLabel(
-  freshness?: LitecoinNodeStatus['freshness']
-): string | undefined {
-  switch (freshness) {
-    case 'live':
-      return 'live';
-    case 'cached':
-      return 'cached';
-    case 'stale':
-      return 'stale';
-    case 'unavailable':
-      return 'unavailable';
-    default:
-      return undefined;
-  }
-}
