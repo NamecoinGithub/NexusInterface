@@ -26,6 +26,40 @@ interface NexusEnvironment {
   arch: string;
 }
 
+type LitecoinNodeStatus = {
+  configured: boolean;
+  connected: boolean;
+  network?: 'main' | 'test' | 'regtest' | 'unknown';
+  version?: number;
+  blocks?: number;
+  headers?: number;
+  verificationProgress?: number;
+  initialBlockDownload?: boolean;
+  connections?: number;
+  mempoolTransactions?: number;
+  mempoolBytes?: number;
+  fetchedAt: string;
+  freshness: 'live' | 'unavailable';
+  warning?: {
+    code: 'unsupported_version' | 'unexpected_network';
+    message: string;
+  };
+  error?: {
+    code:
+      | 'not_configured'
+      | 'invalid_configuration'
+      | 'cookie_unavailable'
+      | 'authentication_failed'
+      | 'connection_refused'
+      | 'timeout'
+      | 'invalid_response'
+      | 'unsupported_network'
+      | 'unsupported_version'
+      | 'unavailable';
+    message: string;
+  };
+};
+
 interface NexusElectronBridge {
   environment: NexusEnvironment;
   paths: {
@@ -55,6 +89,12 @@ interface NexusElectronBridge {
     selectModuleArchive(): Promise<string[] | undefined>;
     selectModuleDirectory(): Promise<string[] | undefined>;
     selectDevModuleDirectory(): Promise<string[] | undefined>;
+    selectLitecoinCookie(): Promise<string[] | undefined>;
+  };
+  externalChains: {
+    litecoin: {
+      getStatus(): Promise<LitecoinNodeStatus>;
+    };
   };
   core: {
     getStatus(): Promise<Record<string, unknown>>;
