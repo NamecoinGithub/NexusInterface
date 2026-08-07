@@ -396,16 +396,23 @@ async function callAllowlistedSequence({ host, port, username, password }) {
     return { blockchain, network, mempool, connections };
   };
 
-  return Promise.race([
-    run(),
-    new Promise((_, reject) => {
-      setTimeout(() => {
-        reject(
-          Object.assign(new Error('Sequence timed out'), { code: 'timeout' })
-        );
-      }, SEQUENCE_TIMEOUT_MS);
-    }),
-  ]);
+  let sequenceTimer;
+  try {
+    return await Promise.race([
+      run(),
+      new Promise((_, reject) => {
+        sequenceTimer = setTimeout(() => {
+          reject(
+            Object.assign(new Error('Sequence timed out'), { code: 'timeout' })
+          );
+        }, SEQUENCE_TIMEOUT_MS);
+      }),
+    ]);
+  } finally {
+    if (sequenceTimer) {
+      clearTimeout(sequenceTimer);
+    }
+  }
 }
 
 function normalizeProbeResult({ blockchain, network, mempool, connections }) {
@@ -592,14 +599,41 @@ function asCachedStatus(status) {
   return { ...status };
 }
 
-function asStaleFromLastGood(lastGoodStatus) {
+/**
+ * Retain last-good metrics after a failed probe, without claiming current
+ * reachability. `connected` reflects the latest probe only; retained fields
+ * are labeled freshness: 'stale' and keep a safe failure indicator.
+ */
+function asStaleFromLastGood(lastGoodStatus, failureStatus) {
   if (!lastGoodStatus || typeof lastGoodStatus !== 'object') return null;
-  // Drop any residual error key explicitly (do not leave error: undefined).
+  // Drop any residual success-path error key; attach the latest failure instead.
   const { error: _omitError, ...rest } = lastGoodStatus;
+  const failureError =
+    failureStatus &&
+    typeof failureStatus === 'object' &&
+    failureStatus.error &&
+    typeof failureStatus.error === 'object'
+      ? {
+          code:
+            typeof failureStatus.error.code === 'string'
+              ? failureStatus.error.code
+              : 'unavailable',
+          message:
+            typeof failureStatus.error.message === 'string'
+              ? failureStatus.error.message
+              : 'Litecoin monitoring is temporarily unavailable.',
+        }
+      : {
+          code: 'unavailable',
+          message: 'Litecoin monitoring is temporarily unavailable.',
+        };
+
   return {
     ...rest,
-    connected: true,
+    // Current reachability failed — do not present retained metrics as connected.
+    connected: false,
     freshness: 'stale',
+    error: failureError,
     // Preserve original successful fetchedAt; do not pretend this is a new probe.
   };
 }
@@ -660,8 +694,9 @@ async function getLitecoinNodeStatus({
         cache.lastGood.configKey === configKey &&
         cache.lastGood.status
       ) {
-        // Retain last-good metrics for this configuration as stale data.
-        const stale = asStaleFromLastGood(cache.lastGood.status);
+        // Retain last-good metrics for this configuration as stale data,
+        // while keeping connected=false and the latest failure indicator.
+        const stale = asStaleFromLastGood(cache.lastGood.status, status);
         if (stale) {
           finalStatus = stale;
         }
@@ -689,14 +724,15 @@ async function getLitecoinNodeStatus({
         cache.inflight = null;
       }
       console.info('litecoin.monitor.probe.failed', { code: 'unavailable' });
+      const failure = mapFailure('unavailable');
       if (
         cache.lastGood &&
         cache.lastGood.configKey === configKey &&
         cache.lastGood.status
       ) {
-        return asStaleFromLastGood(cache.lastGood.status);
+        return asStaleFromLastGood(cache.lastGood.status, failure);
       }
-      return mapFailure('unavailable');
+      return failure;
     });
 
   return cache.inflight;
