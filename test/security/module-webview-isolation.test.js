@@ -185,6 +185,14 @@ test('host module relay rejects generic privileged legacy channels', () => {
   assert.doesNotMatch(host, /addressBookAtom/);
 });
 
+test('host context push fails closed without renderer fallback to guest', () => {
+  const host = read('src', 'shared', 'lib', 'modules', 'webview.tsx');
+  assert.match(host, /pushModuleContext/);
+  // Unsanitized coreInfo/userStatus must never be sent directly to the guest.
+  assert.doesNotMatch(host, /active\.send\(\s*['"]module-api:context-changed['"]/);
+  assert.match(host, /Fail closed/);
+});
+
 test('proxyRequest remains disabled for modules', () => {
   const modules = read('src', 'main', 'modules.js');
   assert.match(modules, /proxyRequest is disabled/);
