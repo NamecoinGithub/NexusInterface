@@ -35,4 +35,4 @@ fi
 echo "Packaging as .deb..."
 npx electron-builder build --linux deb
 
-echo "Build complete. Check the 'dist/' directory for your .deb file."
+echo "Build complete. Check the 'release/' directory for your .deb file."

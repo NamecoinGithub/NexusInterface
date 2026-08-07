@@ -15,6 +15,6 @@ Run it:
     ./build_deb.sh
 
 
-The resulting .deb should appear in the dist/ directory inside the NexusInterface folder.
+The resulting .deb should appear in the release/ directory inside the NexusInterface folder.
 
 
