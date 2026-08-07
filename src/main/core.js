@@ -414,8 +414,12 @@ async function listCoreProcesses() {
  * Get Process ID of core process if core is running.
  *
  * When `dataDir` is provided, only a process whose command line includes
- * `-datadir=<dataDir>` is returned. This prevents treating (or killing) an
- * unrelated user-managed Core that merely shares the same binary name.
+ * `-datadir=<dataDir>` is returned. Kill/restart paths MUST pass dataDir so an
+ * unrelated user-managed Core that merely shares the same binary name is never
+ * targeted.
+ *
+ * When `dataDir` is omitted, the first matching binary is returned. That mode is
+ * detection-only (e.g. isCoreRunning) and must not be used to decide what to kill.
  *
  * @param {{ dataDir?: string|null }} [options]
  * @returns {Promise<number|null>} PID
@@ -436,7 +440,8 @@ async function getCorePID({ dataDir = null } = {}) {
 }
 
 /**
- * Returns true if the PID is found.
+ * Returns true if any Core binary process is found (detection only).
+ * Does not imply the process is wallet-managed; kill paths use dataDir matching.
  * @returns { boolean } If the core is running.
  * @memberof Core
  */
