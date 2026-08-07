@@ -200,7 +200,6 @@ export function describeLitecoinConnection(
   if (!status) return 'unknown';
   if (status.freshness === 'stale') return 'stale';
   if (status.freshness === 'cached' && status.connected) return 'cached';
-  if (status.connected && status.freshness === 'live') return 'connected';
   if (status.connected) return 'connected';
   return 'unavailable';
 }

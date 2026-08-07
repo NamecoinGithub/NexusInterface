@@ -49,7 +49,6 @@ function networkLabel(network?: string) {
 function statusText(status?: LitecoinNodeStatus | null) {
   switch (describeLitecoinConnection(status)) {
     case 'connected':
-      return __('Connected');
     case 'cached':
       return __('Connected');
     case 'stale':
@@ -59,7 +58,6 @@ function statusText(status?: LitecoinNodeStatus | null) {
           })
         : __('Stale — last successful probe');
     case 'unavailable':
-      return __('Unavailable');
     default:
       return __('Unavailable');
   }
