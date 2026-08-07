@@ -22,6 +22,7 @@ import {
   StakeWeightStat,
 } from './StakingStats';
 import { PrimeDiffStat, HashDiffStat, StakingDiffStat } from './MiningStats';
+import { LitecoinNodeStats } from './LitecoinStats';
 import { StatWrapper } from './Stat';
 
 __ = __context('Overview');
@@ -133,6 +134,7 @@ export default function Stats({ showingGlobe }: { showingGlobe?: boolean }) {
             <StakeWeightStat />
           </>
         )}
+        <LitecoinNodeStats />
       </StatsColumn>
     </>
   );

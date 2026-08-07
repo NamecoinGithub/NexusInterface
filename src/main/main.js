@@ -96,6 +96,11 @@ import {
   writeModuleStorage,
 } from './modules';
 import {
+  getLitecoinNodeStatus,
+  resetLitecoinMonitorCache,
+  settingsAffectLitecoinMonitor,
+} from './litecoinMonitor';
+import {
   callCoreRpc,
   callCoreRpcByUrl,
   clearCoreConfigCache,
@@ -147,6 +152,7 @@ const allowedOpenDialogProperties = new Set([
 const selectedCoreBinaries = new Map();
 const selectedModuleSources = new Map();
 const selectedDevelopmentModuleSources = new Map();
+const selectedLitecoinCookiePaths = new Map();
 const allowedAppPathNames = new Set([
   'home',
   'appData',
@@ -728,6 +734,25 @@ registerOperation(
     return result.canceled ? undefined : result.filePaths;
   }
 );
+registerOperation(
+  CHANNELS.dialogs.selectLitecoinCookie,
+  undefined,
+  async (_request, event) => {
+    const result = await dialog.showOpenDialog(mainWindow, {
+      title: 'Select Litecoin Core cookie file',
+      properties: ['openFile'],
+      filters: [
+        { name: 'Cookie file', extensions: ['cookie'] },
+        { name: 'All files', extensions: ['*'] },
+      ],
+    });
+    if (!result.canceled && result.filePaths[0]) {
+      rememberSelectedPaths(selectedLitecoinCookiePaths, event, result.filePaths);
+    }
+    // Return path only — never file contents.
+    return result.canceled ? undefined : result.filePaths;
+  }
+);
 
 // Settings and theme persistence
 registerOperation(
@@ -742,6 +767,24 @@ registerOperation(
       throw new TypeError(
         'Core binary paths must be selected through the Core binary dialog'
       );
+    }
+    if (
+      Object.prototype.hasOwnProperty.call(
+        validated,
+        'litecoinMonitoringCookiePath'
+      )
+    ) {
+      const cookiePath = validated.litecoinMonitoringCookiePath;
+      if (cookiePath) {
+        const currentPath = getRendererSettings().litecoinMonitoringCookiePath;
+        const selectedPaths =
+          selectedLitecoinCookiePaths.get(event.sender.id) || new Set();
+        if (cookiePath !== currentPath && !selectedPaths.has(cookiePath)) {
+          throw new TypeError(
+            'Litecoin cookie paths must be selected through the Litecoin cookie dialog'
+          );
+        }
+      }
     }
     if (validated.devModulePaths) {
       const currentPaths = new Set(
@@ -764,6 +807,12 @@ registerOperation(
   async (updates) => {
     updateSettingsFile(updates);
     clearCoreConfigCache();
+    // Litecoin monitoring cache must not outlive a config change. Reset after
+    // validated settings are persisted so Test connection / status reads the
+    // new host, port, cookie path, or enabled flag.
+    if (settingsAffectLitecoinMonitor(updates)) {
+      resetLitecoinMonitorCache();
+    }
     return getRendererSettings();
   }
 );
@@ -793,6 +842,17 @@ registerOperation(
   CHANNELS.theme.exportToDialog,
   undefined,
   async () => exportTheme(mainWindow)
+);
+
+// External chain monitoring (Litecoin Core). Isolated from Nexus Core lifecycle.
+registerOperation(
+  CHANNELS.externalChains.litecoinGetStatus,
+  undefined,
+  async () =>
+    getLitecoinNodeStatus({
+      bypassCache: false,
+      settings: loadSettingsFromFile(),
+    })
 );
 
 // Core lifecycle and console operations.

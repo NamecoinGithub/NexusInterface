@@ -111,6 +111,13 @@ const nexusElectron = {
       invoke(CHANNELS.dialogs.selectModuleDirectory),
     selectDevModuleDirectory: () =>
       invoke(CHANNELS.dialogs.selectDevModuleDirectory),
+    selectLitecoinCookie: () =>
+      invoke(CHANNELS.dialogs.selectLitecoinCookie),
+  },
+  externalChains: {
+    litecoin: {
+      getStatus: () => invoke(CHANNELS.externalChains.litecoinGetStatus),
+    },
   },
   core: {
     getStatus: () => invoke(CHANNELS.core.getStatus),
