@@ -410,8 +410,11 @@ test('cache is configuration-aware and labels cached/stale freshness', async () 
     },
   });
   assert.equal(stale.freshness, 'stale');
-  assert.equal(stale.connected, true);
+  // Retained metrics must not claim current reachability.
+  assert.equal(stale.connected, false);
   assert.equal(stale.blocks, 50);
+  assert.equal(stale.error?.code, 'connection_refused');
+  assert.equal(typeof stale.fetchedAt, 'string');
   assert.equal(calls, 2);
 });
 
@@ -438,16 +441,40 @@ test('renderer Litecoin query does not depend on Nexus Core connected state', ()
   assert.match(querySource, /litecoinMonitoringEnabled/);
   assert.doesNotMatch(querySource, /coreConnectedAtom|coreInfoQuery|useCoreConnected/);
   assert.match(querySource, /independent of Nexus Core connection state/i);
+  // Query identity uses a non-secret fingerprint — never raw cookie paths.
+  assert.match(querySource, /litecoinMonitoringConfigFingerprint/);
   assert.match(
     querySource,
-    /queryKey:[\s\S]*litecoinMonitoringHost[\s\S]*litecoinMonitoringRpcPort[\s\S]*litecoinMonitoringCookiePath/
+    /queryKey:[\s\S]*litecoinMonitoringConfigFingerprint\(settings\)/
+  );
+  assert.doesNotMatch(
+    querySource,
+    /queryKey:[\s\S]*litecoinMonitoringCookiePath/
   );
   assert.match(querySource, /'live' \| 'cached' \| 'stale' \| 'unavailable'/);
+  assert.match(
+    querySource,
+    /Stale retained metrics must not count as connected/
+  );
 
   const overview = read('src/App/Overview/LitecoinStats.tsx');
   assert.match(overview, /waitForCore=\{false\}/);
+  assert.match(overview, /Stale — last successful probe/);
+  assert.doesNotMatch(
+    overview,
+    /isLitecoinStatusConnected\(status\)[\s\S]*Connected/
+  );
 
   const settingsUi = read('src/App/Settings/ExternalChains/index.tsx');
+  assert.match(settingsUi, /Stale — last successful probe/);
+  assert.match(
+    settingsUi,
+    /came from the last successful probe/
+  );
+  assert.match(
+    settingsUi,
+    /retained metrics, not a current connection/
+  );
   assert.match(settingsUi, /persistLitecoinMonitoringSettings/);
 });
 
@@ -462,10 +489,30 @@ test('documentation exists for monitoring-only boundary and version policy', () 
   assert.match(securityDoc, /0\.21\.5\.6/);
   assert.match(securityDoc, /litecoin-project\/litecoin\/releases\/tag\/v0\.21\.5\.6/);
   assert.match(securityDoc, /freshness/);
+  assert.match(securityDoc, /connected:\s*false/i);
+  assert.match(securityDoc, /current reachability/i);
   assert.doesNotMatch(securityDoc, /\b5 confirmations\b|\b7 confirmations\b/);
   assert.match(userDoc, /does \*\*not\*\* manage Litecoin Core/i);
   assert.match(userDoc, /9332/);
   assert.match(userDoc, /0\.21\.5\.6/);
+  assert.match(userDoc, /Stale/i);
+});
+
+test('bridge DTO and sequence timeout cleanup stay in sync', () => {
+  const globalDts = read('src/global.d.ts');
+  assert.match(
+    globalDts,
+    /freshness:\s*'live'\s*\|\s*'cached'\s*\|\s*'stale'\s*\|\s*'unavailable'/
+  );
+  assert.match(globalDts, /unknown_version/);
+  assert.match(globalDts, /connected:\s*false/);
+
+  const monitor = read('src/main/litecoinMonitor.js');
+  assert.match(monitor, /clearTimeout\(sequenceTimer\)/);
+  assert.match(
+    monitor,
+    /asStaleFromLastGood[\s\S]*connected:\s*false[\s\S]*freshness:\s*'stale'/
+  );
 });
 
 function listen(server) {

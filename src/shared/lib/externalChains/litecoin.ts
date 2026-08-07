@@ -4,6 +4,10 @@ import { settingsAtom } from 'lib/settings';
 
 export type LitecoinNodeStatus = {
   configured: boolean;
+  /**
+   * Current reachability from the latest probe only.
+   * Retained last-good metrics use freshness: 'stale' with connected: false.
+   */
   connected: boolean;
   network?: 'main' | 'test' | 'regtest' | 'unknown';
   version?: number;
@@ -44,14 +48,50 @@ export type LitecoinNodeStatus = {
 };
 
 /**
+ * Non-secret fingerprint of monitoring configuration for React Query identity.
+ * Host/port/enabled are safe to include; cookie path is hashed so private
+ * user-directory details never appear in client query state/devtools.
+ */
+export function litecoinMonitoringConfigFingerprint(settings: {
+  litecoinMonitoringEnabled?: unknown;
+  litecoinMonitoringHost?: unknown;
+  litecoinMonitoringRpcPort?: unknown;
+  litecoinMonitoringCookiePath?: unknown;
+}): string {
+  const enabled = settings.litecoinMonitoringEnabled ? '1' : '0';
+  const host =
+    typeof settings.litecoinMonitoringHost === 'string'
+      ? settings.litecoinMonitoringHost.trim()
+      : '';
+  const port =
+    settings.litecoinMonitoringRpcPort === undefined ||
+    settings.litecoinMonitoringRpcPort === null
+      ? ''
+      : String(settings.litecoinMonitoringRpcPort).trim();
+  const cookiePath =
+    typeof settings.litecoinMonitoringCookiePath === 'string'
+      ? settings.litecoinMonitoringCookiePath.trim()
+      : '';
+  // FNV-1a 32-bit over the full config string (including cookie path).
+  const material = `${enabled}|${host}|${port}|${cookiePath}`;
+  let hash = 0x811c9dc5;
+  for (let i = 0; i < material.length; i += 1) {
+    hash ^= material.charCodeAt(i);
+    hash = Math.imul(hash, 0x01000193);
+  }
+  return (hash >>> 0).toString(16).padStart(8, '0');
+}
+
+/**
  * Litecoin monitoring query.
  *
  * Intentionally independent of Nexus Core connection state and core
  * bootstrap. Failures here must never affect Core startup, login, send
  * flow, market data, or app bootstrap.
  *
- * Query identity includes the monitored configuration so a host/port/cookie
- * or enabled change does not keep displaying a prior endpoint's status.
+ * Query identity uses a non-secret configuration fingerprint so a
+ * host/port/cookie or enabled change does not keep a prior endpoint's
+ * status, without putting raw cookie paths in client query state.
  */
 export const litecoinNodeStatusQuery = jotaiQuery<LitecoinNodeStatus>({
   condition: (get) => !!get(settingsAtom).litecoinMonitoringEnabled,
@@ -62,10 +102,7 @@ export const litecoinNodeStatusQuery = jotaiQuery<LitecoinNodeStatus>({
         'externalChains',
         'litecoin',
         'status',
-        !!settings.litecoinMonitoringEnabled,
-        settings.litecoinMonitoringHost,
-        settings.litecoinMonitoringRpcPort,
-        settings.litecoinMonitoringCookiePath,
+        litecoinMonitoringConfigFingerprint(settings),
       ],
       queryFn: async () => {
         const status =
@@ -142,13 +179,28 @@ export function describeLitecoinError(
   }
 }
 
+/**
+ * True only when the latest probe currently reaches the node.
+ * Stale retained metrics must not count as connected.
+ */
 export function isLitecoinStatusConnected(
   status?: LitecoinNodeStatus | null
 ): boolean {
   if (!status?.connected) return false;
-  return (
-    status.freshness === 'live' ||
-    status.freshness === 'cached' ||
-    status.freshness === 'stale'
-  );
+  return status.freshness === 'live' || status.freshness === 'cached';
+}
+
+/**
+ * Human-readable connectivity label distinguishing live reachability from
+ * retained last-good metrics after a failed probe.
+ */
+export function describeLitecoinConnection(
+  status?: LitecoinNodeStatus | null
+): 'connected' | 'cached' | 'stale' | 'unavailable' | 'unknown' {
+  if (!status) return 'unknown';
+  if (status.freshness === 'stale') return 'stale';
+  if (status.freshness === 'cached' && status.connected) return 'cached';
+  if (status.connected && status.freshness === 'live') return 'connected';
+  if (status.connected) return 'connected';
+  return 'unavailable';
 }

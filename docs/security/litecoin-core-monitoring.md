@@ -81,16 +81,22 @@ Any other method is unreachable through this feature.
 
 Operators should keep Litecoin Core updated independently. Nexus Interface does not auto-update Litecoin Core.
 
-## 7.1 Status freshness
+## 7.1 Status freshness and reachability
 
-| `freshness` | Meaning |
-|-------------|---------|
-| `live` | Fresh main-process RPC success for the current configuration |
-| `cached` | Reused recent successful result for the **same** configuration fingerprint |
-| `stale` | Last-good metrics retained after a later probe failure (same configuration) |
-| `unavailable` | Failure with no retained good data |
+| `freshness` | Meaning | `connected` |
+|-------------|---------|-------------|
+| `live` | Fresh main-process RPC success for the current configuration | `true` |
+| `cached` | Reused recent successful result for the **same** configuration fingerprint | `true` |
+| `stale` | Last-good metrics retained after a later probe failure (same configuration) | **`false`** |
+| `unavailable` | Failure with no retained good data | `false` |
 
-The in-memory cache is keyed by enabled flag, host, RPC port, and cookie **path**. Any persisted change to those settings resets the cache so Status / Test connection cannot show another endpoint’s result.
+**Current reachability** (`connected`) is distinct from **retained metrics**. A `stale` DTO keeps the last successful block/peer fields and `fetchedAt` from that success, but:
+
+- sets `connected: false` (the latest probe failed),
+- keeps a safe `error` from the failed probe (e.g. revoked cookie, unreachable node),
+- must be shown in the UI as **Stale — last successful probe at …**, never as Connected.
+
+The in-memory cache is keyed by enabled flag, host, RPC port, and cookie **path**. Any persisted change to those settings resets the cache so Status / Test connection cannot show another endpoint’s result. The renderer React Query key uses a non-secret configuration fingerprint (not the raw cookie path).
 
 ## 8. Safe DTO / error codes
 

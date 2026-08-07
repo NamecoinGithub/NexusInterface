@@ -4,10 +4,11 @@ import styled from '@emotion/styled';
 
 // Internal
 import {
+  describeLitecoinConnection,
   formatSyncPercent,
-  isLitecoinStatusConnected,
   litecoinMonitoringEnabledAtom,
   litecoinNodeStatusQuery,
+  type LitecoinNodeStatus,
 } from 'lib/externalChains/litecoin';
 import { formatNumber } from 'lib/intl';
 import linkIcon from 'icons/link.svg';
@@ -45,6 +46,44 @@ function networkLabel(network?: string) {
   }
 }
 
+function statusText(status?: LitecoinNodeStatus | null) {
+  switch (describeLitecoinConnection(status)) {
+    case 'connected':
+      return __('Connected');
+    case 'cached':
+      return __('Connected');
+    case 'stale':
+      return status?.fetchedAt
+        ? __('Stale — last successful probe at %{time}', {
+            time: status.fetchedAt,
+          })
+        : __('Stale — last successful probe');
+    case 'unavailable':
+      return __('Unavailable');
+    default:
+      return __('Unavailable');
+  }
+}
+
+function statusTooltip(status?: LitecoinNodeStatus | null) {
+  if (status?.freshness === 'stale') {
+    const base = status.fetchedAt
+      ? __(
+          'Stale — showing retained metrics from the last successful probe at %{time}. The node is not currently reachable.',
+          { time: status.fetchedAt }
+        )
+      : __(
+          'Stale — showing retained metrics from the last successful probe. The node is not currently reachable.'
+        );
+    return status.error?.message ? `${base} ${status.error.message}` : base;
+  }
+  return (
+    status?.warning?.message ||
+    status?.error?.message ||
+    __('User-managed Litecoin Core monitoring only')
+  );
+}
+
 /**
  * Optional Overview card for Litecoin node monitoring.
  * Independent of Nexus Core connection; uses waitForCore={false}.
@@ -58,8 +97,6 @@ export function LitecoinNodeStats() {
     return null;
   }
 
-  const connected = isLitecoinStatusConnected(status);
-  const statusText = connected ? __('Connected') : __('Unavailable');
   const blocksText =
     typeof status?.blocks === 'number' && typeof status?.headers === 'number'
       ? `${formatNumber(status.blocks, 0)} / ${formatNumber(status.headers, 0)}`
@@ -74,13 +111,9 @@ export function LitecoinNodeStats() {
         label={__('LTC status')}
         icon={linkIcon}
         waitForCore={false}
-        tooltip={
-          status?.warning?.message ||
-          status?.error?.message ||
-          __('User-managed Litecoin Core monitoring only')
-        }
+        tooltip={statusTooltip(status)}
       >
-        {statusText}
+        {statusText(status)}
         {status?.network ? ` · ${networkLabel(status.network)}` : ''}
       </Stat>
       <Stat label={__('LTC blocks')} icon={nxsblocksIcon} waitForCore={false}>

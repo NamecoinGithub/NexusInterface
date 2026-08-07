@@ -28,6 +28,10 @@ interface NexusEnvironment {
 
 type LitecoinNodeStatus = {
   configured: boolean;
+  /**
+   * Current reachability from the latest probe only.
+   * Retained last-good metrics use freshness: 'stale' with connected: false.
+   */
   connected: boolean;
   network?: 'main' | 'test' | 'regtest' | 'unknown';
   version?: number;
@@ -39,9 +43,15 @@ type LitecoinNodeStatus = {
   mempoolTransactions?: number;
   mempoolBytes?: number;
   fetchedAt: string;
-  freshness: 'live' | 'unavailable';
+  /**
+   * - live: fresh successful RPC sequence
+   * - cached: reused recent successful result for the same configuration
+   * - stale: last-good metrics retained after a later probe failure
+   * - unavailable: failure with no retained good data
+   */
+  freshness: 'live' | 'cached' | 'stale' | 'unavailable';
   warning?: {
-    code: 'unsupported_version' | 'unexpected_network';
+    code: 'unsupported_version' | 'unexpected_network' | 'unknown_version';
     message: string;
   };
   error?: {

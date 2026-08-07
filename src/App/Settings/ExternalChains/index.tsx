@@ -10,10 +10,10 @@ import {
   persistLitecoinMonitoringSettings,
 } from 'lib/settings';
 import {
+  describeLitecoinConnection,
   describeLitecoinError,
   formatLitecoinVersion,
   formatSyncPercent,
-  isLitecoinStatusConnected,
   litecoinNodeStatusQuery,
   type LitecoinNodeStatus,
 } from 'lib/externalChains/litecoin';
@@ -91,11 +91,37 @@ function networkLabel(network?: LitecoinNodeStatus['network']) {
 }
 
 function connectionLabel(status?: LitecoinNodeStatus) {
-  if (!status) return __('Unknown');
-  if (isLitecoinStatusConnected(status)) {
-    return __('Connected');
+  switch (describeLitecoinConnection(status)) {
+    case 'connected':
+    case 'cached':
+      return __('Connected');
+    case 'stale':
+      return status?.fetchedAt
+        ? __('Stale — last successful probe at %{time}', {
+            time: status.fetchedAt,
+          })
+        : __('Stale — last successful probe');
+    case 'unavailable':
+      return __('Unavailable');
+    default:
+      return __('Unknown');
   }
-  return __('Unavailable');
+}
+
+function freshnessLabel(status?: LitecoinNodeStatus | null) {
+  if (!status?.freshness || status.freshness === 'unavailable') {
+    return '';
+  }
+  if (status.freshness === 'stale') {
+    return ` (${__('stale — retained metrics, not a current connection')})`;
+  }
+  if (status.freshness === 'cached') {
+    return ` (${__('cached recent success')})`;
+  }
+  if (status.freshness === 'live') {
+    return ` (${__('live')})`;
+  }
+  return ` (${__(status.freshness)})`;
 }
 
 export default function SettingsExternalChains() {
@@ -250,10 +276,7 @@ export default function SettingsExternalChains() {
         <StatusPanel>
           <InfoField label={__('Status')}>
             {connectionLabel(displayedStatus)}
-            {displayedStatus?.freshness &&
-            displayedStatus.freshness !== 'unavailable'
-              ? ` (${__(displayedStatus.freshness)})`
-              : ''}
+            {freshnessLabel(displayedStatus)}
           </InfoField>
           <InfoField label={__('Network')}>
             {networkLabel(displayedStatus?.network)}
@@ -291,10 +314,22 @@ export default function SettingsExternalChains() {
               ? ` / ${displayedStatus.mempoolBytes} B`
               : ''}
           </InfoField>
-          <InfoField label={__('Last update')}>
+          <InfoField label={__('Last successful probe')}>
             {displayedStatus?.fetchedAt || 'N/A'}
           </InfoField>
 
+          {displayedStatus?.freshness === 'stale' && (
+            <WarningText>
+              {displayedStatus.fetchedAt
+                ? __(
+                    'Stale status: values below came from the last successful probe at %{time}, not a current node connection. The latest probe failed.',
+                    { time: displayedStatus.fetchedAt }
+                  )
+                : __(
+                    'Stale status: values below came from the last successful probe, not a current node connection. The latest probe failed.'
+                  )}
+            </WarningText>
+          )}
           {displayedStatus?.warning && (
             <WarningText>{displayedStatus.warning.message}</WarningText>
           )}

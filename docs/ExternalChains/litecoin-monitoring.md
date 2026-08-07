@@ -8,7 +8,7 @@ Security detail: [docs/security/litecoin-core-monitoring.md](../security/litecoi
 
 When enabled, Settings → **External Chains** can display:
 
-- Connectivity state (connected / unavailable)
+- Connectivity state (connected / stale / unavailable)
 - Litecoin Core version
 - Network name (mainnet / testnet / regtest / unknown)
 - Block height and header height
@@ -17,6 +17,8 @@ When enabled, Settings → **External Chains** can display:
 - Mempool transaction count and memory usage (when available)
 - Timestamp of the last successful probe
 - Safe error reasons (unreachable, bad cookie, auth failure, timeout, etc.)
+
+**Stale** means the wallet still shows metrics from the last successful probe, but the node is **not** currently reachable (for example the cookie was revoked or Litecoin Core stopped). Stale is never labeled “Connected”.
 
 Optional Overview stats mirror a subset of that status when monitoring is enabled.
 
@@ -67,7 +69,7 @@ Keep your node updated independently; the wallet will not upgrade Litecoin Core 
 
 ## Polling and performance
 
-The UI polls on a conservative interval (about 30–60 seconds) and the main process applies a short in-memory cache/backoff so a downed node is not hammered. Cache entries are tied to the current host/port/cookie/enabled configuration and are cleared when those settings are saved. Status freshness is labeled `live`, `cached`, `stale`, or `unavailable`. **Test connection** always flushes the current Settings values to the main process before probing. Requests use short timeouts so a stuck RPC cannot freeze the wallet UI.
+The UI polls on a conservative interval (about 30–60 seconds) and the main process applies a short in-memory cache/backoff so a downed node is not hammered. Cache entries are tied to the current host/port/cookie/enabled configuration and are cleared when those settings are saved. Status freshness is labeled `live`, `cached`, `stale`, or `unavailable`. A **stale** result keeps last-good numbers with an explicit failure reason and is shown as “Stale — last successful probe at …”, not connected. **Test connection** always flushes the current Settings values to the main process before probing. Requests use short timeouts so a stuck RPC cannot freeze the wallet UI.
 
 ## Future exchange research (not implemented here)
 
