@@ -57,14 +57,14 @@ export async function checkForUpdates() {
           updateInfo?: { version?: string };
         };
         if (result.mode === 'github' && result.release) {
-          const latestVerion = result.release.tagName;
+          const latestVersion = result.release.tagName;
           if (
-            semver.lt('v' + APP_VERSION, latestVerion) &&
+            semver.lt('v' + APP_VERSION, latestVersion) &&
             result.release.prerelease === false
           ) {
             updateAvailable = true;
             showBackgroundTask(AutoUpdateBackgroundTask, {
-              version: latestVerion,
+              version: latestVersion,
               gitHub: true,
             });
           }

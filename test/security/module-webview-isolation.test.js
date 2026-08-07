@@ -157,6 +157,12 @@ test('module webview hardening enforces isolation preferences', () => {
   assert.match(broker, /export async function loadModuleGuestIdentity/);
   assert.match(broker, /export function registerModuleGuest/);
   assert.doesNotMatch(broker, /export async function registerModuleGuest/);
+  // Policies must be bound to the guest session, not a global FIFO queue.
+  assert.match(security, /pendingPoliciesBySession/);
+  assert.match(security, /session\.fromPartition/);
+  assert.match(security, /webPreferences\.partition/);
+  assert.doesNotMatch(security, /pendingPolicies\.shift\(/);
+  assert.doesNotMatch(security, /pendingPolicies\.push\(/);
 });
 
 test('module preload is a minimal contextBridge surface without React or ipc leaks', () => {
