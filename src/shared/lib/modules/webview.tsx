@@ -343,17 +343,9 @@ async function publishContextUpdate(partial?: Partial<WalletData>) {
         storageData: storageData ?? {},
       },
     });
-  } catch (error) {
-    try {
-      active.send('module-api:context-changed', {
-        apiVersion: 2,
-        ...extras,
-        ...partial,
-        storageData: storageData ?? {},
-      });
-    } catch {
-      // Guest may be gone.
-    }
+  } catch {
+    // Fail closed: never push unsanitized context from the renderer if the
+    // main-process sanitizer path is unavailable.
   }
 }
 
