@@ -1,6 +1,7 @@
 import crypto from 'crypto';
 import fs from 'fs';
 import macaddress from 'macaddress';
+import os from 'os';
 import path from 'path';
 
 import {
@@ -100,7 +101,7 @@ export function getDefaultSettings() {
     sendUsageData: true,
     fiatCurrency: 'USD',
     minConfirmations: 3,
-    backupDirectory: path.join(process.env.HOME || '', 'NexusBackups'),
+    backupDirectory: path.join(os.homedir(), 'NexusBackups'),
     devMode: false,
     verifyModuleSource: true,
     fakeTransactions: false,

@@ -155,3 +155,28 @@ test('main process emits structured Core lifecycle diagnostics', () => {
   assert.match(main, /ipc\.core\.exit/);
   assert.match(main, /CORE_TRACE_CHANNELS/);
 });
+
+test('default backup directory uses os.homedir instead of HOME-only env', () => {
+  const settings = read('src', 'main', 'settings.js');
+  assert.match(settings, /import os from 'os'/);
+  assert.match(settings, /path\.join\(os\.homedir\(\),\s*'NexusBackups'\)/);
+  assert.doesNotMatch(
+    settings,
+    /backupDirectory:\s*path\.join\(process\.env\.HOME/
+  );
+});
+
+test('language selection persists locale once before reload', () => {
+  const selectLanguage = read('src', 'App', 'Overlays', 'SelectLanguage.tsx');
+  assert.match(
+    selectLanguage,
+    /await window\.nexusElectron\.settings\.update\(\{\s*locale:\s*selection\s*\}\)/
+  );
+  assert.doesNotMatch(selectLanguage, /updateSettings\(\{\s*locale:/);
+});
+
+test('updater GitHub release version variable is spelled correctly', () => {
+  const updater = read('src', 'shared', 'lib', 'updater', 'index.tsx');
+  assert.match(updater, /const latestVersion = result\.release\.tagName/);
+  assert.doesNotMatch(updater, /latestVerion/);
+});

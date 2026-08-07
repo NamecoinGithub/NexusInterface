@@ -1,4 +1,5 @@
-import { app } from 'electron';
+import { randomBytes } from 'crypto';
+import { app, session } from 'electron';
 import { fileURLToPath } from 'url';
 
 import { getDomain } from './fileServer';
@@ -11,7 +12,8 @@ import {
 } from './moduleBroker';
 
 const authorizedEntries = new Map();
-const pendingPolicies = [];
+/** @type {Map<Electron.Session, object>} */
+const pendingPoliciesBySession = new Map();
 
 function moduleUrlPrefix(moduleName) {
   return `${getDomain()}/modules/${encodeURIComponent(moduleName)}/`;
@@ -79,14 +81,19 @@ export function hardenModuleWebviews(mainWindow) {
       webPreferences.preload = getModulePreloadPath();
       delete webPreferences.preloadURL;
 
-      pendingPolicies.push(policy);
+      // Associate policy with a unique guest session so concurrent WebView
+      // attaches cannot apply the wrong navigation/window-open restrictions.
+      const partition = `nexus-module:${randomBytes(16).toString('hex')}`;
+      webPreferences.partition = partition;
+      pendingPoliciesBySession.set(session.fromPartition(partition), policy);
     }
   );
 }
 
 app.on('web-contents-created', (_event, contents) => {
   if (contents.getType() !== 'webview') return;
-  const policy = pendingPolicies.shift();
+  const policy = pendingPoliciesBySession.get(contents.session);
+  pendingPoliciesBySession.delete(contents.session);
   if (!policy?.identity) {
     contents.close();
     return;
