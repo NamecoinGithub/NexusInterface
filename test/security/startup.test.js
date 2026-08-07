@@ -58,16 +58,28 @@ test('embedded Core start always supplies API auth and probes already-running Co
   const coreConf = read('src', 'main', 'ipc', 'coreConf.js');
   const wallet = read('src', 'shared', 'lib', 'wallet.ts');
 
-  assert.match(core, /apiuser=\$\{configuration\.apiUser\}/);
-  assert.match(core, /apipassword=\$\{configuration\.apiPassword\}/);
+  // API credentials must live in nexus.conf (0600), never on the Core CLI —
+  // process listings would otherwise leak -apiuser/-apipassword.
+  assert.doesNotMatch(core, /`-apiuser=\$\{configuration\.apiUser\}`/);
+  assert.doesNotMatch(core, /`-apipassword=\$\{configuration\.apiPassword\}`/);
+  assert.doesNotMatch(core, /-apiuser=\$\{configuration\.apiUser\}/);
+  assert.doesNotMatch(core, /-apipassword=\$\{configuration\.apiPassword\}/);
+  // Non-secret bind flags are still passed on the CLI.
   assert.match(core, /apissl=\$\{apiSSL \? '1' : '0'\}/);
   assert.match(core, /apisslport=\$\{configuration\.apiPortSSL\}/);
   assert.match(core, /probeCoreApi/);
   assert.match(core, /apiReachable/);
   assert.match(core, /waitForCoreApi|CORE_API_READY_TIMEOUT_MS/);
   assert.match(core, /stopEmbeddedCore/);
+  // Never kill an unrelated Core that merely shares the binary name/path.
+  assert.match(core, /commandUsesDataDir/);
+  assert.match(core, /unmanaged-core-api-unreachable/);
+  assert.match(core, /getCorePID\(\{\s*dataDir:\s*settings\.coreDataDir\s*\}\)/);
   assert.match(coreRpc, /probeCoreApi/);
   assert.match(coreRpc, /resolveEmbeddedCoreConnection/);
+  // Credentials are ensured in conf before Core start.
+  assert.match(coreConf, /apiuser:\s*'apiserver'|apiuser:/);
+  assert.match(coreConf, /apipassword:/);
   // Core only honors apisslport in nexus.conf — never write only apiportssl.
   assert.match(coreConf, /apisslport:\s*desiredPortSSL/);
   assert.match(coreConf, /delete config\.apiportssl/);

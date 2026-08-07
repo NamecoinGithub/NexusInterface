@@ -204,6 +204,31 @@ function splitCommandParts(command) {
   return parts;
 }
 
+/**
+ * True when a process command line targets the wallet's Core data directory.
+ * Used to avoid killing an unrelated user-managed Core that shares the same
+ * binary name/path but was started with a different -datadir=.
+ */
+function commandUsesDataDir(command, dataDir) {
+  if (!command || !dataDir) {
+    return false;
+  }
+
+  const normalizedDataDir = path.normalize(String(dataDir).trim());
+  if (!normalizedDataDir) {
+    return false;
+  }
+
+  return splitCommandParts(command).some((part) => {
+    const match = /^[-/]datadir=(.+)$/i.exec(part);
+    if (!match) {
+      return false;
+    }
+    const value = match[1].replace(/^(['"])(.*)\1$/, '$2');
+    return path.normalize(value) === normalizedDataDir;
+  });
+}
+
 function parseWindowsCSVLine(line) {
   const fields = [];
   let field = '';
@@ -230,13 +255,13 @@ function parseWindowsCSVLine(line) {
   return fields;
 }
 
-function findCorePIDInProcessList(
+function findCoreProcessesInProcessList(
   processList,
   coreBinaryPath,
   resolvedCoreBinaryName
 ) {
   const normalizedCoreBinaryPath = path.normalize(coreBinaryPath);
-  const matchingProcess = processList
+  return processList
     .toString()
     .split('\n')
     .map((output) => {
@@ -248,18 +273,17 @@ function findCorePIDInProcessList(
         command: match[2],
       };
     })
-    .find(
+    .filter(
       (processInfo) =>
         processInfo &&
         processInfo.pid > 1 &&
+        !Number.isNaN(processInfo.pid) &&
         commandMatchesCore(
           processInfo.command,
           normalizedCoreBinaryPath,
           resolvedCoreBinaryName
         )
     );
-
-  return matchingProcess ? matchingProcess.pid : null;
 }
 
 function getExecutableCoreBinary() {
@@ -292,58 +316,132 @@ export function coreBinaryStatus() {
 }
 
 /**
- * Get Process ID of core process if core is running
+ * List running Core processes (pid + command line) for the configured binary.
+ * Prefer command lines that include arguments so callers can match -datadir=.
  *
- * @returns {string} PID
- * @memberof Core
+ * @returns {Promise<Array<{ pid: number, command: string }>>}
  */
-async function getCorePID() {
+async function listCoreProcesses() {
   const { path: coreBinaryPath, name: resolvedCoreBinaryName } =
     getExecutableCoreBinary();
   const modEnv = { ...process.env, Nexus_Daemon: resolvedCoreBinaryName };
-  let PID;
 
   if (process.platform == 'win32') {
-    const taskList = await execFile(
-      'tasklist',
-      ['/NH', '/v', '/fo', 'CSV'],
-      { env: modEnv }
-    );
-    const matchingProcess = taskList
-      .toString()
-      .split('\n')
-      .find((output) => output.includes(`"${resolvedCoreBinaryName}"`));
-    if (matchingProcess) {
-      const fields = parseWindowsCSVLine(matchingProcess);
-      // tasklist CSV fields are "Image Name","PID",... so PID is column index 1.
-      PID =
-        fields.length > windowsTasklistPidIndex
-          ? Number(fields[windowsTasklistPidIndex])
-          : null;
-    }
-  } else {
-    PID = findCorePIDInProcessList(
-      await execFile(
-        'ps',
-        process.platform == 'darwin'
-          ? ['-axo', 'pid=,comm=,args=']
-          : ['-eo', 'pid=,comm=,args='],
+    // tasklist does not include argv; use Win32_Process so -datadir= is visible.
+    // Pass the image name via env (not string interpolation) so a hostile
+    // binary basename cannot break out of a PowerShell -Command string.
+    try {
+      const psEnv = {
+        ...modEnv,
+        NEXUS_CORE_IMAGE_NAME: resolvedCoreBinaryName,
+      };
+      const stdout = await execFile(
+        'powershell.exe',
+        [
+          '-NoProfile',
+          '-Command',
+          "Get-CimInstance Win32_Process | Where-Object { $_.Name -eq $env:NEXUS_CORE_IMAGE_NAME } | Select-Object ProcessId,CommandLine | ConvertTo-Csv -NoTypeInformation",
+        ],
+        { env: psEnv }
+      );
+      // execFile wrapper resolves with stdout text (string or Buffer).
+      const lines = String(stdout)
+        .split(/\r?\n/)
+        .map((line) => line.trim())
+        .filter(Boolean)
+        // Skip CSV header: "ProcessId","CommandLine"
+        .slice(1);
+
+      return lines
+        .map((line) => {
+          const fields = parseWindowsCSVLine(line);
+          const pid = Number(fields[0]);
+          const command = fields[1] || '';
+          if (!pid || Number.isNaN(pid) || pid < 2) {
+            return null;
+          }
+          return { pid, command };
+        })
+        .filter(Boolean);
+    } catch (error) {
+      // Fall back to tasklist (name/PID only) when CIM is unavailable.
+      log.info(
+        `Core Manager: Unable to read Core command lines on Windows (${
+          error?.message || error
+        }); falling back to tasklist`
+      );
+      const taskList = await execFile(
+        'tasklist',
+        ['/NH', '/v', '/fo', 'CSV'],
         { env: modEnv }
-      ),
-      coreBinaryPath,
-      resolvedCoreBinaryName
-    );
+      );
+      return String(taskList)
+        .split('\n')
+        .map((output) => {
+          if (!output.includes(`"${resolvedCoreBinaryName}"`)) {
+            return null;
+          }
+          const fields = parseWindowsCSVLine(output);
+          // tasklist CSV fields are "Image Name","PID",... so PID is column index 1.
+          const pid =
+            fields.length > windowsTasklistPidIndex
+              ? Number(fields[windowsTasklistPidIndex])
+              : null;
+          if (!pid || Number.isNaN(pid) || pid < 2) {
+            return null;
+          }
+          // No argv available — callers that require -datadir= will skip these.
+          return { pid, command: resolvedCoreBinaryName };
+        })
+        .filter(Boolean);
+    }
   }
 
-  if (!PID || Number.isNaN(PID) || PID < 2) {
-    return null;
-  } else {
-    return PID;
-  }
+  return findCoreProcessesInProcessList(
+    await execFile(
+      'ps',
+      process.platform == 'darwin'
+        ? ['-axo', 'pid=,comm=,args=']
+        : ['-eo', 'pid=,comm=,args='],
+      { env: modEnv }
+    ),
+    coreBinaryPath,
+    resolvedCoreBinaryName
+  );
 }
 
 /**
- * Returns true if the PID is found.
+ * Get Process ID of core process if core is running.
+ *
+ * When `dataDir` is provided, only a process whose command line includes
+ * `-datadir=<dataDir>` is returned. Kill/restart paths MUST pass dataDir so an
+ * unrelated user-managed Core that merely shares the same binary name is never
+ * targeted.
+ *
+ * When `dataDir` is omitted, the first matching binary is returned. That mode is
+ * detection-only (e.g. isCoreRunning) and must not be used to decide what to kill.
+ *
+ * @param {{ dataDir?: string|null }} [options]
+ * @returns {Promise<number|null>} PID
+ * @memberof Core
+ */
+async function getCorePID({ dataDir = null } = {}) {
+  const processes = await listCoreProcesses();
+  const match = dataDir
+    ? processes.find((processInfo) =>
+        commandUsesDataDir(processInfo.command, dataDir)
+      )
+    : processes[0];
+
+  if (!match || !match.pid || Number.isNaN(match.pid) || match.pid < 2) {
+    return null;
+  }
+  return match.pid;
+}
+
+/**
+ * Returns true if any Core binary process is found (detection only).
+ * Does not imply the process is wallet-managed; kill paths use dataDir matching.
  * @returns { boolean } If the core is running.
  * @memberof Core
  */
@@ -398,10 +496,14 @@ function buildConfiguredCoreParams(settings, configuration) {
     version.includes('alpha') || version.includes('beta') || !!lockedTestnet;
   const apiSSL = configuration.apiSSL !== false;
 
-  // Pass API auth and bind settings on the CLI as well as via nexus.conf.
-  // Core disables the API entirely when apiuser/apipassword are missing, and
-  // defaults the SSL API port to 8443 unless apisslport is set — both of which
-  // leave the GUI stuck on "Connecting to Nexus Core..." while P2P still works.
+  // Pass non-secret API bind settings on the CLI. API credentials must NOT be
+  // passed as -apiuser/-apipassword here: process listings (ps, Task Manager)
+  // would leak them. Credentials are persisted to nexus.conf with mode 0600 by
+  // resolveEmbeddedCoreConnection / getCoreConfiguration before spawn.
+  // Core disables the API entirely when apiuser/apipassword are missing from
+  // conf, and defaults the SSL API port to 8443 unless apisslport is set —
+  // both of which leave the GUI stuck on "Connecting to Nexus Core..." while
+  // P2P still works.
   const params = [
     '-daemon',
     '-server',
@@ -411,8 +513,6 @@ function buildConfiguredCoreParams(settings, configuration) {
     `-apissl=${apiSSL ? '1' : '0'}`,
     '-p2pssl=1',
     `-datadir=${settings.coreDataDir}`,
-    `-apiuser=${configuration.apiUser}`,
-    `-apipassword=${configuration.apiPassword}`,
     `-apisslport=${configuration.apiPortSSL}`,
     `-apiport=${configuration.apiPort}`,
     `-verbose=${preRelease ? 3 : settings.verboseLevel}`,
@@ -599,11 +699,34 @@ export async function startConfiguredCore() {
       return { started: false, reason: 'already-running', apiReachable: true };
     }
 
+    // getCorePID() without a datadir filter matches by binary name/path only.
+    // Only kill + restart when the process is clearly this wallet's managed
+    // instance (-datadir= matches). Otherwise we risk killing an unrelated
+    // user-managed Core and potentially causing data loss.
+    const managedPid = await getCorePID({ dataDir: settings.coreDataDir });
+    if (!managedPid) {
+      log.warn(
+        `Core Manager: A Nexus Core process is running but is not managed by this wallet ` +
+          `(no matching -datadir=${settings.coreDataDir}) and API is unreachable (${probe.error}). ` +
+          'Refusing to kill an unrelated Core instance.'
+      );
+      log.warn('core.restart.unmanaged_refused', { error: probe.error });
+      return {
+        started: false,
+        reason: 'unmanaged-core-api-unreachable',
+        apiReachable: false,
+        apiError: probe.error,
+      };
+    }
+
     log.warn(
-      `Core Manager: Core process is running but API is unreachable (${probe.error}). ` +
+      `Core Manager: Wallet-managed Core process is running but API is unreachable (${probe.error}). ` +
         'Restarting Core with wallet API settings so the GUI can connect.'
     );
-    log.warn('core.restart.mismatched_api', { error: probe.error });
+    log.warn('core.restart.mismatched_api', {
+      error: probe.error,
+      pid: managedPid,
+    });
     await killCoreProcess();
     await new Promise((resolve) =>
       setTimeout(resolve, CORE_PORT_RELEASE_DELAY_MS)
@@ -676,13 +799,18 @@ export async function resyncLiteDatabase() {
 }
 
 /**
- * Find the Core's PID and then kill the task.
+ * Find the wallet-managed Core's PID and then kill the task.
+ * Only processes started with this wallet's -datadir= are targeted so an
+ * unrelated user-managed Core sharing the same binary is left alone.
  * @memberof Core
  */
 export async function killCoreProcess() {
-  const corePID = await getCorePID();
+  const settings = loadSettingsFromFile();
+  const corePID = await getCorePID({ dataDir: settings.coreDataDir });
   if (!corePID) {
-    log.info('Core Manager: No Nexus Core process found to kill');
+    log.info(
+      'Core Manager: No wallet-managed Nexus Core process found to kill'
+    );
     return false;
   }
 
