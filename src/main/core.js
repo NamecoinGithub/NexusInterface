@@ -328,21 +328,24 @@ async function listCoreProcesses() {
 
   if (process.platform == 'win32') {
     // tasklist does not include argv; use Win32_Process so -datadir= is visible.
+    // Pass the image name via env (not string interpolation) so a hostile
+    // binary basename cannot break out of a PowerShell -Command string.
     try {
+      const psEnv = {
+        ...modEnv,
+        NEXUS_CORE_IMAGE_NAME: resolvedCoreBinaryName,
+      };
       const stdout = await execFile(
         'powershell.exe',
         [
           '-NoProfile',
           '-Command',
-          `Get-CimInstance Win32_Process -Filter "Name='${resolvedCoreBinaryName.replace(
-            /'/g,
-            "''"
-          )}'" | Select-Object ProcessId,CommandLine | ConvertTo-Csv -NoTypeInformation`,
+          "Get-CimInstance Win32_Process | Where-Object { $_.Name -eq $env:NEXUS_CORE_IMAGE_NAME } | Select-Object ProcessId,CommandLine | ConvertTo-Csv -NoTypeInformation",
         ],
-        { env: modEnv }
+        { env: psEnv }
       );
-      const lines = stdout
-        .toString()
+      // execFile wrapper resolves with stdout text (string or Buffer).
+      const lines = String(stdout)
         .split(/\r?\n/)
         .map((line) => line.trim())
         .filter(Boolean)
@@ -372,8 +375,7 @@ async function listCoreProcesses() {
         ['/NH', '/v', '/fo', 'CSV'],
         { env: modEnv }
       );
-      return taskList
-        .toString()
+      return String(taskList)
         .split('\n')
         .map((output) => {
           if (!output.includes(`"${resolvedCoreBinaryName}"`)) {
@@ -388,6 +390,7 @@ async function listCoreProcesses() {
           if (!pid || Number.isNaN(pid) || pid < 2) {
             return null;
           }
+          // No argv available — callers that require -datadir= will skip these.
           return { pid, command: resolvedCoreBinaryName };
         })
         .filter(Boolean);
