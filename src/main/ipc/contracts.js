@@ -29,10 +29,6 @@ const CHANNELS = Object.freeze({
     selectModuleArchive: 'dialogs:select-module-archive',
     selectModuleDirectory: 'dialogs:select-module-directory',
     selectDevModuleDirectory: 'dialogs:select-dev-module-directory',
-    selectLitecoinCookie: 'dialogs:select-litecoin-cookie',
-  }),
-  externalChains: Object.freeze({
-    litecoinGetStatus: 'externalChains:litecoin-get-status',
   }),
   core: Object.freeze({
     getStatus: 'core:get-status',
@@ -219,10 +215,6 @@ const ALLOWED_SETTINGS_FIELDS = new Set([
   'disabledModules',
   'allowSymLink',
   'devModulePaths',
-  'litecoinMonitoringEnabled',
-  'litecoinMonitoringHost',
-  'litecoinMonitoringRpcPort',
-  'litecoinMonitoringCookiePath',
   'showUnusedNames',
   'acceptedAgreement',
   'bootstrapSuggestionDisabled',
@@ -338,31 +330,6 @@ function validateSettingsUpdate(value) {
         ))
     ) {
       fail('Manual daemon host is invalid');
-    }
-    if (key === 'litecoinMonitoringEnabled') {
-      assertBoolean(fieldValue, 'litecoinMonitoringEnabled');
-    }
-    if (key === 'litecoinMonitoringHost') {
-      if (fieldValue !== '127.0.0.1' && fieldValue !== '::1') {
-        fail('Litecoin monitoring host must be 127.0.0.1 or ::1');
-      }
-    }
-    if (
-      key === 'litecoinMonitoringRpcPort' &&
-      (typeof fieldValue !== 'string' ||
-        !/^\d{1,5}$/.test(fieldValue) ||
-        Number(fieldValue) < 1 ||
-        Number(fieldValue) > 65535)
-    ) {
-      fail('Litecoin monitoring RPC port is invalid');
-    }
-    if (key === 'litecoinMonitoringCookiePath') {
-      if (typeof fieldValue !== 'string' || fieldValue.length > 4096) {
-        fail('Litecoin cookie path is invalid');
-      }
-      if (fieldValue.includes('\0')) {
-        fail('Litecoin cookie path is invalid');
-      }
     }
     if (
       ['manualDaemonApiPort', 'manualDaemonApiPortSSL', 'embeddedCoreApiPort', 'embeddedCoreApiPortSSL'].includes(

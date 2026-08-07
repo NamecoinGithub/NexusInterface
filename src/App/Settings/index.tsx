@@ -16,7 +16,6 @@ import SettingsApp from './App';
 import SettingsCore from './Core';
 import SettingsStyle from './Style';
 import SettingsModules from './Modules';
-import SettingsExternalChains from './ExternalChains';
 
 // Images
 import settingsIcon from 'icons/settings.svg';
@@ -24,7 +23,6 @@ import coreIcon from 'icons/core.svg';
 import logoIcon from 'icons/logo.svg';
 import leafIcon from 'icons/leaf.svg';
 import legoIcon from 'icons/lego-block.svg';
-import linkIcon from 'icons/link.svg';
 
 __ = __context('Settings');
 
@@ -115,11 +113,6 @@ export default function Settings() {
               </>
             }
           />
-          <RouterHorizontalTab
-            link="/Settings/ExternalChains"
-            icon={linkIcon}
-            text={__('External Chains')}
-          />
         </SettingsTabBar>
 
         <SettingsContent>
@@ -129,10 +122,6 @@ export default function Settings() {
               <Route path="Core" element={<SettingsCore />} />
               <Route path="Style" element={<SettingsStyle />} />
               <Route path="Modules" element={<SettingsModules />} />
-              <Route
-                path="ExternalChains"
-                element={<SettingsExternalChains />}
-              />
               <Route path="*" element={<SettingsRedirect />} />
             </Routes>
           </SettingsContainer>
