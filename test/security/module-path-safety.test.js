@@ -8,6 +8,7 @@ const path = require('node:path');
 const test = require('node:test');
 
 const {
+  STAGING_DIR_INFIX,
   copyModuleFiles,
   installModuleDirectory,
   readRegularFileNoFollow,
@@ -218,7 +219,7 @@ test('installModuleDirectory stages then renames a complete module tree', async 
     );
 
     const leftovers = (await fsp.readdir(modulesHome)).filter((name) =>
-      name.includes('.installing-')
+      name.includes(STAGING_DIR_INFIX)
     );
     assert.deepEqual(leftovers, []);
 
@@ -231,7 +232,7 @@ test('installModuleDirectory stages then renames a complete module tree', async 
     );
     assert.equal(fs.existsSync(destRoot), false);
     const failedLeftovers = (await fsp.readdir(modulesHome)).filter((name) =>
-      name.includes('.installing-')
+      name.includes(STAGING_DIR_INFIX)
     );
     assert.deepEqual(failedLeftovers, []);
   } finally {

@@ -15,6 +15,7 @@ const fsp = require('fs/promises');
 const path = require('path');
 
 const DEFAULT_MAX_FILE_BYTES = 100 * 1024 * 1024;
+const STAGING_DIR_INFIX = '.installing-';
 
 function isPathWithinDirectory(candidatePath, directoryPath) {
   const relativePath = path.relative(
@@ -106,7 +107,7 @@ async function assertOpenedFileInsideRoot(handle, openPath, rootPath, label) {
 
 /**
  * Read a regular file under root without following leaf or intermediate
- * symlinks into a successful install copy.
+ * symlinks. Used to safely read source files during module installation.
  */
 async function readRegularFileNoFollow(
   filePath,
@@ -228,12 +229,10 @@ async function copyModuleFiles(
   ];
   const promises = uniqueFiles.map(copyOne);
 
+  // Optional companion metadata; readRegularFileNoFollow enforces non-symlink.
   const repoInfoPath = path.join(sourceRoot, 'repo_info.json');
   try {
-    const repoInfoStat = await fsp.lstat(repoInfoPath);
-    if (!repoInfoStat.isFile() || repoInfoStat.isSymbolicLink()) {
-      throw new Error('repo_info.json must not be a symbolic link');
-    }
+    await fsp.lstat(repoInfoPath);
     promises.push(copyOne('repo_info.json'));
   } catch (err) {
     if (err?.code !== 'ENOENT') throw err;
@@ -257,7 +256,7 @@ async function installModuleDirectory(
   const destName = path.basename(destPath);
   const stagingPath = path.join(
     destParent,
-    `.${destName}.installing-${crypto.randomUUID()}`
+    `.${destName}${STAGING_DIR_INFIX}${crypto.randomUUID()}`
   );
 
   await ensureDirExists(destParent);
@@ -273,6 +272,7 @@ async function installModuleDirectory(
 
 module.exports = {
   DEFAULT_MAX_FILE_BYTES,
+  STAGING_DIR_INFIX,
   assertNoSymlinkComponents,
   copyModuleFiles,
   installModuleDirectory,
