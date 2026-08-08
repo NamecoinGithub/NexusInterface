@@ -435,7 +435,7 @@ async function mapPool(items, concurrency, worker) {
   return results;
 }
 
-function collectUniqueModuleFiles(files, sourceRoot) {
+function collectUniqueModuleFiles(files) {
   // Deduplicate declared paths so exclusive wx writes cannot race on duplicates.
   return [
     'nxs_package.json',
@@ -478,7 +478,7 @@ async function materializeAppOwnedSourceSnapshot(
   await fsp.mkdir(snapRoot, { recursive: false });
 
   const uniqueFiles = await appendOptionalRepoInfo(
-    collectUniqueModuleFiles(files, sourceRoot),
+    collectUniqueModuleFiles(files),
     sourceRoot
   );
 
@@ -591,7 +591,7 @@ async function copyModuleFiles(
   };
 
   const uniqueFiles = await appendOptionalRepoInfo(
-    collectUniqueModuleFiles(files, sourceRoot),
+    collectUniqueModuleFiles(files),
     sourceRoot
   );
 
