@@ -70,6 +70,8 @@ async function resolveModuleAsset(moduleName, relativePath) {
     throw new Error('Module asset must be a regular non-symlink file');
   }
 
+  // realpath still matters for intermediate parent-directory symlinks.
+  // leafStat.size is safe here because the leaf itself is a non-symlink file.
   const realRoot = await fs.realpath(moduleRoot);
   const realFile = await fs.realpath(resolvedPath);
   if (realFile !== realRoot && !realFile.startsWith(`${realRoot}${path.sep}`)) {
