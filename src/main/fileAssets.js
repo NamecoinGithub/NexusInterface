@@ -6,7 +6,12 @@ import axios from 'axios';
 import { parse } from 'csv-parse/sync';
 import { Reader } from 'maxmind';
 
-import { assertExternalUrl, assertSafeModuleName, assertString } from './ipc/contracts';
+import {
+  assertExternalUrl,
+  assertRelativeModulePath,
+  assertSafeModuleName,
+  assertString,
+} from './ipc/contracts';
 import {
   EXTERNAL_ICON_REQUEST_OPTIONS,
   getPublicGeoIpRequestOptions,
@@ -38,18 +43,40 @@ const locales = new Set([
 
 let geoIpReaderPromise;
 
+/**
+ * Resolve a module-relative asset to a real, non-symlink path that stays under
+ * the module root. Mirrors fileServer.js authorize checks so untrusted module
+ * trees cannot escape via symlinks or parent-directory segments.
+ */
 async function resolveModuleAsset(moduleName, relativePath) {
   const name = assertSafeModuleName(moduleName);
-  const assetPath = assertString(relativePath, 'Module asset path', {
-    min: 1,
-    max: 1024,
-  });
+  const assetPath = assertRelativeModulePath(
+    assertString(relativePath, 'Module asset path', {
+      min: 1,
+      max: 1024,
+    })
+  );
   const { root: moduleRoot } = await resolveModuleRoot(name);
   const resolvedPath = path.resolve(moduleRoot, assetPath);
-  if (!resolvedPath.startsWith(`${moduleRoot}${path.sep}`)) {
+  if (
+    resolvedPath !== moduleRoot &&
+    !resolvedPath.startsWith(`${moduleRoot}${path.sep}`)
+  ) {
     throw new Error('Module asset must be inside its installed module directory');
   }
-  return resolvedPath;
+
+  const leafStat = await fs.lstat(resolvedPath);
+  if (leafStat.isSymbolicLink() || !leafStat.isFile()) {
+    throw new Error('Module asset must be a regular non-symlink file');
+  }
+
+  const realRoot = await fs.realpath(moduleRoot);
+  const realFile = await fs.realpath(resolvedPath);
+  if (realFile !== realRoot && !realFile.startsWith(`${realRoot}${path.sep}`)) {
+    throw new Error('Module asset realpath escapes module root');
+  }
+
+  return { path: realFile, size: leafStat.size };
 }
 
 export async function readModuleIcon(moduleName, relativePath) {
@@ -57,9 +84,11 @@ export async function readModuleIcon(moduleName, relativePath) {
   if (!['.svg', '.png'].includes(extension)) {
     throw new Error('Unsupported module icon type');
   }
-  const iconPath = await resolveModuleAsset(moduleName, relativePath);
-  const stat = await fs.stat(iconPath);
-  if (!stat.isFile() || stat.size > 1024 * 1024) {
+  const { path: iconPath, size } = await resolveModuleAsset(
+    moduleName,
+    relativePath
+  );
+  if (size > 1024 * 1024) {
     throw new Error('Module icon is not a supported file');
   }
   if (extension === '.svg') return { type: 'svg', content: await fs.readFile(iconPath, 'utf8') };
