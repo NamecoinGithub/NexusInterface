@@ -365,8 +365,11 @@ function assertAdvancedCoreParams(value) {
   while ((match = pattern.exec(raw)) !== null) {
     parts.push(match[1] ?? match[2] ?? match[3]);
   }
-  if (!parts.length || parts.length > 32) {
-    fail('Advanced Core params are invalid');
+  if (!parts.length) {
+    fail('Advanced Core params must contain at least one flag');
+  }
+  if (parts.length > 32) {
+    fail('Advanced Core params exceed the maximum allowed flag count');
   }
 
   for (const part of parts) {

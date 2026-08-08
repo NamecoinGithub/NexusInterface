@@ -633,7 +633,14 @@ async function copyModuleFiles(files, source, dest) {
     const content = await readRegularFileNoFollow(from, file);
     await fsp.writeFile(to, content, { flag: 'wx' });
   };
-  const promises = [copyOne('nxs_package.json'), ...files.map(copyOne)];
+
+  // Always copy the manifest once, then the declared payload files (excluding
+  // the manifest if the package list also names it).
+  const uniqueFiles = [
+    'nxs_package.json',
+    ...files.filter((file) => file !== 'nxs_package.json' && file !== 'repo_info.json'),
+  ];
+  const promises = uniqueFiles.map(copyOne);
   const repoInfoPath = join(source, 'repo_info.json');
   try {
     const repoInfoStat = await fsp.lstat(repoInfoPath);
