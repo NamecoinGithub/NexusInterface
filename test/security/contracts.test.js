@@ -138,9 +138,15 @@ test('settings updates reject dangerous Core overrides and relative paths', () =
     }
   );
 
+  // Positive case must use a host-platform absolute path: POSIX absolute paths
+  // are intentionally rejected on Windows by assertAbsoluteFilesystemPath.
+  const absoluteCoreDataDir =
+    process.platform === 'win32'
+      ? 'C:\\Users\\user\\.Nexus'
+      : '/home/user/.Nexus';
   assert.equal(
-    assertAbsoluteFilesystemPath('/home/user/.Nexus', 'coreDataDir'),
-    '/home/user/.Nexus'
+    assertAbsoluteFilesystemPath(absoluteCoreDataDir, 'coreDataDir'),
+    absoluteCoreDataDir
   );
   assert.equal(
     assertAdvancedCoreParams('-mining=1 -stake=1'),

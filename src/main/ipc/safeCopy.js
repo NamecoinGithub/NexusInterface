@@ -202,10 +202,27 @@ async function openRegularFileNoFollowFdRelative(
     throw new Error(`${label} module root must be a directory`);
   }
 
-  let dirHandle = await fsp.open(
-    resolvedRoot,
-    fs.constants.O_RDONLY | fs.constants.O_DIRECTORY
-  );
+  // O_NOFOLLOW on the root open closes the lstat→open TOCTOU where the root
+  // itself is replaced with a symlink and the walk would otherwise anchor
+  // outside the intended module tree.
+  let dirHandle;
+  try {
+    dirHandle = await fsp.open(
+      resolvedRoot,
+      fs.constants.O_RDONLY |
+        fs.constants.O_DIRECTORY |
+        fs.constants.O_NOFOLLOW
+    );
+  } catch (err) {
+    if (
+      err?.code === 'ELOOP' ||
+      err?.code === 'EMLINK' ||
+      err?.code === 'EINVAL'
+    ) {
+      throw new Error(`${label} module root must not be a symbolic link`);
+    }
+    throw err;
+  }
   try {
     for (let index = 0; index < segments.length; index += 1) {
       const segment = segments[index];
@@ -455,7 +472,7 @@ async function installModuleDirectory(
   files,
   source,
   dest,
-  { maxBytes = DEFAULT_MAX_FILE_BYTES } = {}
+  { maxBytes = DEFAULT_MAX_FILE_BYTES, verifyStaging } = {}
 ) {
   const destPath = path.resolve(dest);
   const destParent = path.dirname(destPath);
@@ -469,6 +486,12 @@ async function installModuleDirectory(
   await fsp.mkdir(stagingPath, { recursive: false });
   try {
     await copyModuleFiles(files, source, stagingPath, { maxBytes });
+    // Validate the app-owned staging tree before publishing so a source that
+    // mutates after the copy plan was captured cannot land a mismatched
+    // descriptor/file set at the final install path.
+    if (typeof verifyStaging === 'function') {
+      await verifyStaging(stagingPath);
+    }
     await fsp.rename(stagingPath, destPath);
   } catch (err) {
     await fsp.rm(stagingPath, { recursive: true, force: true }).catch(() => {});
