@@ -36,6 +36,31 @@ test('module asset and entry resolvers reject symlinks and realpath escapes', ()
   assert.match(fileAssets, /assertRelativeModulePath/);
   assert.match(fileAssets, /readModuleIcon/);
   assert.match(moduleFiles, /resolveModuleFile/);
+  assert.match(
+    moduleFiles,
+    /Module root must not be a symlink/,
+    'installed module roots must reject directory symlinks'
+  );
+  assert.match(
+    moduleFiles,
+    /escapes modules directory/,
+    'installed module roots must stay under modulesDir'
+  );
+});
+
+test('electron-updater uses patched builder-util-runtime', () => {
+  const packageJson = JSON.parse(read('package.json'));
+  assert.equal(packageJson.dependencies['electron-updater'], '6.8.9');
+
+  const lock = read('package-lock.json');
+  assert.match(
+    lock,
+    /node_modules\/electron-updater"[\s\S]{0,400}"version": "6\.8\.9"/
+  );
+  assert.doesNotMatch(
+    lock,
+    /node_modules\/electron-updater\/node_modules\/builder-util-runtime"[\s\S]{0,200}"version": "9\.2\./
+  );
 });
 
 test('Electron fullscreen menu role uses the built-in lowercase name', () => {
