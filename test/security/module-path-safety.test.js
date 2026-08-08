@@ -12,6 +12,8 @@ const {
   copyModuleFiles,
   installModuleDirectory,
   readRegularFileNoFollow,
+  setSupportsFdRelativeOpenForTests,
+  supportsFdRelativeOpen,
 } = require('../../src/main/ipc/safeCopy');
 
 const root = path.resolve(__dirname, '../..');
@@ -61,7 +63,14 @@ test('module asset and entry resolvers reject symlinks and realpath escapes', ()
   assert.match(fileAssets, /readModuleIcon/);
   assert.match(fileAssets, /readRegularFileNoFollow/);
   assert.match(fileAssets, /data:image\/png;base64/);
+  assert.match(
+    fileAssets,
+    /allowPathFallback:\s*!development/,
+    'development module roots must not enable the Windows path fallback'
+  );
   assert.match(moduleFiles, /resolveModuleFile/);
+  assert.match(moduleFiles, /allowSymlink/);
+  assert.match(moduleFiles, /developmentAllowsSymlinks|allowSymLink/);
   assert.match(
     moduleFiles,
     /Module root must not be a symlink/,
@@ -74,6 +83,8 @@ test('module asset and entry resolvers reject symlinks and realpath escapes', ()
   );
   assert.match(safeCopy, /assertNoSymlinkComponents/);
   assert.match(safeCopy, /installModuleDirectory/);
+  assert.match(safeCopy, /\.replaced-/);
+  assert.match(safeCopy, /setSupportsFdRelativeOpenForTests/);
 });
 
 test('safeCopy rejects leaf symlinks, intermediate directory symlinks, and escapes', async () => {
@@ -278,6 +289,45 @@ test('installModuleDirectory stages then renames a complete module tree', async 
       name.includes(STAGING_DIR_INFIX)
     );
     assert.deepEqual(verifyLeftovers, []);
+
+    // Overwrite installs must keep the previous module until staging verifies,
+    // and restore it if publish fails after the swap begins.
+    await writeModuleTree(destRoot, {
+      'nxs_package.json': '{"name":"demo","files":["index.html"]}',
+      'index.html': '<html>previous</html>',
+    });
+    await writeModuleTree(sourceRoot, {
+      'nxs_package.json': '{"name":"demo","files":["index.html"]}',
+      'index.html': '<html>replacement</html>',
+    });
+    await assert.rejects(
+      () =>
+        installModuleDirectory(['index.html'], sourceRoot, destRoot, {
+          verifyStaging: async () => {
+            throw new Error('overwrite staging failed');
+          },
+        }),
+      /overwrite staging failed/
+    );
+    assert.equal(
+      await fsp.readFile(path.join(destRoot, 'index.html'), 'utf8'),
+      '<html>previous</html>',
+      'failed overwrite must leave the previous install intact'
+    );
+    const replacedLeftovers = (await fsp.readdir(modulesHome)).filter(
+      (name) => name.includes(STAGING_DIR_INFIX) || name.includes('.replaced-')
+    );
+    assert.deepEqual(replacedLeftovers, []);
+
+    await installModuleDirectory(['index.html'], sourceRoot, destRoot);
+    assert.equal(
+      await fsp.readFile(path.join(destRoot, 'index.html'), 'utf8'),
+      '<html>replacement</html>'
+    );
+    const successLeftovers = (await fsp.readdir(modulesHome)).filter(
+      (name) => name.includes(STAGING_DIR_INFIX) || name.includes('.replaced-')
+    );
+    assert.deepEqual(successLeftovers, []);
   } finally {
     await fsp.rm(tempRoot, { recursive: true, force: true });
   }
@@ -398,38 +448,58 @@ test('readRegularFileNoFollow fails closed without fd-relative or path fallback'
 });
 
 test('copyModuleFiles fails closed for mutable sources without fd-relative opens', async () => {
-  const {
-    copyModuleFiles: copyModuleFilesFn,
-    supportsFdRelativeOpen,
-  } = require('../../src/main/ipc/safeCopy');
-
-  // On this host fd-relative opens are expected (Linux CI). Emulate the Windows
-  // fail-closed branch by requiring trustedSource when the platform lacks it;
-  // always assert the exported guard and the error text via source + API.
+  // Always exercise the Windows fail-closed branch on Linux CI by injecting the
+  // capability flag rather than depending on process.platform.
   assert.equal(typeof supportsFdRelativeOpen, 'function');
-  if (!supportsFdRelativeOpen()) {
-    const tempRoot = await makeTempDir('module-copy-fail-closed-');
-    try {
-      const moduleRoot = path.join(tempRoot, 'module');
-      const destRoot = path.join(tempRoot, 'dest');
-      await writeModuleTree(moduleRoot, {
-        'nxs_package.json': '{"name":"demo"}',
-        'index.html': '<html>ok</html>',
-      });
-      await assert.rejects(
-        () => copyModuleFilesFn(['index.html'], moduleRoot, destRoot),
-        /descriptor-relative opens on this platform/
-      );
-      await copyModuleFilesFn(['index.html'], moduleRoot, destRoot, {
-        trustedSource: true,
-      });
-      assert.equal(
-        await fsp.readFile(path.join(destRoot, 'index.html'), 'utf8'),
-        '<html>ok</html>'
-      );
-    } finally {
-      await fsp.rm(tempRoot, { recursive: true, force: true });
-    }
+  assert.equal(typeof setSupportsFdRelativeOpenForTests, 'function');
+
+  const tempRoot = await makeTempDir('module-copy-fail-closed-');
+  try {
+    const moduleRoot = path.join(tempRoot, 'module');
+    const destRoot = path.join(tempRoot, 'dest');
+    await writeModuleTree(moduleRoot, {
+      'nxs_package.json': '{"name":"demo"}',
+      'index.html': '<html>ok</html>',
+    });
+
+    setSupportsFdRelativeOpenForTests(false);
+    assert.equal(supportsFdRelativeOpen(), false);
+
+    await assert.rejects(
+      () => copyModuleFiles(['index.html'], moduleRoot, destRoot),
+      /descriptor-relative opens on this platform/
+    );
+    await assert.rejects(
+      () =>
+        readRegularFileNoFollow(path.join(moduleRoot, 'index.html'), {
+          root: moduleRoot,
+          label: 'index.html',
+        }),
+      /descriptor-relative opens or an app-owned trusted root/
+    );
+
+    await copyModuleFiles(['index.html'], moduleRoot, destRoot, {
+      trustedSource: true,
+    });
+    assert.equal(
+      await fsp.readFile(path.join(destRoot, 'index.html'), 'utf8'),
+      '<html>ok</html>'
+    );
+
+    // Trusted-root path fallback still works when explicitly opted in.
+    const trustedRead = await readRegularFileNoFollow(
+      path.join(moduleRoot, 'index.html'),
+      {
+        root: moduleRoot,
+        label: 'index.html',
+        allowPathFallback: true,
+      }
+    );
+    assert.equal(String(trustedRead), '<html>ok</html>');
+  } finally {
+    // Restore auto-detection so later tests see the real host capability.
+    setSupportsFdRelativeOpenForTests(null);
+    await fsp.rm(tempRoot, { recursive: true, force: true });
   }
 });
 

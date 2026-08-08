@@ -739,13 +739,10 @@ export async function finalizeInstall({ token, overwrite }) {
     const expectedFiles = [...module.info.files].map(String);
     const dest = join(modulesDir, expectedName);
 
-    if (fs.existsSync(dest)) {
-      if (!overwrite) {
-        const err = new Error('A module with the same directory name already exists');
-        err.code = 'ALREADY_EXISTS';
-        throw err;
-      }
-      await fsp.rm(dest, { recursive: true, force: true });
+    if (fs.existsSync(dest) && !overwrite) {
+      const err = new Error('A module with the same directory name already exists');
+      err.code = 'ALREADY_EXISTS';
+      throw err;
     }
 
     // Copy through an app-owned staging directory and rename into place so a
@@ -754,6 +751,8 @@ export async function finalizeInstall({ token, overwrite }) {
     // Verify the app-owned staging tree before publish so a mutable source
     // cannot swap nxs_package.json (name/file list) after the copy plan was
     // captured and leave a broken or mismatched module at the final path.
+    // Overwrite installs keep the existing module until staging verifies;
+    // installModuleDirectory then swaps it out with rollback on failure.
     await installModuleDirectory(expectedFiles, pending.sourcePath, dest, {
       // Archive extracts land under application temp (cleanupPath set) and are
       // treated as app-owned trusted roots on platforms without fd-relative opens.

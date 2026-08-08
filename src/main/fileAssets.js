@@ -58,7 +58,7 @@ async function readModuleAssetBytes(moduleName, relativePath, { maxBytes }) {
       max: 1024,
     })
   );
-  const { root: moduleRoot } = await resolveModuleRoot(name);
+  const { root: moduleRoot, development } = await resolveModuleRoot(name);
   const resolvedPath = path.resolve(moduleRoot, assetPath);
   if (
     resolvedPath !== moduleRoot &&
@@ -87,10 +87,12 @@ async function readModuleAssetBytes(moduleName, relativePath, { maxBytes }) {
     root: moduleRoot,
     label: 'Module icon',
     maxBytes,
-    // Installed/dev module roots are app-selected paths; on Windows the
-    // fd-relative walker is unavailable so the trusted-root path fallback is
-    // required after the symlink/realpath checks above.
-    allowPathFallback: true,
+    // Installed module roots live under the app-owned modules directory. On
+    // Windows the fd-relative walker is unavailable so the trusted-root path
+    // fallback is required after the symlink/realpath checks above.
+    // Development roots are mutable user-selected directories and must not use that
+    // fallback (same TOCTOU reason directory installs fail closed on Windows).
+    allowPathFallback: !development,
   });
 }
 

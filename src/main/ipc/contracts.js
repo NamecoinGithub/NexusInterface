@@ -340,12 +340,35 @@ const FORBIDDEN_ADVANCED_CORE_FLAGS = new Set([
  */
 function isHostAbsoluteFilesystemPath(raw) {
   if (typeof process !== 'undefined' && process.platform === 'win32') {
-    return /^[a-zA-Z]:[\\/]/.test(raw) || raw.startsWith('\\\\');
+    // Local drive paths and UNC. Device namespaces are filtered separately.
+    return /^[a-zA-Z]:[\\/]/.test(raw) || /^[/\\]{2}/.test(raw);
   }
   return raw.startsWith('/');
 }
 
-function assertAbsoluteFilesystemPath(value, name) {
+function isWindowsDeviceNamespacePath(raw) {
+  // \\.\pipe\..., \\?\C:\..., \\?\UNC\server\share, and //?/ forms.
+  return /^[/\\]{2}[.?][/\\]/.test(raw);
+}
+
+function isWindowsUncPath(raw) {
+  return /^[/\\]{2}/.test(raw) && !isWindowsDeviceNamespacePath(raw);
+}
+
+/**
+ * Validate an absolute filesystem path for settings.
+ *
+ * @param {unknown} value
+ * @param {string} name
+ * @param {{ allowUnc?: boolean }} [options]
+ *   When `allowUnc` is true (backup destinations only), Windows UNC share paths
+ *   such as `\\server\share\dir` are accepted. `coreDataDir` and other paths
+ *   that may receive generated credentials must keep `allowUnc` false so a
+ *   compromised renderer cannot redirect writes onto an SMB share (NTLM/hash
+ *   exposure). Device namespaces (`\\.\`, `\\?\`) are never accepted.
+ */
+function assertAbsoluteFilesystemPath(value, name, options = {}) {
+  const allowUnc = options.allowUnc === true;
   const raw = assertString(value, name, { min: 1, max: 4096 });
   if (raw.includes('\0')) {
     fail(`${name} is invalid`);
@@ -357,6 +380,14 @@ function assertAbsoluteFilesystemPath(value, name) {
   }
   if (!isHostAbsoluteFilesystemPath(raw)) {
     fail(`${name} must be an absolute path`);
+  }
+  if (typeof process !== 'undefined' && process.platform === 'win32') {
+    if (isWindowsDeviceNamespacePath(raw)) {
+      fail(`${name} must be a local absolute path`);
+    }
+    if (!allowUnc && isWindowsUncPath(raw)) {
+      fail(`${name} must be a local absolute path`);
+    }
   }
   if (raw.split(/[\\/]/).includes('..')) {
     fail(`${name} must not contain '..' segments`);
@@ -494,8 +525,19 @@ function validateSettingsUpdate(value) {
       validated[key] = assertAdvancedCoreParams(fieldValue);
       continue;
     }
-    if (key === 'coreDataDir' || key === 'backupDirectory') {
-      validated[key] = assertAbsoluteFilesystemPath(fieldValue, key);
+    if (key === 'coreDataDir') {
+      // Must stay local: loadEmbeddedConfig writes API credentials into
+      // <coreDataDir>/nexus.conf. UNC/SMB targets would expose NTLM material.
+      validated[key] = assertAbsoluteFilesystemPath(fieldValue, key, {
+        allowUnc: false,
+      });
+      continue;
+    }
+    if (key === 'backupDirectory') {
+      // Folder-dialog selected network backups may legitimately be UNC shares.
+      validated[key] = assertAbsoluteFilesystemPath(fieldValue, key, {
+        allowUnc: true,
+      });
       continue;
     }
     if (key === 'embeddedCoreBinaryPath') {
@@ -505,7 +547,8 @@ function validateSettingsUpdate(value) {
       }
       validated[key] = assertAbsoluteFilesystemPath(
         fieldValue,
-        'embeddedCoreBinaryPath'
+        'embeddedCoreBinaryPath',
+        { allowUnc: false }
       );
       continue;
     }

@@ -61,7 +61,7 @@ function directoryFdPath(fd) {
   return `/dev/fd/${fd}`;
 }
 
-function supportsFdRelativeOpen() {
+function detectSupportsFdRelativeOpen() {
   return (
     hasNoFollowOpen() &&
     hasDirectoryOpen() &&
@@ -70,6 +70,29 @@ function supportsFdRelativeOpen() {
       process.platform === 'freebsd' ||
       process.platform === 'openbsd')
   );
+}
+
+/** @type {boolean|undefined} Test-only override for platform capability. */
+let supportsFdRelativeOpenOverride;
+
+function supportsFdRelativeOpen() {
+  if (typeof supportsFdRelativeOpenOverride === 'boolean') {
+    return supportsFdRelativeOpenOverride;
+  }
+  return detectSupportsFdRelativeOpen();
+}
+
+/**
+ * Test hook so Linux CI can exercise the Windows fail-closed branch without a
+ * Windows runner. Pass `null`/`undefined` to restore auto-detection.
+ * @param {boolean|null|undefined} value
+ */
+function setSupportsFdRelativeOpenForTests(value) {
+  if (value !== undefined && value !== null && typeof value !== 'boolean') {
+    throw new TypeError('supportsFdRelativeOpen override must be a boolean');
+  }
+  supportsFdRelativeOpenOverride =
+    typeof value === 'boolean' ? value : undefined;
 }
 
 /**
@@ -563,6 +586,11 @@ async function copyModuleFiles(
 /**
  * Copy into an application-owned staging directory, then rename into place.
  * Avoids leaving a half-written destination module directory on failure.
+ *
+ * When the destination already exists (overwrite installs), the previous tree
+ * is moved aside only after staging verifies successfully, then swapped with
+ * rollback if the final rename fails — so a failed overwrite leaves the prior
+ * install intact.
  */
 async function installModuleDirectory(
   files,
@@ -584,6 +612,7 @@ async function installModuleDirectory(
 
   await ensureDirExists(destParent);
   await fsp.mkdir(stagingPath, { recursive: false });
+  let replacedPath = null;
   try {
     await copyModuleFiles(files, source, stagingPath, {
       maxBytes,
@@ -595,9 +624,36 @@ async function installModuleDirectory(
     if (typeof verifyStaging === 'function') {
       await verifyStaging(stagingPath);
     }
+
+    // Overwrite path: move the live install aside only after staging is ready.
+    try {
+      await fsp.access(destPath);
+      replacedPath = path.join(
+        destParent,
+        `.${destName}.replaced-${crypto.randomUUID()}`
+      );
+      await fsp.rename(destPath, replacedPath);
+    } catch (err) {
+      if (err?.code !== 'ENOENT') throw err;
+    }
+
     await fsp.rename(stagingPath, destPath);
+
+    if (replacedPath) {
+      await fsp.rm(replacedPath, { recursive: true, force: true }).catch(() => {});
+      replacedPath = null;
+    }
   } catch (err) {
     await fsp.rm(stagingPath, { recursive: true, force: true }).catch(() => {});
+    if (replacedPath) {
+      try {
+        // Drop any partial publish before restoring the previous install.
+        await fsp.rm(destPath, { recursive: true, force: true }).catch(() => {});
+        await fsp.rename(replacedPath, destPath);
+      } catch {
+        // Prefer the original install error; a restore failure is secondary.
+      }
+    }
     throw err;
   }
 }
@@ -610,5 +666,6 @@ module.exports = {
   installModuleDirectory,
   isPathWithinDirectory,
   readRegularFileNoFollow,
+  setSupportsFdRelativeOpenForTests,
   supportsFdRelativeOpen,
 };

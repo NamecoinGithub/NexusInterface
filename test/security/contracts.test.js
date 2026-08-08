@@ -187,6 +187,41 @@ test('settings updates reject dangerous Core overrides and relative paths', () =
       () => assertAbsoluteFilesystemPath('/home/user/.Nexus', 'coreDataDir'),
       TypeError
     );
+    // coreDataDir must reject UNC/SMB and device namespaces (credential write target).
+    for (const unc of [
+      '\\\\server\\share\\NexusData',
+      '//server/share/NexusData',
+      '\\\\.\\C:\\NexusData',
+      '\\\\?\\C:\\NexusData',
+      '\\\\?\\UNC\\server\\share\\NexusData',
+    ]) {
+      assert.throws(
+        () => assertAbsoluteFilesystemPath(unc, 'coreDataDir'),
+        TypeError
+      );
+      assert.throws(
+        () => validateSettingsUpdate({ coreDataDir: unc }),
+        TypeError
+      );
+    }
+    // backupDirectory may accept UNC shares (network backups) but not devices.
+    assert.equal(
+      assertAbsoluteFilesystemPath('\\\\server\\share\\Backups', 'backupDirectory', {
+        allowUnc: true,
+      }),
+      '\\\\server\\share\\Backups'
+    );
+    assert.deepEqual(
+      validateSettingsUpdate({ backupDirectory: '\\\\server\\share\\Backups' }),
+      { backupDirectory: '\\\\server\\share\\Backups' }
+    );
+    assert.throws(
+      () =>
+        assertAbsoluteFilesystemPath('\\\\.\\C:\\Backups', 'backupDirectory', {
+          allowUnc: true,
+        }),
+      TypeError
+    );
   } else {
     assert.throws(
       () => assertAbsoluteFilesystemPath('C:\\NexusData', 'coreDataDir'),
