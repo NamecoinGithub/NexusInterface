@@ -25,8 +25,15 @@ async function findDevelopmentModule(name) {
 export async function resolveModuleRoot(name) {
   const moduleName = assertSafeModuleName(name);
   const installedRoot = path.resolve(modulesDir, moduleName);
+
+  let leafStat;
   try {
-    const leafStat = await fs.lstat(installedRoot);
+    leafStat = await fs.lstat(installedRoot);
+  } catch {
+    leafStat = undefined;
+  }
+
+  if (leafStat) {
     if (leafStat.isSymbolicLink()) {
       throw new Error(`Module root must not be a symlink: ${moduleName}`);
     }
@@ -41,19 +48,8 @@ export async function resolveModuleRoot(name) {
       }
       return { root: realRoot, development: false };
     }
-  } catch (error) {
-    // Only fall through for missing/invalid installed roots. Symlink and
-    // escape rejections must remain hard failures.
-    if (
-      error &&
-      typeof error.message === 'string' &&
-      (error.message.includes('must not be a symlink') ||
-        error.message.includes('escapes modules directory'))
-    ) {
-      throw error;
-    }
-    // Check validated development module roots below.
   }
+
   const developmentRoot = await findDevelopmentModule(moduleName);
   if (developmentRoot) return { root: developmentRoot, development: true };
   throw new Error(`Module is not installed: ${moduleName}`);

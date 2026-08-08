@@ -50,12 +50,34 @@ test('module asset and entry resolvers reject symlinks and realpath escapes', ()
 
 test('electron-updater uses patched builder-util-runtime', () => {
   const packageJson = JSON.parse(read('package.json'));
-  assert.equal(packageJson.dependencies['electron-updater'], '6.8.9');
+  const updaterVersion = packageJson.dependencies['electron-updater'];
+  // 6.8.9+ pulls builder-util-runtime 9.7.0 and drops the nested 9.2.x leak.
+  const MIN_SAFE_UPDATER = '6.8.9';
+  const toParts = (version) =>
+    String(version)
+      .replace(/^[^\d]*/, '')
+      .split('.')
+      .map((part) => Number.parseInt(part, 10) || 0);
+  const [maj = 0, min = 0, pat = 0] = toParts(updaterVersion);
+  const [minMaj, minMin, minPat] = toParts(MIN_SAFE_UPDATER);
+  const isSafe =
+    maj > minMaj ||
+    (maj === minMaj && min > minMin) ||
+    (maj === minMaj && min === minMin && pat >= minPat);
+  assert.ok(
+    isSafe,
+    `electron-updater ${updaterVersion} must be >= ${MIN_SAFE_UPDATER}`
+  );
 
   const lock = read('package-lock.json');
+  const escaped = String(updaterVersion).replace(/\./g, '\\.');
   assert.match(
     lock,
-    /node_modules\/electron-updater"[\s\S]{0,400}"version": "6\.8\.9"/
+    new RegExp(
+      String.raw`node_modules/electron-updater"[\s\S]{0,400}"version": "` +
+        escaped +
+        '"'
+    )
   );
   assert.doesNotMatch(
     lock,
