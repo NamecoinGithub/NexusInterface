@@ -232,7 +232,11 @@ test('module directory install copies files without following symlinks', () => {
   assert.match(safeCopy, /O_NOFOLLOW/);
   assert.match(safeCopy, /flag:\s*['"]wx['"]/);
   assert.match(safeCopy, /proc\/self\/fd/);
+  assert.match(safeCopy, /\/dev\/fd/);
   assert.match(safeCopy, /assertNoSymlinkComponents/);
+  assert.match(safeCopy, /supportsFdRelativeOpen|directoryFdPath/);
+  assert.match(safeCopy, /COPY_CONCURRENCY\s*=\s*1/);
+  assert.match(safeCopy, /new Set\(/);
   assert.doesNotMatch(
     modules,
     /const copyOne = \(file\) => fsp\.copyFile/

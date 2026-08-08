@@ -5,8 +5,9 @@
  *
  * Directory installs can race between path inspection and open. O_NOFOLLOW only
  * protects the final path component, so intermediate directory symlinks must be
- * rejected as well. After open we re-check confinement using the opened fd
- * (Linux /proc/self/fd) or realpath, and only then return file bytes.
+ * rejected as well. Files are opened via descriptor-relative no-follow traversal
+ * wherever the platform supports it, then re-checked for confinement using the
+ * opened fd before bytes are returned.
  */
 
 const crypto = require('crypto');
@@ -16,6 +17,7 @@ const path = require('path');
 
 const DEFAULT_MAX_FILE_BYTES = 100 * 1024 * 1024;
 const STAGING_DIR_INFIX = '.installing-';
+const COPY_CONCURRENCY = 1;
 
 function isPathWithinDirectory(candidatePath, directoryPath) {
   const relativePath = path.relative(
@@ -36,9 +38,43 @@ function assertPathInsideRoot(candidatePath, rootPath, label) {
   }
 }
 
+function hasNoFollowOpen() {
+  return typeof fs.constants.O_NOFOLLOW === 'number';
+}
+
+function hasDirectoryOpen() {
+  return typeof fs.constants.O_DIRECTORY === 'number';
+}
+
 /**
- * Reject symlink path components from root through the leaf. O_NOFOLLOW alone
- * does not cover intermediate directories.
+ * Path that refers to an open directory fd so child opens are descriptor-
+ * relative (openat-style) rather than re-walking a mutable path string.
+ */
+function directoryFdPath(fd) {
+  if (typeof fd !== 'number' || fd < 0) {
+    throw new Error('Invalid directory file descriptor');
+  }
+  if (process.platform === 'linux') {
+    return `/proc/self/fd/${fd}`;
+  }
+  // macOS / BSD
+  return `/dev/fd/${fd}`;
+}
+
+function supportsFdRelativeOpen() {
+  return (
+    hasNoFollowOpen() &&
+    hasDirectoryOpen() &&
+    (process.platform === 'linux' ||
+      process.platform === 'darwin' ||
+      process.platform === 'freebsd' ||
+      process.platform === 'openbsd')
+  );
+}
+
+/**
+ * Reject symlink path components from root through the leaf. Used as a fast
+ * pre-check and as a fallback on platforms without fd-relative open.
  */
 async function assertNoSymlinkComponents(rootPath, targetPath, label) {
   const resolvedRoot = path.resolve(rootPath);
@@ -78,18 +114,37 @@ async function assertNoSymlinkComponents(rootPath, targetPath, label) {
 }
 
 async function resolveOpenedPath(handle, openPath) {
-  if (process.platform === 'linux' && typeof handle.fd === 'number') {
-    try {
-      const fdPath = await fsp.readlink(`/proc/self/fd/${handle.fd}`);
+  if (typeof handle.fd === 'number') {
+    if (process.platform === 'linux') {
       try {
-        return await fsp.realpath(fdPath);
+        const fdPath = await fsp.readlink(`/proc/self/fd/${handle.fd}`);
+        try {
+          return await fsp.realpath(fdPath);
+        } catch {
+          return path.resolve(fdPath);
+        }
       } catch {
-        return path.resolve(fdPath);
+        // Fall through.
       }
-    } catch {
-      // Fall through to path-based realpath on exotic /proc setups.
+    } else if (
+      process.platform === 'darwin' ||
+      process.platform === 'freebsd' ||
+      process.platform === 'openbsd'
+    ) {
+      // Prefer handle identity via /dev/fd rather than the mutable open path.
+      try {
+        return await fsp.realpath(`/dev/fd/${handle.fd}`);
+      } catch {
+        try {
+          const fdPath = await fsp.readlink(`/dev/fd/${handle.fd}`);
+          return path.resolve(fdPath);
+        } catch {
+          // Fall through.
+        }
+      }
     }
   }
+  // Last resort: never treat this as a strong binding on its own.
   return fsp.realpath(openPath);
 }
 
@@ -102,7 +157,119 @@ async function assertOpenedFileInsideRoot(handle, openPath, rootPath, label) {
   if (!stat.isFile()) {
     throw new Error(`${label} must be a regular non-symlink file`);
   }
-  return stat;
+  return { stat, openedPath, realRoot };
+}
+
+function splitRelativeSegments(rootPath, targetPath, label) {
+  const resolvedRoot = path.resolve(rootPath);
+  const resolvedTarget = path.resolve(targetPath);
+  assertPathInsideRoot(resolvedTarget, resolvedRoot, label);
+  const relativePath = path.relative(resolvedRoot, resolvedTarget);
+  if (!relativePath || path.isAbsolute(relativePath)) {
+    throw new Error(`${label} must be a file inside the module root`);
+  }
+  const segments = relativePath.split(path.sep).filter(Boolean);
+  if (
+    !segments.length ||
+    segments.some((segment) => segment === '.' || segment === '..')
+  ) {
+    throw new Error(`${label} contains an unsafe path segment`);
+  }
+  return { resolvedRoot, resolvedTarget, segments };
+}
+
+/**
+ * Open a file under root using descriptor-relative O_NOFOLLOW opens for every
+ * path component so intermediate directory swaps cannot redirect the walk.
+ */
+async function openRegularFileNoFollowFdRelative(
+  filePath,
+  rootPath,
+  label,
+  maxBytes
+) {
+  const { resolvedRoot, segments } = splitRelativeSegments(
+    rootPath,
+    filePath,
+    label
+  );
+
+  const rootStat = await fsp.lstat(resolvedRoot);
+  if (rootStat.isSymbolicLink()) {
+    throw new Error(`${label} module root must not be a symbolic link`);
+  }
+  if (!rootStat.isDirectory()) {
+    throw new Error(`${label} module root must be a directory`);
+  }
+
+  let dirHandle = await fsp.open(
+    resolvedRoot,
+    fs.constants.O_RDONLY | fs.constants.O_DIRECTORY
+  );
+  try {
+    for (let index = 0; index < segments.length; index += 1) {
+      const segment = segments[index];
+      const isLast = index === segments.length - 1;
+      const flags =
+        fs.constants.O_RDONLY |
+        fs.constants.O_NOFOLLOW |
+        (isLast ? 0 : fs.constants.O_DIRECTORY);
+      const childPath = path.join(directoryFdPath(dirHandle.fd), segment);
+      let nextHandle;
+      try {
+        nextHandle = await fsp.open(childPath, flags);
+      } catch (err) {
+        if (
+          err?.code === 'ELOOP' ||
+          err?.code === 'EMLINK' ||
+          err?.code === 'EINVAL'
+        ) {
+          throw new Error(`${label} path contains a symbolic link`);
+        }
+        if (err?.code === 'ENOENT') {
+          throw new Error(`${label} not found`);
+        }
+        if (err?.code === 'ENOTDIR') {
+          throw new Error(
+            isLast
+              ? `${label} must be a regular non-symlink file`
+              : `${label} path contains a symbolic link`
+          );
+        }
+        throw err;
+      }
+      await dirHandle.close();
+      dirHandle = nextHandle;
+
+      if (isLast) {
+        const { stat } = await assertOpenedFileInsideRoot(
+          dirHandle,
+          childPath,
+          resolvedRoot,
+          label
+        );
+        if (stat.size > maxBytes) {
+          throw new Error(`${label} exceeds the size limit`);
+        }
+        const content = await dirHandle.readFile();
+        if (content.length > maxBytes) {
+          throw new Error(`${label} exceeds the size limit`);
+        }
+        const handle = dirHandle;
+        dirHandle = null;
+        try {
+          return content;
+        } finally {
+          await handle.close();
+        }
+      }
+    }
+    throw new Error(`${label} not found`);
+  } finally {
+    if (dirHandle) {
+      await dirHandle.close().catch(() => {});
+    }
+  }
 }
 
 /**
@@ -120,6 +287,19 @@ async function readRegularFileNoFollow(
   const resolvedFile = path.resolve(filePath);
   const resolvedRoot = path.resolve(root);
   assertPathInsideRoot(resolvedFile, resolvedRoot, label);
+
+  if (supportsFdRelativeOpen()) {
+    return openRegularFileNoFollowFdRelative(
+      resolvedFile,
+      resolvedRoot,
+      label,
+      maxBytes
+    );
+  }
+
+  // Platforms without openat-style fd paths: best-effort component checks and
+  // leaf O_NOFOLLOW when available. Parents may still race; callers that need
+  // stronger guarantees should stage from a trusted snapshot first.
   await assertNoSymlinkComponents(resolvedRoot, resolvedFile, label);
 
   const before = await fsp.lstat(resolvedFile);
@@ -130,13 +310,13 @@ async function readRegularFileNoFollow(
     throw new Error(`${label} exceeds the size limit`);
   }
 
-  if (typeof fs.constants.O_NOFOLLOW === 'number') {
+  if (hasNoFollowOpen()) {
     const handle = await fsp.open(
       resolvedFile,
       fs.constants.O_RDONLY | fs.constants.O_NOFOLLOW
     );
     try {
-      const stat = await assertOpenedFileInsideRoot(
+      const { stat } = await assertOpenedFileInsideRoot(
         handle,
         resolvedFile,
         resolvedRoot,
@@ -145,10 +325,12 @@ async function readRegularFileNoFollow(
       if (stat.size > maxBytes) {
         throw new Error(`${label} exceeds the size limit`);
       }
-      // Re-check components after open to shrink replacement races on
-      // platforms without reliable fd path introspection.
       await assertNoSymlinkComponents(resolvedRoot, resolvedFile, label);
-      return await handle.readFile();
+      const content = await handle.readFile();
+      if (content.length > maxBytes) {
+        throw new Error(`${label} exceeds the size limit`);
+      }
+      return content;
     } finally {
       await handle.close();
     }
@@ -178,6 +360,24 @@ async function readRegularFileNoFollow(
 
 async function ensureDirExists(dirPath) {
   await fsp.mkdir(dirPath, { recursive: true });
+}
+
+async function mapPool(items, concurrency, worker) {
+  if (!items.length) return [];
+  const limit = Math.max(1, Math.min(concurrency, items.length));
+  const results = new Array(items.length);
+  let nextIndex = 0;
+
+  async function run() {
+    while (nextIndex < items.length) {
+      const current = nextIndex;
+      nextIndex += 1;
+      results[current] = await worker(items[current], current);
+    }
+  }
+
+  await Promise.all(Array.from({ length: limit }, () => run()));
+  return results;
 }
 
 /**
@@ -221,24 +421,29 @@ async function copyModuleFiles(
     await fsp.writeFile(to, content, { flag: 'wx' });
   };
 
+  // Deduplicate declared paths so exclusive wx writes cannot race on duplicates.
   const uniqueFiles = [
     'nxs_package.json',
-    ...files.filter(
-      (file) => file !== 'nxs_package.json' && file !== 'repo_info.json'
+    ...new Set(
+      files
+        .map((file) => String(file))
+        .filter(
+          (file) => file !== 'nxs_package.json' && file !== 'repo_info.json'
+        )
     ),
   ];
-  const promises = uniqueFiles.map(copyOne);
 
   // Optional companion metadata; readRegularFileNoFollow enforces non-symlink.
   const repoInfoPath = path.join(sourceRoot, 'repo_info.json');
   try {
     await fsp.lstat(repoInfoPath);
-    promises.push(copyOne('repo_info.json'));
+    uniqueFiles.push('repo_info.json');
   } catch (err) {
     if (err?.code !== 'ENOENT') throw err;
   }
 
-  return Promise.all(promises);
+  // Sequential by default to bound peak memory and open file descriptors.
+  await mapPool(uniqueFiles, COPY_CONCURRENCY, copyOne);
 }
 
 /**

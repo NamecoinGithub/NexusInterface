@@ -329,23 +329,29 @@ const FORBIDDEN_ADVANCED_CORE_FLAGS = new Set([
   'private',
 ]);
 
+/**
+ * Host-platform absolute path check. Intentionally does not treat foreign
+ * syntax (e.g. `C:\...` or UNC on POSIX) as absolute, because Node would
+ * resolve those as relative paths on the running OS.
+ */
+function isHostAbsoluteFilesystemPath(raw) {
+  if (typeof process !== 'undefined' && process.platform === 'win32') {
+    return /^[a-zA-Z]:[\\/]/.test(raw) || raw.startsWith('\\\\');
+  }
+  return raw.startsWith('/');
+}
+
 function assertAbsoluteFilesystemPath(value, name) {
   const raw = assertString(value, name, { min: 1, max: 4096 });
   if (raw.includes('\0')) {
     fail(`${name} is invalid`);
   }
-  // Users may type a home-relative path; main expands ~ before use.
+  // Settings persistence does not expand `~`; Core/bootstrap consume the value
+  // directly, so home-relative shell syntax must be rejected here.
   if (raw === '~' || raw.startsWith('~/') || raw.startsWith('~\\')) {
-    if (raw.split(/[\\/]/).includes('..')) {
-      fail(`${name} must not contain '..' segments`);
-    }
-    return raw;
+    fail(`${name} must be an absolute path`);
   }
-  const isAbsolutePath =
-    raw.startsWith('/') ||
-    /^[a-zA-Z]:[\\/]/.test(raw) ||
-    raw.startsWith('\\\\');
-  if (!isAbsolutePath) {
+  if (!isHostAbsoluteFilesystemPath(raw)) {
     fail(`${name} must be an absolute path`);
   }
   if (raw.split(/[\\/]/).includes('..')) {

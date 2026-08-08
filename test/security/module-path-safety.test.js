@@ -263,8 +263,55 @@ test('electron-updater uses patched builder-util-runtime', () => {
 
 test('Electron fullscreen menu role uses the built-in lowercase name', () => {
   const appMenu = read('src', 'shared', 'lib', 'appMenu.ts');
+  const mainJs = read('src', 'main', 'main.js');
   assert.match(appMenu, /role:\s*['"]togglefullscreen['"]/);
   assert.doesNotMatch(appMenu, /role:\s*['"]toggleFullScreen['"]/);
+  assert.match(
+    mainJs,
+    /allowedMenuRoles[\s\S]*['"]togglefullscreen['"]/,
+    'menu sanitizer must allow the lowercase Electron role'
+  );
+  assert.doesNotMatch(
+    mainJs,
+    /allowedMenuRoles[\s\S]*['"]toggleFullScreen['"]/,
+    'menu sanitizer must not require the rejected camelCase role'
+  );
+});
+
+test('copyModuleFiles deduplicates declared paths and copies sequentially', async () => {
+  const tempRoot = await makeTempDir('module-copy-dedupe-');
+  const moduleRoot = path.join(tempRoot, 'module');
+  const destRoot = path.join(tempRoot, 'dest');
+  const safeCopySource = read('src', 'main', 'ipc', 'safeCopy.js');
+
+  assert.match(safeCopySource, /new Set\(/);
+  assert.match(safeCopySource, /COPY_CONCURRENCY\s*=\s*1/);
+  assert.match(safeCopySource, /directoryFdPath|\/proc\/self\/fd|\/dev\/fd/);
+
+  try {
+    await writeModuleTree(moduleRoot, {
+      'nxs_package.json': '{"name":"demo"}',
+      'index.html': '<html>ok</html>',
+      'assets/a.txt': 'a',
+    });
+
+    await copyModuleFiles(
+      ['index.html', 'index.html', 'assets/a.txt', 'assets/a.txt'],
+      moduleRoot,
+      destRoot
+    );
+
+    assert.equal(
+      await fsp.readFile(path.join(destRoot, 'index.html'), 'utf8'),
+      '<html>ok</html>'
+    );
+    assert.equal(
+      await fsp.readFile(path.join(destRoot, 'assets', 'a.txt'), 'utf8'),
+      'a'
+    );
+  } finally {
+    await fsp.rm(tempRoot, { recursive: true, force: true });
+  }
 });
 
 test('Build Guide documents the package engines Node/npm floor', () => {

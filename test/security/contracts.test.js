@@ -150,7 +150,10 @@ test('settings updates reject dangerous Core overrides and relative paths', () =
   for (const updates of [
     { coreDataDir: 'relative/path' },
     { coreDataDir: '../.Nexus' },
+    { coreDataDir: '~/.Nexus' },
+    { coreDataDir: '~' },
     { backupDirectory: 'backups' },
+    { backupDirectory: '~/NexusBackups' },
     { advancedCoreParams: '-datadir=/tmp/pwn' },
     { advancedCoreParams: '-apiuser=evil -apipassword=secret' },
     { advancedCoreParams: '-conf=/tmp/evil.conf' },
@@ -167,6 +170,23 @@ test('settings updates reject dangerous Core overrides and relative paths', () =
     { embeddedCoreBinaryPath: 'nexus' },
   ]) {
     assert.throws(() => validateSettingsUpdate(updates), TypeError);
+  }
+
+  // Foreign absolute syntax must not pass on the host platform.
+  if (process.platform === 'win32') {
+    assert.throws(
+      () => assertAbsoluteFilesystemPath('/home/user/.Nexus', 'coreDataDir'),
+      TypeError
+    );
+  } else {
+    assert.throws(
+      () => assertAbsoluteFilesystemPath('C:\\NexusData', 'coreDataDir'),
+      TypeError
+    );
+    assert.throws(
+      () => assertAbsoluteFilesystemPath('\\\\server\\share\\data', 'coreDataDir'),
+      TypeError
+    );
   }
 });
 
