@@ -97,6 +97,18 @@ test('safeCopy rejects leaf symlinks, intermediate directory symlinks, and escap
     );
     assert.equal(String(good), '<html>ok</html>');
 
+    // Root itself must be opened with O_NOFOLLOW: a symlink root is rejected.
+    const symlinkRoot = path.join(tempRoot, 'symlink-root');
+    await fsp.symlink(moduleRoot, symlinkRoot);
+    await assert.rejects(
+      () =>
+        readRegularFileNoFollow(path.join(symlinkRoot, 'assets', 'index.html'), {
+          root: symlinkRoot,
+          label: 'assets/index.html',
+        }),
+      /symbolic link|module root/
+    );
+
     await fsp.symlink(
       path.join(outsideDir, 'secret.txt'),
       path.join(moduleRoot, 'assets', 'leaf-link.txt')
@@ -237,6 +249,23 @@ test('installModuleDirectory stages then renames a complete module tree', async 
       name.includes(STAGING_DIR_INFIX)
     );
     assert.deepEqual(failedLeftovers, []);
+
+    // verifyStaging runs before rename; rejection must leave no published module.
+    await fsp.rm(path.join(sourceRoot, 'bad'), { force: true });
+    await assert.rejects(
+      () =>
+        installModuleDirectory(['index.html'], sourceRoot, destRoot, {
+          verifyStaging: async () => {
+            throw new Error('staging validation failed');
+          },
+        }),
+      /staging validation failed/
+    );
+    assert.equal(fs.existsSync(destRoot), false);
+    const verifyLeftovers = (await fsp.readdir(modulesHome)).filter((name) =>
+      name.includes(STAGING_DIR_INFIX)
+    );
+    assert.deepEqual(verifyLeftovers, []);
   } finally {
     await fsp.rm(tempRoot, { recursive: true, force: true });
   }

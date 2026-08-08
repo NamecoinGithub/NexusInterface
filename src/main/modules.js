@@ -703,6 +703,14 @@ export async function inspectInstallSource(sourcePath) {
   }
 }
 
+function sameModuleFileList(left, right) {
+  if (!Array.isArray(left) || !Array.isArray(right)) return false;
+  if (left.length !== right.length) return false;
+  const sortedLeft = left.map(String).sort();
+  const sortedRight = right.map(String).sort();
+  return sortedLeft.every((value, index) => value === sortedRight[index]);
+}
+
 /**
  * Finalize an install previously staged by `inspectInstallSource` (or
  * `downloadAndInstall`). Throws `ALREADY_EXISTS` if the destination exists
@@ -715,7 +723,9 @@ export async function finalizeInstall({ token, overwrite }) {
     // Re-validate the staged module right before installing, in case
     // anything on disk changed since it was inspected.
     const module = await loadModuleFromDir(pending.sourcePath, settings);
-    const dest = join(modulesDir, module.info.name);
+    const expectedName = module.info.name;
+    const expectedFiles = [...module.info.files].map(String);
+    const dest = join(modulesDir, expectedName);
 
     if (fs.existsSync(dest)) {
       if (!overwrite) {
@@ -729,11 +739,20 @@ export async function finalizeInstall({ token, overwrite }) {
     // Copy through an app-owned staging directory and rename into place so a
     // failed install cannot leave a partial module tree at the final path.
     // safeCopy also rejects intermediate-directory symlink TOCTOU races.
-    await installModuleDirectory(
-      module.info.files,
-      pending.sourcePath,
-      dest
-    );
+    // Verify the app-owned staging tree before publish so a mutable source
+    // cannot swap nxs_package.json (name/file list) after the copy plan was
+    // captured and leave a broken or mismatched module at the final path.
+    await installModuleDirectory(expectedFiles, pending.sourcePath, dest, {
+      verifyStaging: async (stagingPath) => {
+        const staged = await loadModuleFromDir(stagingPath, settings);
+        if (staged.info.name !== expectedName) {
+          throw new Error('Module name changed during install');
+        }
+        if (!sameModuleFileList(staged.info.files, expectedFiles)) {
+          throw new Error('Module file list changed during install');
+        }
+      },
+    });
     return loadModuleFromDir(dest, settings);
   } finally {
     if (pending.cleanupPath) {
