@@ -218,7 +218,21 @@ test('file server uses per-module allowlists and security headers', () => {
   assert.match(server, /realpathSync/);
   assert.match(server, /isRateLimited/);
   assert.match(server, /RATE_LIMIT_MAX/);
+  // Must not bind all interfaces; module assets are local-only.
+  assert.match(server, /listen\(\s*0\s*,\s*['"]127\.0\.0\.1['"]/);
+  assert.match(server, /http:\/\/127\.0\.0\.1:\$\{port\}/);
   assert.doesNotMatch(server, /express\.static\(modulesDir\)/);
+});
+
+test('module directory install copies files without following symlinks', () => {
+  const modules = read('src', 'main', 'modules.js');
+  assert.match(modules, /readRegularFileNoFollow/);
+  assert.match(modules, /O_NOFOLLOW/);
+  assert.match(modules, /flag:\s*['"]wx['"]/);
+  assert.doesNotMatch(
+    modules,
+    /const copyOne = \(file\) => fsp\.copyFile/
+  );
 });
 
 test('documentation and fixtures for isolation exist', () => {

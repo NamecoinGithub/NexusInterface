@@ -4,6 +4,8 @@ const assert = require('node:assert/strict');
 const test = require('node:test');
 
 const {
+  assertAdvancedCoreParams,
+  assertAbsoluteFilesystemPath,
   assertExternalUrl,
   assertRelativeModulePath,
   validateClipboardText,
@@ -11,6 +13,7 @@ const {
   validateCoreRpcUrl,
   validateModuleDownloadRequest,
   validateNoArguments,
+  validateSettingsUpdate,
   validateTrackEventRequest,
 } = require('../../src/main/ipc/contracts');
 
@@ -118,6 +121,48 @@ test('Core RPC URL validation enforces relative paths and namespaces', () => {
     '',
   ]) {
     assert.throws(() => validateCoreRpcUrl(value), TypeError);
+  }
+});
+
+test('settings updates reject dangerous Core overrides and relative paths', () => {
+  assert.deepEqual(
+    validateSettingsUpdate({
+      locale: 'en',
+      allowAdvancedCoreOptions: true,
+      advancedCoreParams: '-verbose=4 -llpallowip=1.2.3.4',
+    }),
+    {
+      locale: 'en',
+      allowAdvancedCoreOptions: true,
+      advancedCoreParams: '-verbose=4 -llpallowip=1.2.3.4',
+    }
+  );
+
+  assert.equal(
+    assertAbsoluteFilesystemPath('/home/user/.Nexus', 'coreDataDir'),
+    '/home/user/.Nexus'
+  );
+  assert.equal(
+    assertAdvancedCoreParams('-mining=1 -stake=1'),
+    '-mining=1 -stake=1'
+  );
+
+  for (const updates of [
+    { coreDataDir: 'relative/path' },
+    { coreDataDir: '../.Nexus' },
+    { backupDirectory: 'backups' },
+    { advancedCoreParams: '-datadir=/tmp/pwn' },
+    { advancedCoreParams: '-apiuser=evil -apipassword=secret' },
+    { advancedCoreParams: '-conf=/tmp/evil.conf' },
+    { advancedCoreParams: '-walletclean' },
+    { advancedCoreParams: 'not-a-flag' },
+    { advancedCoreParams: '-verbose=1; rm -rf /' },
+    { allowAdvancedCoreOptions: 'yes' },
+    { walletClean: 1 },
+    { revertBlocks: -1 },
+    { embeddedCoreBinaryPath: 'nexus' },
+  ]) {
+    assert.throws(() => validateSettingsUpdate(updates), TypeError);
   }
 });
 
