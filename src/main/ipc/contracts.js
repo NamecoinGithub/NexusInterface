@@ -320,6 +320,13 @@ const FORBIDDEN_ADVANCED_CORE_FLAGS = new Set([
   'rpcuser',
   'rpcpassword',
   'rpcport',
+  // Network selection is wallet-managed (and locked in LOCK_TESTNET builds).
+  // Advanced params are appended after fixed -connect/-nodns/-testnet/-private
+  // arguments, so these must not be injectable from settings.
+  'connect',
+  'nodns',
+  'testnet',
+  'private',
 ]);
 
 function assertAbsoluteFilesystemPath(value, name) {

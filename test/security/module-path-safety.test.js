@@ -59,6 +59,8 @@ test('module asset and entry resolvers reject symlinks and realpath escapes', ()
 
   assert.match(fileAssets, /assertRelativeModulePath/);
   assert.match(fileAssets, /readModuleIcon/);
+  assert.match(fileAssets, /readRegularFileNoFollow/);
+  assert.match(fileAssets, /data:image\/png;base64/);
   assert.match(moduleFiles, /resolveModuleFile/);
   assert.match(
     moduleFiles,
