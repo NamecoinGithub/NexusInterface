@@ -2,22 +2,45 @@
 
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
+const fsp = require('node:fs/promises');
+const os = require('node:os');
 const path = require('node:path');
 const test = require('node:test');
+
+const {
+  copyModuleFiles,
+  installModuleDirectory,
+  readRegularFileNoFollow,
+} = require('../../src/main/ipc/safeCopy');
 
 const root = path.resolve(__dirname, '../..');
 const read = (...segments) =>
   fs.readFileSync(path.join(root, ...segments), 'utf8');
 
+async function makeTempDir(prefix) {
+  return fsp.mkdtemp(path.join(os.tmpdir(), prefix));
+}
+
+async function writeModuleTree(moduleRoot, files) {
+  await fsp.mkdir(moduleRoot, { recursive: true });
+  for (const [relativePath, contents] of Object.entries(files)) {
+    const absolutePath = path.join(moduleRoot, relativePath);
+    await fsp.mkdir(path.dirname(absolutePath), { recursive: true });
+    await fsp.writeFile(absolutePath, contents);
+  }
+}
+
 test('module asset and entry resolvers reject symlinks and realpath escapes', () => {
   const fileAssets = read('src', 'main', 'fileAssets.js');
   const moduleFiles = read('src', 'main', 'moduleFiles.js');
   const fileServer = read('src', 'main', 'fileServer.js');
+  const safeCopy = read('src', 'main', 'ipc', 'safeCopy.js');
 
   for (const [name, source] of [
     ['fileAssets.js', fileAssets],
     ['moduleFiles.js', moduleFiles],
     ['fileServer.js', fileServer],
+    ['safeCopy.js', safeCopy],
   ]) {
     assert.match(source, /lstat/, `${name} must lstat before reading`);
     assert.match(
@@ -46,6 +69,174 @@ test('module asset and entry resolvers reject symlinks and realpath escapes', ()
     /escapes modules directory/,
     'installed module roots must stay under modulesDir'
   );
+  assert.match(safeCopy, /assertNoSymlinkComponents/);
+  assert.match(safeCopy, /installModuleDirectory/);
+});
+
+test('safeCopy rejects leaf symlinks, intermediate directory symlinks, and escapes', async () => {
+  const tempRoot = await makeTempDir('module-path-safety-');
+  const moduleRoot = path.join(tempRoot, 'module');
+  const outsideDir = path.join(tempRoot, 'outside');
+  const destRoot = path.join(tempRoot, 'dest');
+
+  try {
+    await writeModuleTree(moduleRoot, {
+      'nxs_package.json': '{"name":"demo"}',
+      'assets/index.html': '<html>ok</html>',
+      'assets/nested/file.txt': 'payload',
+    });
+    await fsp.mkdir(outsideDir, { recursive: true });
+    await fsp.writeFile(path.join(outsideDir, 'secret.txt'), 'SECRET');
+
+    const good = await readRegularFileNoFollow(
+      path.join(moduleRoot, 'assets', 'index.html'),
+      { root: moduleRoot, label: 'assets/index.html' }
+    );
+    assert.equal(String(good), '<html>ok</html>');
+
+    await fsp.symlink(
+      path.join(outsideDir, 'secret.txt'),
+      path.join(moduleRoot, 'assets', 'leaf-link.txt')
+    );
+    await assert.rejects(
+      () =>
+        readRegularFileNoFollow(path.join(moduleRoot, 'assets', 'leaf-link.txt'), {
+          root: moduleRoot,
+          label: 'assets/leaf-link.txt',
+        }),
+      /symbolic link|regular non-symlink/
+    );
+
+    await fsp.rm(path.join(moduleRoot, 'assets', 'nested'), {
+      recursive: true,
+      force: true,
+    });
+    await fsp.symlink(outsideDir, path.join(moduleRoot, 'assets', 'nested'));
+    await assert.rejects(
+      () =>
+        readRegularFileNoFollow(
+          path.join(moduleRoot, 'assets', 'nested', 'secret.txt'),
+          { root: moduleRoot, label: 'assets/nested/secret.txt' }
+        ),
+      /symbolic link|escapes module root/
+    );
+
+    await assert.rejects(
+      () =>
+        readRegularFileNoFollow(path.join(outsideDir, 'secret.txt'), {
+          root: moduleRoot,
+          label: 'outside',
+        }),
+      /escapes module root/
+    );
+
+    await assert.rejects(
+      () =>
+        readRegularFileNoFollow(path.join(moduleRoot, 'missing.txt'), {
+          root: moduleRoot,
+          label: 'missing.txt',
+        }),
+      /not found|ENOENT/
+    );
+
+    await writeModuleTree(moduleRoot, {
+      'nxs_package.json': '{"name":"demo"}',
+      'index.html': '<html>ok</html>',
+      'data.bin': 'abc',
+    });
+    // Restore assets as a real directory for a successful copy.
+    await fsp.rm(path.join(moduleRoot, 'assets'), { recursive: true, force: true });
+
+    await copyModuleFiles(['index.html', 'data.bin'], moduleRoot, destRoot);
+    assert.equal(
+      await fsp.readFile(path.join(destRoot, 'index.html'), 'utf8'),
+      '<html>ok</html>'
+    );
+    assert.equal(await fsp.readFile(path.join(destRoot, 'data.bin'), 'utf8'), 'abc');
+    assert.equal(
+      await fsp.readFile(path.join(destRoot, 'nxs_package.json'), 'utf8'),
+      '{"name":"demo"}'
+    );
+
+    await fsp.rm(destRoot, { recursive: true, force: true });
+    await fsp.symlink(outsideDir, path.join(moduleRoot, 'evil-dir'));
+    await assert.rejects(
+      () =>
+        copyModuleFiles(
+          ['index.html', path.join('evil-dir', 'secret.txt')],
+          moduleRoot,
+          destRoot
+        ),
+      /symbolic link|escapes module root/
+    );
+    // Non-atomic copyModuleFiles may create destination dirs before failing;
+    // the outside secret must never be installed.
+    if (fs.existsSync(destRoot)) {
+      assert.equal(
+        fs.existsSync(path.join(destRoot, 'evil-dir', 'secret.txt')),
+        false
+      );
+      assert.doesNotMatch(
+        await fsp
+          .readFile(path.join(destRoot, 'index.html'), 'utf8')
+          .catch(() => ''),
+        /SECRET/
+      );
+    }
+  } finally {
+    await fsp.rm(tempRoot, { recursive: true, force: true });
+  }
+});
+
+test('installModuleDirectory stages then renames a complete module tree', async () => {
+  const tempRoot = await makeTempDir('module-install-atomic-');
+  const sourceRoot = path.join(tempRoot, 'source');
+  const modulesHome = path.join(tempRoot, 'modules');
+  const destRoot = path.join(modulesHome, 'demo');
+
+  try {
+    await writeModuleTree(sourceRoot, {
+      'nxs_package.json': '{"name":"demo","files":["index.html"]}',
+      'index.html': '<html>installed</html>',
+      'repo_info.json': '{"ok":true}',
+    });
+    await fsp.mkdir(modulesHome, { recursive: true });
+
+    await installModuleDirectory(
+      ['index.html'],
+      sourceRoot,
+      destRoot
+    );
+
+    assert.equal(
+      await fsp.readFile(path.join(destRoot, 'index.html'), 'utf8'),
+      '<html>installed</html>'
+    );
+    assert.equal(
+      await fsp.readFile(path.join(destRoot, 'repo_info.json'), 'utf8'),
+      '{"ok":true}'
+    );
+
+    const leftovers = (await fsp.readdir(modulesHome)).filter((name) =>
+      name.includes('.installing-')
+    );
+    assert.deepEqual(leftovers, []);
+
+    // Failed copy must not leave the destination module directory behind.
+    await fsp.rm(destRoot, { recursive: true, force: true });
+    await fsp.symlink(path.join(tempRoot, 'missing-target'), path.join(sourceRoot, 'bad'));
+    await assert.rejects(
+      () => installModuleDirectory(['index.html', 'bad'], sourceRoot, destRoot),
+      /symbolic link|regular non-symlink|not found/
+    );
+    assert.equal(fs.existsSync(destRoot), false);
+    const failedLeftovers = (await fsp.readdir(modulesHome)).filter((name) =>
+      name.includes('.installing-')
+    );
+    assert.deepEqual(failedLeftovers, []);
+  } finally {
+    await fsp.rm(tempRoot, { recursive: true, force: true });
+  }
 });
 
 test('electron-updater uses patched builder-util-runtime', () => {

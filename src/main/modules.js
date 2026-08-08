@@ -29,6 +29,7 @@ import {
   assertSafeModuleName,
   assertString,
 } from './ipc/contracts';
+import { installModuleDirectory } from './ipc/safeCopy';
 import { extractSafeZip } from './ipc/safeZip';
 import { modulesDir, moduleDownloadDir, temporaryModuleDir } from './paths';
 import { loadSettingsFromFile } from './settings';
@@ -587,73 +588,6 @@ function isPathWithinDirectory(candidatePath, directoryPath) {
   );
 }
 
-/**
- * Copy a module file without following symlinks. Closes the inspect→install
- * TOCTOU window where a validated regular file could be replaced by a symlink
- * to wallet/Core secrets before fsp.copyFile runs.
- */
-async function readRegularFileNoFollow(filePath, label) {
-  const before = await fsp.lstat(filePath);
-  if (before.isSymbolicLink() || !before.isFile()) {
-    throw new Error(`${label} must be a regular non-symlink file`);
-  }
-
-  if (typeof fs.constants.O_NOFOLLOW === 'number') {
-    const handle = await fsp.open(
-      filePath,
-      fs.constants.O_RDONLY | fs.constants.O_NOFOLLOW
-    );
-    try {
-      return await handle.readFile();
-    } finally {
-      await handle.close();
-    }
-  }
-
-  const content = await fsp.readFile(filePath);
-  const after = await fsp.lstat(filePath);
-  if (
-    after.isSymbolicLink() ||
-    !after.isFile() ||
-    after.size !== before.size ||
-    after.mtimeMs !== before.mtimeMs
-  ) {
-    throw new Error(`${label} changed during install`);
-  }
-  return content;
-}
-
-async function copyModuleFiles(files, source, dest) {
-  for (const file of files) {
-    await ensureDirExists(dirname(join(dest, file)));
-  }
-  const copyOne = async (file) => {
-    const from = join(source, file);
-    const to = join(dest, file);
-    const content = await readRegularFileNoFollow(from, file);
-    await fsp.writeFile(to, content, { flag: 'wx' });
-  };
-
-  // Always copy the manifest once, then the declared payload files (excluding
-  // the manifest if the package list also names it).
-  const uniqueFiles = [
-    'nxs_package.json',
-    ...files.filter((file) => file !== 'nxs_package.json' && file !== 'repo_info.json'),
-  ];
-  const promises = uniqueFiles.map(copyOne);
-  const repoInfoPath = join(source, 'repo_info.json');
-  try {
-    const repoInfoStat = await fsp.lstat(repoInfoPath);
-    if (!repoInfoStat.isFile() || repoInfoStat.isSymbolicLink()) {
-      throw new Error('repo_info.json must not be a symbolic link');
-    }
-    promises.push(copyOne('repo_info.json'));
-  } catch (err) {
-    if (err?.code !== 'ENOENT') throw err;
-  }
-  return Promise.all(promises);
-}
-
 // token -> { sourcePath, cleanupPath, moduleInfo, timer }
 const pendingInstalls = new Map();
 const PENDING_INSTALL_TTL = 10 * 60 * 1000; // 10 minutes
@@ -792,8 +726,14 @@ export async function finalizeInstall({ token, overwrite }) {
       await fsp.rm(dest, { recursive: true, force: true });
     }
 
-    await ensureDirExists(dest);
-    await copyModuleFiles(module.info.files, pending.sourcePath, dest);
+    // Copy through an app-owned staging directory and rename into place so a
+    // failed install cannot leave a partial module tree at the final path.
+    // safeCopy also rejects intermediate-directory symlink TOCTOU races.
+    await installModuleDirectory(
+      module.info.files,
+      pending.sourcePath,
+      dest
+    );
     return loadModuleFromDir(dest, settings);
   } finally {
     if (pending.cleanupPath) {

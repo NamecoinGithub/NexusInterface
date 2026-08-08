@@ -226,9 +226,13 @@ test('file server uses per-module allowlists and security headers', () => {
 
 test('module directory install copies files without following symlinks', () => {
   const modules = read('src', 'main', 'modules.js');
-  assert.match(modules, /readRegularFileNoFollow/);
-  assert.match(modules, /O_NOFOLLOW/);
-  assert.match(modules, /flag:\s*['"]wx['"]/);
+  const safeCopy = read('src', 'main', 'ipc', 'safeCopy.js');
+  assert.match(modules, /installModuleDirectory/);
+  assert.match(safeCopy, /readRegularFileNoFollow/);
+  assert.match(safeCopy, /O_NOFOLLOW/);
+  assert.match(safeCopy, /flag:\s*['"]wx['"]/);
+  assert.match(safeCopy, /proc\/self\/fd/);
+  assert.match(safeCopy, /assertNoSymlinkComponents/);
   assert.doesNotMatch(
     modules,
     /const copyOne = \(file\) => fsp\.copyFile/
