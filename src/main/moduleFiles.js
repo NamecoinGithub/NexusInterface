@@ -36,13 +36,29 @@ export async function resolveModuleRoot(name) {
   throw new Error(`Module is not installed: ${moduleName}`);
 }
 
-function resolveModuleFile(root, relativePath) {
+/**
+ * Resolve a module-relative file to a real, non-symlink path under root.
+ * Rejects leaf symlinks and realpath escapes (same policy as fileServer.js).
+ */
+async function resolveModuleFile(root, relativePath) {
   const file = assertRelativeModulePath(relativePath);
   const resolved = path.resolve(root, file);
-  if (!resolved.startsWith(`${root}${path.sep}`)) {
+  if (resolved !== root && !resolved.startsWith(`${root}${path.sep}`)) {
     throw new Error('Module file must be inside the module directory');
   }
-  return resolved;
+
+  const leafStat = await fs.lstat(resolved);
+  if (leafStat.isSymbolicLink() || !leafStat.isFile()) {
+    throw new Error(`Module file must be a regular non-symlink file: ${file}`);
+  }
+
+  const realRoot = await fs.realpath(root);
+  const realFile = await fs.realpath(resolved);
+  if (realFile !== realRoot && !realFile.startsWith(`${realRoot}${path.sep}`)) {
+    throw new Error('Module file realpath escapes module root');
+  }
+
+  return realFile;
 }
 
 export async function getModuleEntry(name, fileServerDomain) {
@@ -53,9 +69,7 @@ export async function getModuleEntry(name, fileServerDomain) {
   );
   const info = await readJson(packageFile);
   const entry = info?.entry || 'index.html';
-  const entryPath = resolveModuleFile(root, entry);
-  const stat = await fs.stat(entryPath);
-  if (!stat.isFile()) throw new Error('Module entry file does not exist');
+  const entryPath = await resolveModuleFile(root, entry);
 
   if (development) return pathToFileURL(entryPath).toString();
   const encodedEntry = entry
@@ -69,9 +83,7 @@ export async function validateModuleFiles(name, files) {
   const { root } = await resolveModuleRoot(name);
   return Promise.all(
     files.map(async (file) => {
-      const absoluteFile = resolveModuleFile(root, file);
-      const stat = await fs.stat(absoluteFile);
-      if (!stat.isFile()) throw new Error(`Module file is not a regular file: ${file}`);
+      await resolveModuleFile(root, file);
       return file;
     })
   );
