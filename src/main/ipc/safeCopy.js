@@ -238,8 +238,9 @@ async function openRegularFileNoFollowFdRelative(
         }
         throw err;
       }
-      await dirHandle.close();
+      const previousHandle = dirHandle;
       dirHandle = nextHandle;
+      await previousHandle.close().catch(() => {});
 
       if (isLast) {
         const { stat } = await assertOpenedFileInsideRoot(
