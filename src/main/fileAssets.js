@@ -72,7 +72,7 @@ async function readModuleAssetBytes(moduleName, relativePath, { maxBytes }) {
     throw new Error('Module asset must be a regular non-symlink file');
   }
   if (leafStat.size > maxBytes) {
-    throw new Error('Module icon is not a supported file');
+    throw new Error('Module icon exceeds the maximum allowed size');
   }
 
   // realpath still matters for intermediate parent-directory symlinks before
