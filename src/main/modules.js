@@ -587,11 +587,52 @@ function isPathWithinDirectory(candidatePath, directoryPath) {
   );
 }
 
+/**
+ * Copy a module file without following symlinks. Closes the inspect→install
+ * TOCTOU window where a validated regular file could be replaced by a symlink
+ * to wallet/Core secrets before fsp.copyFile runs.
+ */
+async function readRegularFileNoFollow(filePath, label) {
+  const before = await fsp.lstat(filePath);
+  if (before.isSymbolicLink() || !before.isFile()) {
+    throw new Error(`${label} must be a regular non-symlink file`);
+  }
+
+  if (typeof fs.constants.O_NOFOLLOW === 'number') {
+    const handle = await fsp.open(
+      filePath,
+      fs.constants.O_RDONLY | fs.constants.O_NOFOLLOW
+    );
+    try {
+      return await handle.readFile();
+    } finally {
+      await handle.close();
+    }
+  }
+
+  const content = await fsp.readFile(filePath);
+  const after = await fsp.lstat(filePath);
+  if (
+    after.isSymbolicLink() ||
+    !after.isFile() ||
+    after.size !== before.size ||
+    after.mtimeMs !== before.mtimeMs
+  ) {
+    throw new Error(`${label} changed during install`);
+  }
+  return content;
+}
+
 async function copyModuleFiles(files, source, dest) {
   for (const file of files) {
     await ensureDirExists(dirname(join(dest, file)));
   }
-  const copyOne = (file) => fsp.copyFile(join(source, file), join(dest, file));
+  const copyOne = async (file) => {
+    const from = join(source, file);
+    const to = join(dest, file);
+    const content = await readRegularFileNoFollow(from, file);
+    await fsp.writeFile(to, content, { flag: 'wx' });
+  };
   const promises = [copyOne('nxs_package.json'), ...files.map(copyOne)];
   const repoInfoPath = join(source, 'repo_info.json');
   try {

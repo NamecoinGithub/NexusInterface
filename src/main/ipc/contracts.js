@@ -300,6 +300,92 @@ function assertExternalUrl(value, name = 'URL', { mailto = false } = {}) {
   return parsed.toString();
 }
 
+/**
+ * Flags that the wallet already manages or that would let a compromised
+ * renderer override Core security boundaries if accepted via advanced params.
+ */
+const FORBIDDEN_ADVANCED_CORE_FLAGS = new Set([
+  'datadir',
+  'conf',
+  'pid',
+  'apiuser',
+  'apipassword',
+  'apiport',
+  'apisslport',
+  'apissl',
+  'ssl',
+  'daemon',
+  'server',
+  'walletclean',
+  'rpcuser',
+  'rpcpassword',
+  'rpcport',
+]);
+
+function assertAbsoluteFilesystemPath(value, name) {
+  const raw = assertString(value, name, { min: 1, max: 4096 });
+  if (raw.includes('\0')) {
+    fail(`${name} is invalid`);
+  }
+  // Users may type a home-relative path; main expands ~ before use.
+  if (raw === '~' || raw.startsWith('~/') || raw.startsWith('~\\')) {
+    if (raw.split(/[\\/]/).includes('..')) {
+      fail(`${name} must not contain '..' segments`);
+    }
+    return raw;
+  }
+  const isAbsolutePath =
+    raw.startsWith('/') ||
+    /^[a-zA-Z]:[\\/]/.test(raw) ||
+    raw.startsWith('\\\\');
+  if (!isAbsolutePath) {
+    fail(`${name} must be an absolute path`);
+  }
+  if (raw.split(/[\\/]/).includes('..')) {
+    fail(`${name} must not contain '..' segments`);
+  }
+  return raw;
+}
+
+function assertAdvancedCoreParams(value) {
+  if (value === undefined || value === null || value === '') {
+    return '';
+  }
+  const raw = assertString(value, 'Advanced Core params', {
+    min: 1,
+    max: 2048,
+  });
+  if (/[\r\n\0;|&`$<>]/.test(raw)) {
+    fail('Advanced Core params contain unsupported characters');
+  }
+
+  const parts = [];
+  const pattern = /"([^"]*)"|'([^']*)'|(\S+)/g;
+  let match;
+  while ((match = pattern.exec(raw)) !== null) {
+    parts.push(match[1] ?? match[2] ?? match[3]);
+  }
+  if (!parts.length || parts.length > 32) {
+    fail('Advanced Core params are invalid');
+  }
+
+  for (const part of parts) {
+    if (!part.startsWith('-')) {
+      fail('Advanced Core params must be dash flags');
+    }
+    const body = part.replace(/^-+/, '');
+    const eq = body.indexOf('=');
+    const name = (eq === -1 ? body : body.slice(0, eq)).toLowerCase();
+    if (!name || !/^[a-z][a-z0-9_-]*$/i.test(name)) {
+      fail('Advanced Core flag name is invalid');
+    }
+    if (FORBIDDEN_ADVANCED_CORE_FLAGS.has(name)) {
+      fail(`Advanced Core flag -${name} is not allowed`);
+    }
+  }
+  return raw;
+}
+
 function validateSettingsUpdate(value) {
   const updates = assertRecord(value, 'Settings update');
   const entries = Object.entries(updates);
@@ -363,6 +449,54 @@ function validateSettingsUpdate(value) {
         ))
     ) {
       fail(`Settings array value for ${key} is invalid`);
+    }
+    if (
+      [
+        'allowAdvancedCoreOptions',
+        'walletClean',
+        'clearPeers',
+        'manualDaemon',
+        'manualDaemonApiSSL',
+        'embeddedCoreUseNonSSL',
+        'privateTestnet',
+        'enableMining',
+        'enableStaking',
+        'pooledStaking',
+        'multiUser',
+        'liteMode',
+        'safeMode',
+        'avatarMode',
+      ].includes(key)
+    ) {
+      assertBoolean(fieldValue, key);
+    }
+    if (key === 'advancedCoreParams') {
+      validated[key] = assertAdvancedCoreParams(fieldValue);
+      continue;
+    }
+    if (key === 'coreDataDir' || key === 'backupDirectory') {
+      validated[key] = assertAbsoluteFilesystemPath(fieldValue, key);
+      continue;
+    }
+    if (key === 'embeddedCoreBinaryPath') {
+      if (fieldValue === '' || fieldValue === undefined || fieldValue === null) {
+        validated[key] = '';
+        continue;
+      }
+      validated[key] = assertAbsoluteFilesystemPath(
+        fieldValue,
+        'embeddedCoreBinaryPath'
+      );
+      continue;
+    }
+    if (key === 'revertBlocks') {
+      const raw = fieldValue === '' || fieldValue === undefined ? 0 : fieldValue;
+      const num = typeof raw === 'number' ? raw : Number(String(raw));
+      if (!Number.isInteger(num) || num < 0 || num > 1_000_000) {
+        fail('revertBlocks must be an integer between 0 and 1000000');
+      }
+      validated[key] = num;
+      continue;
     }
     validated[key] = fieldValue;
   }
@@ -581,7 +715,10 @@ module.exports = {
   ALLOWED_EXTERNAL_HOSTS,
   CHANNELS,
   EVENTS,
+  FORBIDDEN_ADVANCED_CORE_FLAGS,
   MAX_CLIPBOARD_TEXT_LENGTH,
+  assertAbsoluteFilesystemPath,
+  assertAdvancedCoreParams,
   assertAllowedCoreRpcEndpoint,
   assertBoolean,
   assertExternalUrl,
