@@ -179,6 +179,33 @@ function splitRelativeSegments(rootPath, targetPath, label) {
 }
 
 /**
+ * Read at most maxBytes from an open file handle. Caps allocation even when the
+ * underlying inode grows between stat and read by stopping at maxBytes + 1.
+ */
+async function readFileHandleBounded(handle, maxBytes, label) {
+  if (!Number.isFinite(maxBytes) || maxBytes < 0) {
+    throw new Error(`${label} has an invalid size limit`);
+  }
+  const cap = Math.floor(maxBytes) + 1;
+  const buffer = Buffer.allocUnsafe(cap);
+  let offset = 0;
+  while (offset < cap) {
+    const { bytesRead } = await handle.read(
+      buffer,
+      offset,
+      cap - offset,
+      offset
+    );
+    if (bytesRead === 0) break;
+    offset += bytesRead;
+  }
+  if (offset > maxBytes) {
+    throw new Error(`${label} exceeds the size limit`);
+  }
+  return buffer.subarray(0, offset);
+}
+
+/**
  * Open a file under root using descriptor-relative O_NOFOLLOW opens for every
  * path component so intermediate directory swaps cannot redirect the walk.
  */
@@ -269,10 +296,11 @@ async function openRegularFileNoFollowFdRelative(
         if (stat.size > maxBytes) {
           throw new Error(`${label} exceeds the size limit`);
         }
-        const content = await dirHandle.readFile();
-        if (content.length > maxBytes) {
-          throw new Error(`${label} exceeds the size limit`);
-        }
+        const content = await readFileHandleBounded(
+          dirHandle,
+          maxBytes,
+          label
+        );
         const handle = dirHandle;
         dirHandle = null;
         try {
@@ -291,11 +319,13 @@ async function openRegularFileNoFollowFdRelative(
 }
 
 /**
- * Best-effort path-based read used only against an already app-owned snapshot
- * whose parents the untrusted module author cannot replace. Mutable install
- * sources must be snapshotted first via copyModuleFiles.
+ * Best-effort path-based read used only against an already app-owned tree
+ * whose parents the untrusted module author cannot replace (for example an
+ * archive extract under the application temp directory). Mutable user-selected
+ * install sources must not use this path: platforms without fd-relative opens
+ * fail closed instead.
  */
-async function readRegularFileFromTrustedSnapshot(
+async function readRegularFileFromTrustedRoot(
   filePath,
   { root, label = filePath, maxBytes = DEFAULT_MAX_FILE_BYTES } = {}
 ) {
@@ -328,17 +358,21 @@ async function readRegularFileFromTrustedSnapshot(
         throw new Error(`${label} exceeds the size limit`);
       }
       await assertNoSymlinkComponents(resolvedRoot, resolvedFile, label);
-      const content = await handle.readFile();
-      if (content.length > maxBytes) {
-        throw new Error(`${label} exceeds the size limit`);
-      }
-      return content;
+      return await readFileHandleBounded(handle, maxBytes, label);
     } finally {
       await handle.close();
     }
   }
 
-  const content = await fsp.readFile(resolvedFile);
+  // No O_NOFOLLOW: read through a size-capped stream so a growing file cannot
+  // force unbounded main-process allocation, then re-check identity metadata.
+  const handle = await fsp.open(resolvedFile, fs.constants.O_RDONLY);
+  let content;
+  try {
+    content = await readFileHandleBounded(handle, maxBytes, label);
+  } finally {
+    await handle.close();
+  }
   const after = await fsp.lstat(resolvedFile);
   if (
     after.isSymbolicLink() ||
@@ -354,9 +388,6 @@ async function readRegularFileFromTrustedSnapshot(
   const realFile = await fsp.realpath(resolvedFile);
   const realRoot = await fsp.realpath(resolvedRoot);
   assertPathInsideRoot(realFile, realRoot, label);
-  if (content.length > maxBytes) {
-    throw new Error(`${label} exceeds the size limit`);
-  }
   return content;
 }
 
@@ -365,10 +396,9 @@ async function readRegularFileFromTrustedSnapshot(
  * symlinks. Used to safely read source files during module installation.
  *
  * On platforms without descriptor-relative no-follow opens (notably Windows),
- * path-based reads of a mutable source remain TOCTOU-prone. Prefer
- * copyModuleFiles / installModuleDirectory, which first materialize an
- * immutable app-owned snapshot before reading. Direct callers must only use
- * this helper against already-trusted roots, or accept fd-relative platforms.
+ * path-based reads of a mutable source remain TOCTOU-prone. Mutable directory
+ * installs therefore fail closed; callers may only opt into the path fallback
+ * for already app-owned trees (archive extracts, installed module roots).
  */
 async function readRegularFileNoFollow(
   filePath,
@@ -398,15 +428,15 @@ async function readRegularFileNoFollow(
 
   // Windows and other platforms without openat-style fd paths cannot bind
   // intermediate components to directory handles. Refuse path-based reads of
-  // mutable sources unless the caller explicitly opts into the trusted-
-  // snapshot fallback (used only after materializeAppOwnedSourceSnapshot).
+  // mutable sources unless the caller explicitly opts into a trusted-root
+  // fallback (app-owned extract/install trees only).
   if (!allowPathFallback) {
     throw new Error(
-      `${label} secure module file reads require descriptor-relative opens or an app-owned source snapshot`
+      `${label} secure module file reads require descriptor-relative opens or an app-owned trusted root`
     );
   }
 
-  return readRegularFileFromTrustedSnapshot(resolvedFile, {
+  return readRegularFileFromTrustedRoot(resolvedFile, {
     root: resolvedRoot,
     label,
     maxBytes,
@@ -463,65 +493,14 @@ async function appendOptionalRepoInfo(uniqueFiles, sourceRoot) {
 }
 
 /**
- * One-pass materialization of declared module files into an app-owned directory.
- * Used on platforms without descriptor-relative opens so subsequent install
- * reads never touch the mutable user-controlled source tree again.
- */
-async function materializeAppOwnedSourceSnapshot(
-  files,
-  source,
-  snapshotRoot,
-  { maxBytes = DEFAULT_MAX_FILE_BYTES } = {}
-) {
-  const sourceRoot = path.resolve(source);
-  const snapRoot = path.resolve(snapshotRoot);
-  await fsp.mkdir(snapRoot, { recursive: false });
-
-  const uniqueFiles = await appendOptionalRepoInfo(
-    collectUniqueModuleFiles(files),
-    sourceRoot
-  );
-
-  for (const relativeFile of uniqueFiles) {
-    if (
-      !relativeFile ||
-      relativeFile.includes('\0') ||
-      path.isAbsolute(relativeFile)
-    ) {
-      throw new Error(`Invalid module file path: ${relativeFile}`);
-    }
-
-    const from = path.join(sourceRoot, relativeFile);
-    const to = path.join(snapRoot, relativeFile);
-    if (!isPathWithinDirectory(from, sourceRoot)) {
-      throw new Error(`${relativeFile} escapes module root`);
-    }
-    if (!isPathWithinDirectory(to, snapRoot)) {
-      throw new Error(`${relativeFile} escapes snapshot destination`);
-    }
-
-    await ensureDirExists(path.dirname(to));
-    // Path-based snapshot of a mutable source is inherently racy on Windows;
-    // after this one-time materialize, install only reads the app-owned tree.
-    const content = await readRegularFileFromTrustedSnapshot(from, {
-      root: sourceRoot,
-      label: relativeFile,
-      maxBytes,
-    });
-    await fsp.writeFile(to, content, { flag: 'wx' });
-  }
-
-  return snapRoot;
-}
-
-/**
  * Copy declared module files from source to dest without following symlinks.
  * Destination files are created exclusively (wx).
  *
- * On platforms without descriptor-relative no-follow traversal (Windows), the
- * mutable source is first copied into an app-owned snapshot under the
- * destination parent so intermediate junction swaps against the user tree
- * cannot redirect later install reads.
+ * On platforms without descriptor-relative no-follow traversal (Windows),
+ * mutable user-controlled sources fail closed: path-based snapshotting cannot
+ * bind intermediate components and remains TOCTOU-prone against junctions.
+ * Only already app-owned trees may set trustedSource (archive extracts under
+ * application temp).
  */
 async function copyModuleFiles(
   files,
@@ -530,34 +509,16 @@ async function copyModuleFiles(
   {
     maxBytes = DEFAULT_MAX_FILE_BYTES,
     trustedSource = false,
-    // Test/override hook: force the Windows-style app-owned source snapshot
-    // path even when descriptor-relative opens are available.
-    forceSourceSnapshot = false,
   } = {}
 ) {
   const destRoot = path.resolve(dest);
-
-  // Windows / non-fd-relative platforms: freeze the untrusted source into an
-  // immutable app-owned snapshot before any destination writes.
-  if ((!supportsFdRelativeOpen() || forceSourceSnapshot) && !trustedSource) {
-    const snapshotPath = path.join(
-      path.dirname(destRoot),
-      `.source-snapshot-${crypto.randomUUID()}`
-    );
-    try {
-      await materializeAppOwnedSourceSnapshot(files, source, snapshotPath, {
-        maxBytes,
-      });
-      return await copyModuleFiles(files, snapshotPath, destRoot, {
-        maxBytes,
-        trustedSource: true,
-      });
-    } finally {
-      await fsp.rm(snapshotPath, { recursive: true, force: true }).catch(() => {});
-    }
-  }
-
   const sourceRoot = path.resolve(source);
+
+  if (!supportsFdRelativeOpen() && !trustedSource) {
+    throw new Error(
+      'Secure module directory installs require descriptor-relative opens on this platform; use a module archive or an app-owned trusted source'
+    );
+  }
 
   const copyOne = async (file) => {
     const relativeFile = String(file);
@@ -583,8 +544,8 @@ async function copyModuleFiles(
       root: sourceRoot,
       label: relativeFile,
       maxBytes,
-      // Trusted snapshots are app-owned; path fallback is only for that case
-      // when fd-relative opens are unavailable.
+      // Trusted roots are app-owned; path fallback is only for that case when
+      // fd-relative opens are unavailable.
       allowPathFallback: trustedSource,
     });
     await fsp.writeFile(to, content, { flag: 'wx' });
@@ -607,7 +568,11 @@ async function installModuleDirectory(
   files,
   source,
   dest,
-  { maxBytes = DEFAULT_MAX_FILE_BYTES, verifyStaging } = {}
+  {
+    maxBytes = DEFAULT_MAX_FILE_BYTES,
+    verifyStaging,
+    trustedSource = false,
+  } = {}
 ) {
   const destPath = path.resolve(dest);
   const destParent = path.dirname(destPath);
@@ -620,7 +585,10 @@ async function installModuleDirectory(
   await ensureDirExists(destParent);
   await fsp.mkdir(stagingPath, { recursive: false });
   try {
-    await copyModuleFiles(files, source, stagingPath, { maxBytes });
+    await copyModuleFiles(files, source, stagingPath, {
+      maxBytes,
+      trustedSource,
+    });
     // Validate the app-owned staging tree before publishing so a source that
     // mutates after the copy plan was captured cannot land a mismatched
     // descriptor/file set at the final install path.
@@ -642,4 +610,5 @@ module.exports = {
   installModuleDirectory,
   isPathWithinDirectory,
   readRegularFileNoFollow,
+  supportsFdRelativeOpen,
 };

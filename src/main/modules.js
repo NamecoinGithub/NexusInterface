@@ -29,7 +29,10 @@ import {
   assertSafeModuleName,
   assertString,
 } from './ipc/contracts';
-import { installModuleDirectory } from './ipc/safeCopy';
+import {
+  installModuleDirectory,
+  supportsFdRelativeOpen,
+} from './ipc/safeCopy';
 import { extractSafeZip } from './ipc/safeZip';
 import { modulesDir, moduleDownloadDir, temporaryModuleDir } from './paths';
 import { loadSettingsFromFile } from './settings';
@@ -675,6 +678,15 @@ async function resolveInstallSource(sourcePath) {
   if (isPathWithinDirectory(source, modulesDir)) {
     throw new Error('Cannot install from this location');
   }
+  // Mutable user-selected directories cannot be copied safely without
+  // descriptor-relative no-follow traversal (unavailable on Windows). Fail
+  // closed rather than path-snapshotting a junction-racy tree. Module archives
+  // extract into an app-owned temp directory and remain supported.
+  if (!supportsFdRelativeOpen()) {
+    throw new Error(
+      'Installing from a module directory is not supported on this platform; package the module as a .zip archive'
+    );
+  }
   return { dirPath: resolve(source), cleanupPath: undefined };
 }
 
@@ -743,6 +755,9 @@ export async function finalizeInstall({ token, overwrite }) {
     // cannot swap nxs_package.json (name/file list) after the copy plan was
     // captured and leave a broken or mismatched module at the final path.
     await installModuleDirectory(expectedFiles, pending.sourcePath, dest, {
+      // Archive extracts land under application temp (cleanupPath set) and are
+      // treated as app-owned trusted roots on platforms without fd-relative opens.
+      trustedSource: Boolean(pending.cleanupPath),
       verifyStaging: async (stagingPath) => {
         const staged = await loadModuleFromDir(stagingPath, settings);
         if (staged.info.name !== expectedName) {

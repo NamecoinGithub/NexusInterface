@@ -324,13 +324,25 @@ test('copyModuleFiles deduplicates declared paths and copies sequentially', asyn
   const moduleRoot = path.join(tempRoot, 'module');
   const destRoot = path.join(tempRoot, 'dest');
   const safeCopySource = read('src', 'main', 'ipc', 'safeCopy.js');
+  const modulesSource = read('src', 'main', 'modules.js');
 
   assert.match(safeCopySource, /new Set\(/);
   assert.match(safeCopySource, /COPY_CONCURRENCY\s*=\s*1/);
   assert.match(safeCopySource, /directoryFdPath|\/proc\/self\/fd|\/dev\/fd/);
-  assert.match(safeCopySource, /materializeAppOwnedSourceSnapshot/);
   assert.match(safeCopySource, /trustedSource/);
-  assert.match(safeCopySource, /source-snapshot-/);
+  assert.match(safeCopySource, /readFileHandleBounded/);
+  assert.match(safeCopySource, /maxBytes\) \+ 1|maxBytes \+ 1/);
+  assert.doesNotMatch(safeCopySource, /materializeAppOwnedSourceSnapshot/);
+  assert.doesNotMatch(safeCopySource, /source-snapshot-/);
+  assert.doesNotMatch(safeCopySource, /forceSourceSnapshot/);
+  assert.match(
+    safeCopySource,
+    /descriptor-relative opens on this platform/
+  );
+  assert.match(
+    modulesSource,
+    /package the module as a \.zip archive/
+  );
 
   try {
     await writeModuleTree(moduleRoot, {
@@ -354,24 +366,23 @@ test('copyModuleFiles deduplicates declared paths and copies sequentially', asyn
       'a'
     );
 
-    // Exercise the Windows-style app-owned source snapshot install path.
-    const snapshotDest = path.join(tempRoot, 'dest-snapshot');
-    await copyModuleFiles(['index.html', 'assets/a.txt'], moduleRoot, snapshotDest, {
-      forceSourceSnapshot: true,
-    });
+    // App-owned trusted roots remain installable even when the caller opts into
+    // the path-fallback path used on platforms without fd-relative opens.
+    const trustedDest = path.join(tempRoot, 'dest-trusted');
+    await copyModuleFiles(
+      ['index.html', 'assets/a.txt'],
+      moduleRoot,
+      trustedDest,
+      { trustedSource: true }
+    );
     assert.equal(
-      await fsp.readFile(path.join(snapshotDest, 'index.html'), 'utf8'),
+      await fsp.readFile(path.join(trustedDest, 'index.html'), 'utf8'),
       '<html>ok</html>'
     );
     assert.equal(
-      await fsp.readFile(path.join(snapshotDest, 'assets', 'a.txt'), 'utf8'),
+      await fsp.readFile(path.join(trustedDest, 'assets', 'a.txt'), 'utf8'),
       'a'
     );
-    // Snapshot dirs must be cleaned up after copy.
-    const leftovers = (await fsp.readdir(tempRoot)).filter((name) =>
-      name.startsWith('.source-snapshot-')
-    );
-    assert.deepEqual(leftovers, []);
   } finally {
     await fsp.rm(tempRoot, { recursive: true, force: true });
   }
@@ -379,14 +390,47 @@ test('copyModuleFiles deduplicates declared paths and copies sequentially', asyn
 
 test('readRegularFileNoFollow fails closed without fd-relative or path fallback', async () => {
   const safeCopySource = read('src', 'main', 'ipc', 'safeCopy.js');
+  assert.match(safeCopySource, /allowPathFallback/);
   assert.match(
     safeCopySource,
-    /allowPathFallback/
+    /descriptor-relative opens or an app-owned trusted root/
   );
-  assert.match(
-    safeCopySource,
-    /descriptor-relative opens or an app-owned source snapshot/
-  );
+});
+
+test('copyModuleFiles fails closed for mutable sources without fd-relative opens', async () => {
+  const {
+    copyModuleFiles: copyModuleFilesFn,
+    supportsFdRelativeOpen,
+  } = require('../../src/main/ipc/safeCopy');
+
+  // On this host fd-relative opens are expected (Linux CI). Emulate the Windows
+  // fail-closed branch by requiring trustedSource when the platform lacks it;
+  // always assert the exported guard and the error text via source + API.
+  assert.equal(typeof supportsFdRelativeOpen, 'function');
+  if (!supportsFdRelativeOpen()) {
+    const tempRoot = await makeTempDir('module-copy-fail-closed-');
+    try {
+      const moduleRoot = path.join(tempRoot, 'module');
+      const destRoot = path.join(tempRoot, 'dest');
+      await writeModuleTree(moduleRoot, {
+        'nxs_package.json': '{"name":"demo"}',
+        'index.html': '<html>ok</html>',
+      });
+      await assert.rejects(
+        () => copyModuleFilesFn(['index.html'], moduleRoot, destRoot),
+        /descriptor-relative opens on this platform/
+      );
+      await copyModuleFilesFn(['index.html'], moduleRoot, destRoot, {
+        trustedSource: true,
+      });
+      assert.equal(
+        await fsp.readFile(path.join(destRoot, 'index.html'), 'utf8'),
+        '<html>ok</html>'
+      );
+    } finally {
+      await fsp.rm(tempRoot, { recursive: true, force: true });
+    }
+  }
 });
 
 test('Build Guide documents the package engines Node/npm floor', () => {
