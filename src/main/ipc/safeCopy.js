@@ -505,7 +505,10 @@ function collectUniqueModuleFiles(files) {
 async function appendOptionalRepoInfo(uniqueFiles, sourceRoot) {
   const repoInfoPath = path.join(sourceRoot, 'repo_info.json');
   try {
-    await fsp.lstat(repoInfoPath);
+    const stat = await fsp.lstat(repoInfoPath);
+    if (stat.isSymbolicLink() || !stat.isFile()) {
+      throw new Error('repo_info.json must be a regular non-symlink file');
+    }
     if (!uniqueFiles.includes('repo_info.json')) {
       uniqueFiles.push('repo_info.json');
     }
@@ -626,8 +629,10 @@ async function installModuleDirectory(
     }
 
     // Overwrite path: move the live install aside only after staging is ready.
+    // lstat (not access) so a dangling destination symlink is not treated as
+    // missing and left in place to block/confuse the publish rename.
     try {
-      await fsp.access(destPath);
+      await fsp.lstat(destPath);
       replacedPath = path.join(
         destParent,
         `.${destName}.replaced-${crypto.randomUUID()}`
