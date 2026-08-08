@@ -237,6 +237,8 @@ test('module directory install copies files without following symlinks', () => {
   assert.match(safeCopy, /supportsFdRelativeOpen|directoryFdPath/);
   assert.match(safeCopy, /COPY_CONCURRENCY\s*=\s*1/);
   assert.match(safeCopy, /new Set\(/);
+  assert.match(safeCopy, /materializeAppOwnedSourceSnapshot/);
+  assert.match(safeCopy, /trustedSource/);
   assert.doesNotMatch(
     modules,
     /const copyOne = \(file\) => fsp\.copyFile/

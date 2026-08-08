@@ -93,7 +93,11 @@ test('safeCopy rejects leaf symlinks, intermediate directory symlinks, and escap
 
     const good = await readRegularFileNoFollow(
       path.join(moduleRoot, 'assets', 'index.html'),
-      { root: moduleRoot, label: 'assets/index.html' }
+      {
+        root: moduleRoot,
+        label: 'assets/index.html',
+        allowPathFallback: true,
+      }
     );
     assert.equal(String(good), '<html>ok</html>');
 
@@ -105,6 +109,7 @@ test('safeCopy rejects leaf symlinks, intermediate directory symlinks, and escap
         readRegularFileNoFollow(path.join(symlinkRoot, 'assets', 'index.html'), {
           root: symlinkRoot,
           label: 'assets/index.html',
+          allowPathFallback: true,
         }),
       /symbolic link|module root/
     );
@@ -118,6 +123,7 @@ test('safeCopy rejects leaf symlinks, intermediate directory symlinks, and escap
         readRegularFileNoFollow(path.join(moduleRoot, 'assets', 'leaf-link.txt'), {
           root: moduleRoot,
           label: 'assets/leaf-link.txt',
+          allowPathFallback: true,
         }),
       /symbolic link|regular non-symlink/
     );
@@ -131,7 +137,11 @@ test('safeCopy rejects leaf symlinks, intermediate directory symlinks, and escap
       () =>
         readRegularFileNoFollow(
           path.join(moduleRoot, 'assets', 'nested', 'secret.txt'),
-          { root: moduleRoot, label: 'assets/nested/secret.txt' }
+          {
+            root: moduleRoot,
+            label: 'assets/nested/secret.txt',
+            allowPathFallback: true,
+          }
         ),
       /symbolic link|escapes module root/
     );
@@ -141,6 +151,7 @@ test('safeCopy rejects leaf symlinks, intermediate directory symlinks, and escap
         readRegularFileNoFollow(path.join(outsideDir, 'secret.txt'), {
           root: moduleRoot,
           label: 'outside',
+          allowPathFallback: true,
         }),
       /escapes module root/
     );
@@ -150,6 +161,7 @@ test('safeCopy rejects leaf symlinks, intermediate directory symlinks, and escap
         readRegularFileNoFollow(path.join(moduleRoot, 'missing.txt'), {
           root: moduleRoot,
           label: 'missing.txt',
+          allowPathFallback: true,
         }),
       /not found|ENOENT/
     );
@@ -316,6 +328,9 @@ test('copyModuleFiles deduplicates declared paths and copies sequentially', asyn
   assert.match(safeCopySource, /new Set\(/);
   assert.match(safeCopySource, /COPY_CONCURRENCY\s*=\s*1/);
   assert.match(safeCopySource, /directoryFdPath|\/proc\/self\/fd|\/dev\/fd/);
+  assert.match(safeCopySource, /materializeAppOwnedSourceSnapshot/);
+  assert.match(safeCopySource, /trustedSource/);
+  assert.match(safeCopySource, /source-snapshot-/);
 
   try {
     await writeModuleTree(moduleRoot, {
@@ -338,9 +353,40 @@ test('copyModuleFiles deduplicates declared paths and copies sequentially', asyn
       await fsp.readFile(path.join(destRoot, 'assets', 'a.txt'), 'utf8'),
       'a'
     );
+
+    // Exercise the Windows-style app-owned source snapshot install path.
+    const snapshotDest = path.join(tempRoot, 'dest-snapshot');
+    await copyModuleFiles(['index.html', 'assets/a.txt'], moduleRoot, snapshotDest, {
+      forceSourceSnapshot: true,
+    });
+    assert.equal(
+      await fsp.readFile(path.join(snapshotDest, 'index.html'), 'utf8'),
+      '<html>ok</html>'
+    );
+    assert.equal(
+      await fsp.readFile(path.join(snapshotDest, 'assets', 'a.txt'), 'utf8'),
+      'a'
+    );
+    // Snapshot dirs must be cleaned up after copy.
+    const leftovers = (await fsp.readdir(tempRoot)).filter((name) =>
+      name.startsWith('.source-snapshot-')
+    );
+    assert.deepEqual(leftovers, []);
   } finally {
     await fsp.rm(tempRoot, { recursive: true, force: true });
   }
+});
+
+test('readRegularFileNoFollow fails closed without fd-relative or path fallback', async () => {
+  const safeCopySource = read('src', 'main', 'ipc', 'safeCopy.js');
+  assert.match(
+    safeCopySource,
+    /allowPathFallback/
+  );
+  assert.match(
+    safeCopySource,
+    /descriptor-relative opens or an app-owned source snapshot/
+  );
 });
 
 test('Build Guide documents the package engines Node/npm floor', () => {

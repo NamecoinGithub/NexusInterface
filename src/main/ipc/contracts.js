@@ -317,6 +317,10 @@ const FORBIDDEN_ADVANCED_CORE_FLAGS = new Set([
   'daemon',
   'server',
   'walletclean',
+  // Wallet-managed launch flags; advanced params are appended at spawn and must
+  // not disable API auth or bypass the bounded revertBlocks setting.
+  'noapiauth',
+  'revertblocks',
   'rpcuser',
   'rpcpassword',
   'rpcport',

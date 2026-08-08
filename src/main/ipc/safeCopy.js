@@ -291,33 +291,17 @@ async function openRegularFileNoFollowFdRelative(
 }
 
 /**
- * Read a regular file under root without following leaf or intermediate
- * symlinks. Used to safely read source files during module installation.
+ * Best-effort path-based read used only against an already app-owned snapshot
+ * whose parents the untrusted module author cannot replace. Mutable install
+ * sources must be snapshotted first via copyModuleFiles.
  */
-async function readRegularFileNoFollow(
+async function readRegularFileFromTrustedSnapshot(
   filePath,
   { root, label = filePath, maxBytes = DEFAULT_MAX_FILE_BYTES } = {}
 ) {
-  if (!root) {
-    throw new TypeError('readRegularFileNoFollow requires a root directory');
-  }
-
   const resolvedFile = path.resolve(filePath);
   const resolvedRoot = path.resolve(root);
   assertPathInsideRoot(resolvedFile, resolvedRoot, label);
-
-  if (supportsFdRelativeOpen()) {
-    return openRegularFileNoFollowFdRelative(
-      resolvedFile,
-      resolvedRoot,
-      label,
-      maxBytes
-    );
-  }
-
-  // Platforms without openat-style fd paths: best-effort component checks and
-  // leaf O_NOFOLLOW when available. Parents may still race; callers that need
-  // stronger guarantees should stage from a trusted snapshot first.
   await assertNoSymlinkComponents(resolvedRoot, resolvedFile, label);
 
   const before = await fsp.lstat(resolvedFile);
@@ -376,6 +360,59 @@ async function readRegularFileNoFollow(
   return content;
 }
 
+/**
+ * Read a regular file under root without following leaf or intermediate
+ * symlinks. Used to safely read source files during module installation.
+ *
+ * On platforms without descriptor-relative no-follow opens (notably Windows),
+ * path-based reads of a mutable source remain TOCTOU-prone. Prefer
+ * copyModuleFiles / installModuleDirectory, which first materialize an
+ * immutable app-owned snapshot before reading. Direct callers must only use
+ * this helper against already-trusted roots, or accept fd-relative platforms.
+ */
+async function readRegularFileNoFollow(
+  filePath,
+  {
+    root,
+    label = filePath,
+    maxBytes = DEFAULT_MAX_FILE_BYTES,
+    allowPathFallback = false,
+  } = {}
+) {
+  if (!root) {
+    throw new TypeError('readRegularFileNoFollow requires a root directory');
+  }
+
+  const resolvedFile = path.resolve(filePath);
+  const resolvedRoot = path.resolve(root);
+  assertPathInsideRoot(resolvedFile, resolvedRoot, label);
+
+  if (supportsFdRelativeOpen()) {
+    return openRegularFileNoFollowFdRelative(
+      resolvedFile,
+      resolvedRoot,
+      label,
+      maxBytes
+    );
+  }
+
+  // Windows and other platforms without openat-style fd paths cannot bind
+  // intermediate components to directory handles. Refuse path-based reads of
+  // mutable sources unless the caller explicitly opts into the trusted-
+  // snapshot fallback (used only after materializeAppOwnedSourceSnapshot).
+  if (!allowPathFallback) {
+    throw new Error(
+      `${label} secure module file reads require descriptor-relative opens or an app-owned source snapshot`
+    );
+  }
+
+  return readRegularFileFromTrustedSnapshot(resolvedFile, {
+    root: resolvedRoot,
+    label,
+    maxBytes,
+  });
+}
+
 async function ensureDirExists(dirPath) {
   await fsp.mkdir(dirPath, { recursive: true });
 }
@@ -398,18 +435,129 @@ async function mapPool(items, concurrency, worker) {
   return results;
 }
 
+function collectUniqueModuleFiles(files, sourceRoot) {
+  // Deduplicate declared paths so exclusive wx writes cannot race on duplicates.
+  return [
+    'nxs_package.json',
+    ...new Set(
+      files
+        .map((file) => String(file))
+        .filter(
+          (file) => file !== 'nxs_package.json' && file !== 'repo_info.json'
+        )
+    ),
+  ];
+}
+
+async function appendOptionalRepoInfo(uniqueFiles, sourceRoot) {
+  const repoInfoPath = path.join(sourceRoot, 'repo_info.json');
+  try {
+    await fsp.lstat(repoInfoPath);
+    if (!uniqueFiles.includes('repo_info.json')) {
+      uniqueFiles.push('repo_info.json');
+    }
+  } catch (err) {
+    if (err?.code !== 'ENOENT') throw err;
+  }
+  return uniqueFiles;
+}
+
+/**
+ * One-pass materialization of declared module files into an app-owned directory.
+ * Used on platforms without descriptor-relative opens so subsequent install
+ * reads never touch the mutable user-controlled source tree again.
+ */
+async function materializeAppOwnedSourceSnapshot(
+  files,
+  source,
+  snapshotRoot,
+  { maxBytes = DEFAULT_MAX_FILE_BYTES } = {}
+) {
+  const sourceRoot = path.resolve(source);
+  const snapRoot = path.resolve(snapshotRoot);
+  await fsp.mkdir(snapRoot, { recursive: false });
+
+  const uniqueFiles = await appendOptionalRepoInfo(
+    collectUniqueModuleFiles(files, sourceRoot),
+    sourceRoot
+  );
+
+  for (const relativeFile of uniqueFiles) {
+    if (
+      !relativeFile ||
+      relativeFile.includes('\0') ||
+      path.isAbsolute(relativeFile)
+    ) {
+      throw new Error(`Invalid module file path: ${relativeFile}`);
+    }
+
+    const from = path.join(sourceRoot, relativeFile);
+    const to = path.join(snapRoot, relativeFile);
+    if (!isPathWithinDirectory(from, sourceRoot)) {
+      throw new Error(`${relativeFile} escapes module root`);
+    }
+    if (!isPathWithinDirectory(to, snapRoot)) {
+      throw new Error(`${relativeFile} escapes snapshot destination`);
+    }
+
+    await ensureDirExists(path.dirname(to));
+    // Path-based snapshot of a mutable source is inherently racy on Windows;
+    // after this one-time materialize, install only reads the app-owned tree.
+    const content = await readRegularFileFromTrustedSnapshot(from, {
+      root: sourceRoot,
+      label: relativeFile,
+      maxBytes,
+    });
+    await fsp.writeFile(to, content, { flag: 'wx' });
+  }
+
+  return snapRoot;
+}
+
 /**
  * Copy declared module files from source to dest without following symlinks.
  * Destination files are created exclusively (wx).
+ *
+ * On platforms without descriptor-relative no-follow traversal (Windows), the
+ * mutable source is first copied into an app-owned snapshot under the
+ * destination parent so intermediate junction swaps against the user tree
+ * cannot redirect later install reads.
  */
 async function copyModuleFiles(
   files,
   source,
   dest,
-  { maxBytes = DEFAULT_MAX_FILE_BYTES } = {}
+  {
+    maxBytes = DEFAULT_MAX_FILE_BYTES,
+    trustedSource = false,
+    // Test/override hook: force the Windows-style app-owned source snapshot
+    // path even when descriptor-relative opens are available.
+    forceSourceSnapshot = false,
+  } = {}
 ) {
-  const sourceRoot = path.resolve(source);
   const destRoot = path.resolve(dest);
+
+  // Windows / non-fd-relative platforms: freeze the untrusted source into an
+  // immutable app-owned snapshot before any destination writes.
+  if ((!supportsFdRelativeOpen() || forceSourceSnapshot) && !trustedSource) {
+    const snapshotPath = path.join(
+      path.dirname(destRoot),
+      `.source-snapshot-${crypto.randomUUID()}`
+    );
+    try {
+      await materializeAppOwnedSourceSnapshot(files, source, snapshotPath, {
+        maxBytes,
+      });
+      return await copyModuleFiles(files, snapshotPath, destRoot, {
+        maxBytes,
+        trustedSource: true,
+      });
+    } finally {
+      await fsp.rm(snapshotPath, { recursive: true, force: true }).catch(() => {});
+    }
+  }
+
+  const sourceRoot = path.resolve(source);
 
   const copyOne = async (file) => {
     const relativeFile = String(file);
@@ -435,30 +583,17 @@ async function copyModuleFiles(
       root: sourceRoot,
       label: relativeFile,
       maxBytes,
+      // Trusted snapshots are app-owned; path fallback is only for that case
+      // when fd-relative opens are unavailable.
+      allowPathFallback: trustedSource,
     });
     await fsp.writeFile(to, content, { flag: 'wx' });
   };
 
-  // Deduplicate declared paths so exclusive wx writes cannot race on duplicates.
-  const uniqueFiles = [
-    'nxs_package.json',
-    ...new Set(
-      files
-        .map((file) => String(file))
-        .filter(
-          (file) => file !== 'nxs_package.json' && file !== 'repo_info.json'
-        )
-    ),
-  ];
-
-  // Optional companion metadata; readRegularFileNoFollow enforces non-symlink.
-  const repoInfoPath = path.join(sourceRoot, 'repo_info.json');
-  try {
-    await fsp.lstat(repoInfoPath);
-    uniqueFiles.push('repo_info.json');
-  } catch (err) {
-    if (err?.code !== 'ENOENT') throw err;
-  }
+  const uniqueFiles = await appendOptionalRepoInfo(
+    collectUniqueModuleFiles(files, sourceRoot),
+    sourceRoot
+  );
 
   // Sequential by default to bound peak memory and open file descriptors.
   await mapPool(uniqueFiles, COPY_CONCURRENCY, copyOne);

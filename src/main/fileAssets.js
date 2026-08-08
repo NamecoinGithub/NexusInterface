@@ -87,6 +87,10 @@ async function readModuleAssetBytes(moduleName, relativePath, { maxBytes }) {
     root: moduleRoot,
     label: 'Module icon',
     maxBytes,
+    // Installed/dev module roots are app-selected paths; on Windows the
+    // fd-relative walker is unavailable so the trusted-root path fallback is
+    // required after the symlink/realpath checks above.
+    allowPathFallback: true,
   });
 }
 
