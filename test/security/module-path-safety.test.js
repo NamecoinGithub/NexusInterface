@@ -12,13 +12,17 @@ const {
   READ_CHUNK_BYTES,
   REPLACED_DIR_INFIX,
   STAGING_DIR_INFIX,
+  cleanupInternalModuleDirectories,
   copyModuleFiles,
   installModuleDirectory,
+  isActiveInternalPath,
   listPublicModuleDirectoryNames,
   readFileHandleBounded,
   readRegularFileNoFollow,
+  registerActiveInternalPath,
   setSupportsFdRelativeOpenForTests,
   supportsFdRelativeOpen,
+  unregisterActiveInternalPath,
 } = require('../../src/main/ipc/safeCopy');
 
 const root = path.resolve(__dirname, '../..');
@@ -616,7 +620,12 @@ test('copyModuleFiles deduplicates declared paths and copies sequentially', asyn
   assert.match(safeCopySource, /directoryFdPath|\/proc\/self\/fd|\/dev\/fd/);
   assert.match(safeCopySource, /trustedSource/);
   assert.match(safeCopySource, /readFileHandleBounded/);
-  assert.match(safeCopySource, /maxBytes\) \+ 1|maxBytes \+ 1/);
+  assert.match(
+    safeCopySource,
+    /maxBytes\) \+ 1|maxBytes \+ 1|limit \+ 1|Math\.floor\(maxBytes\)/
+  );
+  assert.match(safeCopySource, /activeInternalPaths/);
+  assert.doesNotMatch(safeCopySource, /Buffer\.concat\(/);
   assert.doesNotMatch(safeCopySource, /materializeAppOwnedSourceSnapshot/);
   assert.doesNotMatch(safeCopySource, /source-snapshot-/);
   assert.doesNotMatch(safeCopySource, /forceSourceSnapshot/);
@@ -867,6 +876,158 @@ test('readFileHandleBounded uses bounded chunks and enforces exact and growing-f
     () => readFileHandleBounded(growingHandle, 4, 'growing file'),
     /exceeds the size limit/
   );
+
+  // Verified-size path: one result allocation plus a 1-byte growth probe.
+  const sizedReads = [];
+  let sizedOffset = 0;
+  const sizedPayload = Buffer.from('verified');
+  const sizedHandle = {
+    async stat() {
+      return { size: sizedPayload.length };
+    },
+    async read(buffer, offset, length, position) {
+      sizedReads.push({ length, position });
+      if (position >= sizedPayload.length) {
+        return { bytesRead: 0 };
+      }
+      const bytes = sizedPayload.copy(
+        buffer,
+        offset,
+        position,
+        Math.min(position + length, sizedPayload.length)
+      );
+      sizedOffset = position + bytes;
+      return { bytesRead: bytes };
+    },
+  };
+  const sized = await readFileHandleBounded(sizedHandle, 32, 'sized file');
+  assert.equal(String(sized), 'verified');
+  assert.equal(sized.length, sizedPayload.length);
+  assert.ok(
+    sizedReads.some((entry) => entry.length === 1 && entry.position === sizedOffset),
+    'verified-size reads must probe one extra byte for growth'
+  );
+
+  const grownHandle = {
+    async stat() {
+      return { size: 4 };
+    },
+    async read(buffer, offset, length, position) {
+      const payload = Buffer.from('abcde');
+      if (position >= payload.length) {
+        return { bytesRead: 0 };
+      }
+      const bytes = payload.copy(
+        buffer,
+        offset,
+        position,
+        Math.min(position + length, payload.length)
+      );
+      return { bytesRead: bytes };
+    },
+  };
+  await assert.rejects(
+    () => readFileHandleBounded(grownHandle, 16, 'grown past verified size'),
+    /exceeds the size limit/
+  );
+});
+
+test('cleanup skips active internal paths and restores orphaned replacements', async () => {
+  const tempRoot = await makeTempDir('module-active-internal-cleanup-');
+  const modulesHome = path.join(tempRoot, 'modules');
+  const activeStaging = path.join(
+    modulesHome,
+    `.demo${STAGING_DIR_INFIX}active`
+  );
+  const orphanedBackup = path.join(
+    modulesHome,
+    `.demo${REPLACED_DIR_INFIX}orphan`
+  );
+  const staleStaging = path.join(
+    modulesHome,
+    `.other${STAGING_DIR_INFIX}stale`
+  );
+
+  try {
+    await fsp.mkdir(activeStaging, { recursive: true });
+    await fsp.writeFile(path.join(activeStaging, 'marker.txt'), 'staging');
+    await fsp.mkdir(orphanedBackup, { recursive: true });
+    await fsp.writeFile(
+      path.join(orphanedBackup, 'index.html'),
+      '<html>recovered</html>'
+    );
+    await fsp.mkdir(staleStaging, { recursive: true });
+
+    registerActiveInternalPath(activeStaging);
+    assert.equal(isActiveInternalPath(activeStaging), true);
+
+    const cleaned = await cleanupInternalModuleDirectories(modulesHome);
+    assert.ok(!cleaned.includes(path.basename(activeStaging)));
+    assert.equal(fs.existsSync(activeStaging), true);
+    assert.equal(fs.existsSync(staleStaging), false);
+    assert.equal(fs.existsSync(orphanedBackup), false);
+    assert.equal(
+      await fsp.readFile(path.join(modulesHome, 'demo', 'index.html'), 'utf8'),
+      '<html>recovered</html>'
+    );
+    assert.deepEqual(await listPublicModuleDirectoryNames(modulesHome), [
+      'demo',
+    ]);
+  } finally {
+    unregisterActiveInternalPath(activeStaging);
+    await fsp.rm(tempRoot, { recursive: true, force: true });
+  }
+});
+
+test('in-flight install staging survives concurrent inventory cleanup', async () => {
+  const tempRoot = await makeTempDir('module-inflight-cleanup-');
+  const sourceRoot = path.join(tempRoot, 'source');
+  const modulesHome = path.join(tempRoot, 'modules');
+  const destRoot = path.join(modulesHome, 'demo');
+  const gate = createDeferred();
+  let sawActiveStaging = false;
+
+  try {
+    await writeModuleTree(sourceRoot, {
+      'nxs_package.json': '{"name":"demo","files":["index.html"]}',
+      'index.html': '<html>new</html>',
+    });
+
+    const installPromise = installModuleDirectory(
+      ['index.html'],
+      sourceRoot,
+      destRoot,
+      {
+        overwrite: false,
+        verifyStaging: async (stagingPath) => {
+          assert.equal(isActiveInternalPath(stagingPath), true);
+          sawActiveStaging = true;
+          const cleaned = await cleanupInternalModuleDirectories(modulesHome);
+          assert.ok(!cleaned.includes(path.basename(stagingPath)));
+          assert.equal(fs.existsSync(stagingPath), true);
+          await listPublicModuleDirectoryNames(modulesHome);
+          assert.equal(fs.existsSync(stagingPath), true);
+          gate.resolve();
+        },
+      }
+    );
+
+    await gate.promise;
+    await installPromise;
+    assert.equal(sawActiveStaging, true);
+    assert.equal(
+      await fsp.readFile(path.join(destRoot, 'index.html'), 'utf8'),
+      '<html>new</html>'
+    );
+    assert.deepEqual(
+      (await fsp.readdir(modulesHome)).filter((name) =>
+        name.includes(STAGING_DIR_INFIX)
+      ),
+      []
+    );
+  } finally {
+    await fsp.rm(tempRoot, { recursive: true, force: true });
+  }
 });
 
 test('readRegularFileNoFollow fails closed without fd-relative or path fallback', async () => {

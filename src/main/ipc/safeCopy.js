@@ -21,6 +21,20 @@ const REPLACED_DIR_INFIX = '.replaced-';
 const READ_CHUNK_BYTES = 64 * 1024;
 const COPY_CONCURRENCY = 1;
 const publishLocks = new Map();
+/** Absolute paths of staging/backup dirs currently owned by an in-flight install. */
+const activeInternalPaths = new Set();
+
+function registerActiveInternalPath(dirPath) {
+  activeInternalPaths.add(path.resolve(dirPath));
+}
+
+function unregisterActiveInternalPath(dirPath) {
+  activeInternalPaths.delete(path.resolve(dirPath));
+}
+
+function isActiveInternalPath(dirPath) {
+  return activeInternalPaths.has(path.resolve(dirPath));
+}
 
 function isPathWithinDirectory(candidatePath, directoryPath) {
   const relativePath = path.relative(
@@ -207,30 +221,89 @@ function splitRelativeSegments(rootPath, targetPath, label) {
 /**
  * Read at most maxBytes from an open file handle. Caps allocation even when the
  * underlying inode grows between stat and read by stopping at maxBytes + 1.
+ *
+ * When the handle exposes a verified size, allocate the result once and probe a
+ * single extra byte for growth so a near-limit file does not peak at ~2x by
+ * retaining both chunk list and Buffer.concat output. Without a size, grow one
+ * buffer in place up to the cap instead of concatenating retained chunks.
  */
 async function readFileHandleBounded(handle, maxBytes, label) {
   if (!Number.isFinite(maxBytes) || maxBytes < 0) {
     throw new Error(`${label} has an invalid size limit`);
   }
-  const cap = Math.floor(maxBytes) + 1;
-  const chunks = [];
+  const limit = Math.floor(maxBytes);
+
+  let expectedSize = null;
+  if (typeof handle.stat === 'function') {
+    const stat = await handle.stat();
+    if (!Number.isFinite(stat?.size) || stat.size < 0) {
+      throw new Error(`${label} has an invalid size`);
+    }
+    if (stat.size > limit) {
+      throw new Error(`${label} exceeds the size limit`);
+    }
+    expectedSize = stat.size;
+  }
+
+  if (expectedSize !== null) {
+    const buffer =
+      expectedSize === 0 ? Buffer.alloc(0) : Buffer.allocUnsafe(expectedSize);
+    let total = 0;
+    while (total < expectedSize) {
+      const { bytesRead } = await handle.read(
+        buffer,
+        total,
+        Math.min(READ_CHUNK_BYTES, expectedSize - total),
+        total
+      );
+      if (bytesRead === 0) {
+        break;
+      }
+      total += bytesRead;
+    }
+    // Probe separately for growth beyond the verified size without keeping a
+    // second full copy of the file contents.
+    const probe = Buffer.allocUnsafe(1);
+    const { bytesRead: extra } = await handle.read(probe, 0, 1, total);
+    if (extra > 0) {
+      throw new Error(`${label} exceeds the size limit`);
+    }
+    return total === expectedSize ? buffer : buffer.subarray(0, total);
+  }
+
+  // Size unavailable (tests / unusual handles): one growable buffer capped at
+  // limit + 1, never a retained chunk list plus Buffer.concat duplicate.
+  const cap = limit + 1;
+  let buffer = Buffer.allocUnsafe(Math.min(READ_CHUNK_BYTES, cap));
   let total = 0;
   while (total < cap) {
-    const chunk = Buffer.allocUnsafe(Math.min(READ_CHUNK_BYTES, cap - total));
+    if (total === buffer.length) {
+      const nextLength = Math.min(Math.max(buffer.length * 2, 1), cap);
+      if (nextLength <= buffer.length) {
+        break;
+      }
+      const resized = Buffer.allocUnsafe(nextLength);
+      buffer.copy(resized, 0, 0, total);
+      buffer = resized;
+    }
     const { bytesRead } = await handle.read(
-      chunk,
-      0,
-      chunk.length,
+      buffer,
+      total,
+      buffer.length - total,
       total
     );
-    if (bytesRead === 0) break;
+    if (bytesRead === 0) {
+      break;
+    }
     total += bytesRead;
-    chunks.push(bytesRead === chunk.length ? chunk : chunk.subarray(0, bytesRead));
   }
-  if (total > maxBytes) {
+  if (total > limit) {
     throw new Error(`${label} exceeds the size limit`);
   }
-  return Buffer.concat(chunks, total);
+  if (total === 0) {
+    return Buffer.alloc(0);
+  }
+  return total === buffer.length ? buffer : buffer.subarray(0, total);
 }
 
 /**
@@ -483,6 +556,44 @@ function isSafeCopyInternalDirectoryName(name) {
   );
 }
 
+/**
+ * Parse `.${destName}.installing-${id}` / `.${destName}.replaced-${id}` names.
+ * Returns null when the entry is not a well-formed internal install directory.
+ */
+function parseInternalModuleDirectoryName(name) {
+  if (!isSafeCopyInternalDirectoryName(name) || !name.startsWith('.')) {
+    return null;
+  }
+  const body = name.slice(1);
+  let kind = null;
+  let infix = null;
+  if (body.includes(STAGING_DIR_INFIX)) {
+    kind = 'staging';
+    infix = STAGING_DIR_INFIX;
+  } else if (body.includes(REPLACED_DIR_INFIX)) {
+    kind = 'replaced';
+    infix = REPLACED_DIR_INFIX;
+  } else {
+    return null;
+  }
+  const infixIndex = body.indexOf(infix);
+  if (infixIndex <= 0) {
+    return null;
+  }
+  const destName = body.slice(0, infixIndex);
+  const suffix = body.slice(infixIndex + infix.length);
+  if (
+    !destName ||
+    destName.includes(path.sep) ||
+    destName === '.' ||
+    destName === '..' ||
+    !suffix
+  ) {
+    return null;
+  }
+  return { kind, destName, suffix };
+}
+
 async function cleanupInternalModuleDirectory(
   modulesRoot,
   entryName,
@@ -498,6 +609,12 @@ async function cleanupInternalModuleDirectory(
     log(
       `[modules] Refusing to clean internal install directory outside modulesDir: ${entryName}`
     );
+    return false;
+  }
+
+  // In-flight installs own their staging/backup trees; inventory/finalize
+  // cleanup must not remove them out from under copy or rename.
+  if (isActiveInternalPath(targetPath)) {
     return false;
   }
 
@@ -523,6 +640,40 @@ async function cleanupInternalModuleDirectory(
       `[modules] Skipping internal install cleanup for non-directory entry: ${targetPath}`
     );
     return false;
+  }
+
+  const parsed = parseInternalModuleDirectoryName(entryName);
+  if (parsed?.kind === 'replaced') {
+    const publicDest = path.join(rootPath, parsed.destName);
+    if (
+      parsed.destName &&
+      isPathWithinDirectory(publicDest, rootPath) &&
+      path.basename(publicDest) === parsed.destName
+    ) {
+      let publicExists = false;
+      try {
+        await fsp.lstat(publicDest);
+        publicExists = true;
+      } catch (err) {
+        if (err?.code !== 'ENOENT') {
+          throw err;
+        }
+      }
+
+      // After interruption between rename-aside and publish, the backup may be
+      // the only recoverable module tree. Restore it instead of deleting.
+      if (!publicExists) {
+        try {
+          await fsp.rename(targetPath, publicDest);
+          return true;
+        } catch (err) {
+          log(
+            `[modules] Failed to restore replaced module backup ${targetPath} -> ${publicDest}: ${err?.code || 'ERR'} ${err?.message || String(err)}`
+          );
+          return false;
+        }
+      }
+    }
   }
 
   try {
@@ -762,6 +913,7 @@ async function installModuleDirectory(
 
     await ensureDirExists(destParent);
     await fsp.mkdir(stagingPath, { recursive: false });
+    registerActiveInternalPath(stagingPath);
     let replacedPath = null;
     try {
       await copyModuleFiles(files, source, stagingPath, {
@@ -790,18 +942,25 @@ async function installModuleDirectory(
           destParent,
           `.${destName}${REPLACED_DIR_INFIX}${crypto.randomUUID()}`
         );
+        // Register before rename so concurrent cleanup cannot delete the live
+        // module tree while it is parked under the backup name.
+        registerActiveInternalPath(replacedPath);
         await fsp.rename(destPath, replacedPath);
       } catch (err) {
         if (err?.code !== 'ENOENT') throw err;
       }
 
       await fsp.rename(stagingPath, destPath);
+      unregisterActiveInternalPath(stagingPath);
 
       if (replacedPath) {
         try {
           await fsp.rm(replacedPath, { recursive: true, force: true });
+          unregisterActiveInternalPath(replacedPath);
           replacedPath = null;
         } catch (err) {
+          // Install already published; allow later inventory cleanup to retry.
+          unregisterActiveInternalPath(replacedPath);
           console.warn(
             `[modules] Failed to remove replaced module backup ${replacedPath}: ${err?.code || 'ERR'} ${err?.message || String(err)}`
           );
@@ -819,6 +978,11 @@ async function installModuleDirectory(
         }
       }
       throw err;
+    } finally {
+      unregisterActiveInternalPath(stagingPath);
+      if (replacedPath) {
+        unregisterActiveInternalPath(replacedPath);
+      }
     }
   });
 }
@@ -832,11 +996,15 @@ module.exports = {
   cleanupInternalModuleDirectories,
   copyModuleFiles,
   installModuleDirectory,
+  isActiveInternalPath,
   isSafeCopyInternalDirectoryName,
   isPathWithinDirectory,
   listPublicModuleDirectoryNames,
+  parseInternalModuleDirectoryName,
   readFileHandleBounded,
   readRegularFileNoFollow,
+  registerActiveInternalPath,
   setSupportsFdRelativeOpenForTests,
   supportsFdRelativeOpen,
+  unregisterActiveInternalPath,
 };
