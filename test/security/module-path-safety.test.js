@@ -459,7 +459,10 @@ test('installModuleDirectory preserves parallelism for different destination nam
   }
 });
 
-test('installModuleDirectory restores overwritten modules if final publish rename fails', async () => {
+test(
+  'installModuleDirectory restores overwritten modules if final publish rename fails',
+  { concurrency: false },
+  async () => {
   const tempRoot = await makeTempDir('module-install-overwrite-rollback-');
   const sourceRoot = path.join(tempRoot, 'source');
   const modulesHome = path.join(tempRoot, 'modules');
@@ -472,7 +475,8 @@ test('installModuleDirectory restores overwritten modules if final publish renam
     await writeModuleTree(sourceRoot, {
       'nxs_package.json': '{"name":"demo","files":["index.html"]}',
       'index.html': '<html>replacement</html>',
-    });
+      }
+    );
     await writeModuleTree(destRoot, {
       'nxs_package.json': '{"name":"demo","files":["index.html"]}',
       'index.html': '<html>previous</html>',
@@ -741,7 +745,10 @@ test('internal install cleanup stays inside modulesDir and leaves normal modules
   }
 });
 
-test('cleanup failure keeps the new module usable and stale backups excluded from inventory', async () => {
+test(
+  'cleanup failure keeps the new module usable and stale backups excluded from inventory',
+  { concurrency: false },
+  async () => {
   const tempRoot = await makeTempDir('module-inventory-cleanup-failure-');
   const sourceRoot = path.join(tempRoot, 'source');
   const modulesHome = path.join(tempRoot, 'modules');
@@ -753,7 +760,8 @@ test('cleanup failure keeps the new module usable and stale backups excluded fro
     await writeModuleTree(sourceRoot, {
       'nxs_package.json': '{"name":"demo","files":["index.html"]}',
       'index.html': '<html>replacement</html>',
-    });
+      }
+    );
     await writeModuleTree(destRoot, {
       'nxs_package.json': '{"name":"demo","files":["index.html"]}',
       'index.html': '<html>previous</html>',

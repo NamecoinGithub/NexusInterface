@@ -511,7 +511,14 @@ async function cleanupInternalModuleDirectory(
     throw err;
   }
 
-  if (!stat.isDirectory() || stat.isSymbolicLink()) {
+  if (stat.isSymbolicLink()) {
+    log(
+      `[modules] Skipping internal install cleanup for symbolic link entry: ${targetPath}`
+    );
+    return false;
+  }
+
+  if (!stat.isDirectory()) {
     log(
       `[modules] Skipping internal install cleanup for non-directory entry: ${targetPath}`
     );
@@ -593,6 +600,8 @@ async function withSerializedPublication(destPath, worker) {
   const current = new Promise((resolve) => {
     release = resolve;
   });
+  // Future same-destination callers intentionally wait on `tail`, which does
+  // not settle until this call's finally block invokes `release()`.
   const tail = previous.catch(() => {}).then(() => current);
   publishLocks.set(key, tail);
   await previous.catch(() => {});
