@@ -17,7 +17,10 @@ const path = require('path');
 
 const DEFAULT_MAX_FILE_BYTES = 100 * 1024 * 1024;
 const STAGING_DIR_INFIX = '.installing-';
+const REPLACED_DIR_INFIX = '.replaced-';
+const READ_CHUNK_BYTES = 64 * 1024;
 const COPY_CONCURRENCY = 1;
+const publishLocks = new Map();
 
 function isPathWithinDirectory(candidatePath, directoryPath) {
   const relativePath = path.relative(
@@ -210,22 +213,24 @@ async function readFileHandleBounded(handle, maxBytes, label) {
     throw new Error(`${label} has an invalid size limit`);
   }
   const cap = Math.floor(maxBytes) + 1;
-  const buffer = Buffer.allocUnsafe(cap);
-  let offset = 0;
-  while (offset < cap) {
+  const chunks = [];
+  let total = 0;
+  while (total < cap) {
+    const chunk = Buffer.allocUnsafe(Math.min(READ_CHUNK_BYTES, cap - total));
     const { bytesRead } = await handle.read(
-      buffer,
-      offset,
-      cap - offset,
-      offset
+      chunk,
+      0,
+      chunk.length,
+      total
     );
     if (bytesRead === 0) break;
-    offset += bytesRead;
+    total += bytesRead;
+    chunks.push(bytesRead === chunk.length ? chunk : chunk.subarray(0, bytesRead));
   }
-  if (offset > maxBytes) {
+  if (total > maxBytes) {
     throw new Error(`${label} exceeds the size limit`);
   }
-  return buffer.subarray(0, offset);
+  return Buffer.concat(chunks, total);
 }
 
 /**
@@ -470,6 +475,137 @@ async function ensureDirExists(dirPath) {
   await fsp.mkdir(dirPath, { recursive: true });
 }
 
+function isSafeCopyInternalDirectoryName(name) {
+  return (
+    typeof name === 'string' &&
+    name.startsWith('.') &&
+    (name.includes(STAGING_DIR_INFIX) || name.includes(REPLACED_DIR_INFIX))
+  );
+}
+
+async function cleanupInternalModuleDirectory(
+  modulesRoot,
+  entryName,
+  { log = console.warn } = {}
+) {
+  if (!isSafeCopyInternalDirectoryName(entryName)) {
+    return false;
+  }
+
+  const rootPath = path.resolve(modulesRoot);
+  const targetPath = path.join(rootPath, entryName);
+  if (!isPathWithinDirectory(targetPath, rootPath)) {
+    log(
+      `[modules] Refusing to clean internal install directory outside modulesDir: ${entryName}`
+    );
+    return false;
+  }
+
+  let stat;
+  try {
+    stat = await fsp.lstat(targetPath);
+  } catch (err) {
+    if (err?.code === 'ENOENT') {
+      return false;
+    }
+    throw err;
+  }
+
+  if (!stat.isDirectory() || stat.isSymbolicLink()) {
+    log(
+      `[modules] Skipping internal install cleanup for non-directory entry: ${targetPath}`
+    );
+    return false;
+  }
+
+  try {
+    await fsp.rm(targetPath, { recursive: true, force: true });
+    return true;
+  } catch (err) {
+    log(
+      `[modules] Failed to clean internal install directory ${targetPath}: ${err?.code || 'ERR'} ${err?.message || String(err)}`
+    );
+    return false;
+  }
+}
+
+async function cleanupInternalModuleDirectories(modulesRoot, options = {}) {
+  let childNames = [];
+  try {
+    childNames = await fsp.readdir(modulesRoot);
+  } catch (err) {
+    if (err?.code === 'ENOENT') {
+      return [];
+    }
+    throw err;
+  }
+
+  const cleaned = [];
+  for (const entryName of childNames) {
+    if (
+      await cleanupInternalModuleDirectory(modulesRoot, entryName, options)
+    ) {
+      cleaned.push(entryName);
+    }
+  }
+  return cleaned;
+}
+
+async function listPublicModuleDirectoryNames(modulesRoot, options = {}) {
+  await cleanupInternalModuleDirectories(modulesRoot, options);
+
+  let childNames = [];
+  try {
+    childNames = await fsp.readdir(modulesRoot);
+  } catch (err) {
+    if (err?.code === 'ENOENT') {
+      return [];
+    }
+    throw err;
+  }
+
+  const publicNames = [];
+  for (const name of childNames) {
+    if (isSafeCopyInternalDirectoryName(name)) {
+      continue;
+    }
+    const childPath = path.join(modulesRoot, name);
+    let stat;
+    try {
+      stat = await fsp.stat(childPath);
+    } catch (err) {
+      if (err?.code === 'ENOENT') {
+        continue;
+      }
+      throw err;
+    }
+    if (stat.isDirectory()) {
+      publicNames.push(name);
+    }
+  }
+  return publicNames;
+}
+
+async function withSerializedPublication(destPath, worker) {
+  const key = path.resolve(destPath);
+  const previous = publishLocks.get(key) || Promise.resolve();
+  let release;
+  const current = new Promise((resolve) => {
+    release = resolve;
+  });
+  const tail = previous.catch(() => {}).then(() => current);
+  publishLocks.set(key, tail);
+  await previous.catch(() => {});
+  try {
+    return await worker();
+  } finally {
+    release();
+    if (publishLocks.get(key) === tail) {
+      publishLocks.delete(key);
+    }
+  }
+}
+
 async function mapPool(items, concurrency, worker) {
   if (!items.length) return [];
   const limit = Math.max(1, Math.min(concurrency, items.length));
@@ -601,75 +737,96 @@ async function installModuleDirectory(
   dest,
   {
     maxBytes = DEFAULT_MAX_FILE_BYTES,
+    overwrite = true,
     verifyStaging,
     trustedSource = false,
   } = {}
 ) {
   const destPath = path.resolve(dest);
-  const destParent = path.dirname(destPath);
-  const destName = path.basename(destPath);
-  const stagingPath = path.join(
-    destParent,
-    `.${destName}${STAGING_DIR_INFIX}${crypto.randomUUID()}`
-  );
+  return withSerializedPublication(destPath, async () => {
+    const destParent = path.dirname(destPath);
+    const destName = path.basename(destPath);
+    const stagingPath = path.join(
+      destParent,
+      `.${destName}${STAGING_DIR_INFIX}${crypto.randomUUID()}`
+    );
 
-  await ensureDirExists(destParent);
-  await fsp.mkdir(stagingPath, { recursive: false });
-  let replacedPath = null;
-  try {
-    await copyModuleFiles(files, source, stagingPath, {
-      maxBytes,
-      trustedSource,
-    });
-    // Validate the app-owned staging tree before publishing so a source that
-    // mutates after the copy plan was captured cannot land a mismatched
-    // descriptor/file set at the final install path.
-    if (typeof verifyStaging === 'function') {
-      await verifyStaging(stagingPath);
-    }
-
-    // Overwrite path: move the live install aside only after staging is ready.
-    // lstat (not access) so a dangling destination symlink is not treated as
-    // missing and left in place to block/confuse the publish rename.
+    await ensureDirExists(destParent);
+    await fsp.mkdir(stagingPath, { recursive: false });
+    let replacedPath = null;
     try {
-      await fsp.lstat(destPath);
-      replacedPath = path.join(
-        destParent,
-        `.${destName}.replaced-${crypto.randomUUID()}`
-      );
-      await fsp.rename(destPath, replacedPath);
-    } catch (err) {
-      if (err?.code !== 'ENOENT') throw err;
-    }
-
-    await fsp.rename(stagingPath, destPath);
-
-    if (replacedPath) {
-      await fsp.rm(replacedPath, { recursive: true, force: true }).catch(() => {});
-      replacedPath = null;
-    }
-  } catch (err) {
-    await fsp.rm(stagingPath, { recursive: true, force: true }).catch(() => {});
-    if (replacedPath) {
-      try {
-        // Drop any partial publish before restoring the previous install.
-        await fsp.rm(destPath, { recursive: true, force: true }).catch(() => {});
-        await fsp.rename(replacedPath, destPath);
-      } catch {
-        // Prefer the original install error; a restore failure is secondary.
+      await copyModuleFiles(files, source, stagingPath, {
+        maxBytes,
+        trustedSource,
+      });
+      // Validate the app-owned staging tree before publishing so a source that
+      // mutates after the copy plan was captured cannot land a mismatched
+      // descriptor/file set at the final install path.
+      if (typeof verifyStaging === 'function') {
+        await verifyStaging(stagingPath);
       }
+
+      // Publish while still holding the per-destination reservation so another
+      // same-name install cannot change the overwrite decision mid-swap.
+      try {
+        await fsp.lstat(destPath);
+        if (!overwrite) {
+          const existsError = new Error(
+            'A module with the same directory name already exists'
+          );
+          existsError.code = 'ALREADY_EXISTS';
+          throw existsError;
+        }
+        replacedPath = path.join(
+          destParent,
+          `.${destName}${REPLACED_DIR_INFIX}${crypto.randomUUID()}`
+        );
+        await fsp.rename(destPath, replacedPath);
+      } catch (err) {
+        if (err?.code !== 'ENOENT') throw err;
+      }
+
+      await fsp.rename(stagingPath, destPath);
+
+      if (replacedPath) {
+        try {
+          await fsp.rm(replacedPath, { recursive: true, force: true });
+          replacedPath = null;
+        } catch (err) {
+          console.warn(
+            `[modules] Failed to remove replaced module backup ${replacedPath}: ${err?.code || 'ERR'} ${err?.message || String(err)}`
+          );
+        }
+      }
+    } catch (err) {
+      await fsp.rm(stagingPath, { recursive: true, force: true }).catch(() => {});
+      if (replacedPath) {
+        try {
+          // Drop any partial publish before restoring the previous install.
+          await fsp.rm(destPath, { recursive: true, force: true }).catch(() => {});
+          await fsp.rename(replacedPath, destPath);
+        } catch {
+          // Prefer the original install error; a restore failure is secondary.
+        }
+      }
+      throw err;
     }
-    throw err;
-  }
+  });
 }
 
 module.exports = {
   DEFAULT_MAX_FILE_BYTES,
+  READ_CHUNK_BYTES,
   STAGING_DIR_INFIX,
+  REPLACED_DIR_INFIX,
   assertNoSymlinkComponents,
+  cleanupInternalModuleDirectories,
   copyModuleFiles,
   installModuleDirectory,
+  isSafeCopyInternalDirectoryName,
   isPathWithinDirectory,
+  listPublicModuleDirectoryNames,
+  readFileHandleBounded,
   readRegularFileNoFollow,
   setSupportsFdRelativeOpenForTests,
   supportsFdRelativeOpen,

@@ -30,7 +30,9 @@ import {
   assertString,
 } from './ipc/contracts';
 import {
+  cleanupInternalModuleDirectories,
   installModuleDirectory,
+  listPublicModuleDirectoryNames,
   supportsFdRelativeOpen,
 } from './ipc/safeCopy';
 import { extractSafeZip } from './ipc/safeZip';
@@ -510,13 +512,9 @@ export async function listModules() {
   // Fire the request as early as possible, same as the previous renderer flow.
   getNexusOrgUsers();
 
-  let childNames = [];
-  if (fs.existsSync(modulesDir)) {
-    childNames = await fsp.readdir(modulesDir);
-  }
-  const childPaths = childNames.map((name) => join(modulesDir, name));
-  const stats = await Promise.all(childPaths.map((path) => fsp.stat(path)));
-  const dirNames = childNames.filter((_name, i) => stats[i].isDirectory());
+  const dirNames = await listPublicModuleDirectoryNames(modulesDir, {
+    log: (message) => console.warn(message),
+  });
   const dirPaths = dirNames.map((name) => join(modulesDir, name));
 
   const results = await Promise.allSettled([
@@ -739,12 +737,6 @@ export async function finalizeInstall({ token, overwrite }) {
     const expectedFiles = [...module.info.files].map(String);
     const dest = join(modulesDir, expectedName);
 
-    if (fs.existsSync(dest) && !overwrite) {
-      const err = new Error('A module with the same directory name already exists');
-      err.code = 'ALREADY_EXISTS';
-      throw err;
-    }
-
     // Copy through an app-owned staging directory and rename into place so a
     // failed install cannot leave a partial module tree at the final path.
     // safeCopy also rejects intermediate-directory symlink TOCTOU races.
@@ -754,6 +746,7 @@ export async function finalizeInstall({ token, overwrite }) {
     // Overwrite installs keep the existing module until staging verifies;
     // installModuleDirectory then swaps it out with rollback on failure.
     await installModuleDirectory(expectedFiles, pending.sourcePath, dest, {
+      overwrite: Boolean(overwrite),
       // Archive extracts land under application temp (cleanupPath set) and are
       // treated as app-owned trusted roots on platforms without fd-relative opens.
       trustedSource: Boolean(pending.cleanupPath),
@@ -769,6 +762,9 @@ export async function finalizeInstall({ token, overwrite }) {
     });
     return loadModuleFromDir(dest, settings);
   } finally {
+    await cleanupInternalModuleDirectories(modulesDir, {
+      log: (message) => console.warn(message),
+    }).catch(() => {});
     if (pending.cleanupPath) {
       fsp.rm(pending.cleanupPath, { recursive: true, force: true }).catch(() => {});
     }
