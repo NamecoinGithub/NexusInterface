@@ -29,6 +29,10 @@ import {
   assertSafeModuleName,
   assertString,
 } from './ipc/contracts';
+import {
+  installModuleDirectory,
+  supportsFdRelativeOpen,
+} from './ipc/safeCopy';
 import { extractSafeZip } from './ipc/safeZip';
 import { modulesDir, moduleDownloadDir, temporaryModuleDir } from './paths';
 import { loadSettingsFromFile } from './settings';
@@ -587,25 +591,6 @@ function isPathWithinDirectory(candidatePath, directoryPath) {
   );
 }
 
-async function copyModuleFiles(files, source, dest) {
-  for (const file of files) {
-    await ensureDirExists(dirname(join(dest, file)));
-  }
-  const copyOne = (file) => fsp.copyFile(join(source, file), join(dest, file));
-  const promises = [copyOne('nxs_package.json'), ...files.map(copyOne)];
-  const repoInfoPath = join(source, 'repo_info.json');
-  try {
-    const repoInfoStat = await fsp.lstat(repoInfoPath);
-    if (!repoInfoStat.isFile() || repoInfoStat.isSymbolicLink()) {
-      throw new Error('repo_info.json must not be a symbolic link');
-    }
-    promises.push(copyOne('repo_info.json'));
-  } catch (err) {
-    if (err?.code !== 'ENOENT') throw err;
-  }
-  return Promise.all(promises);
-}
-
 // token -> { sourcePath, cleanupPath, moduleInfo, timer }
 const pendingInstalls = new Map();
 const PENDING_INSTALL_TTL = 10 * 60 * 1000; // 10 minutes
@@ -693,6 +678,15 @@ async function resolveInstallSource(sourcePath) {
   if (isPathWithinDirectory(source, modulesDir)) {
     throw new Error('Cannot install from this location');
   }
+  // Mutable user-selected directories cannot be copied safely without
+  // descriptor-relative no-follow traversal (unavailable on Windows). Fail
+  // closed rather than path-snapshotting a junction-racy tree. Module archives
+  // extract into an app-owned temp directory and remain supported.
+  if (!supportsFdRelativeOpen()) {
+    throw new Error(
+      'Installing from a module directory is not supported on this platform; package the module as a .zip archive'
+    );
+  }
   return { dirPath: resolve(source), cleanupPath: undefined };
 }
 
@@ -721,6 +715,14 @@ export async function inspectInstallSource(sourcePath) {
   }
 }
 
+function sameModuleFileList(left, right) {
+  if (!Array.isArray(left) || !Array.isArray(right)) return false;
+  if (left.length !== right.length) return false;
+  const sortedLeft = left.map(String).sort();
+  const sortedRight = right.map(String).sort();
+  return sortedLeft.every((value, index) => value === sortedRight[index]);
+}
+
 /**
  * Finalize an install previously staged by `inspectInstallSource` (or
  * `downloadAndInstall`). Throws `ALREADY_EXISTS` if the destination exists
@@ -733,19 +735,38 @@ export async function finalizeInstall({ token, overwrite }) {
     // Re-validate the staged module right before installing, in case
     // anything on disk changed since it was inspected.
     const module = await loadModuleFromDir(pending.sourcePath, settings);
-    const dest = join(modulesDir, module.info.name);
+    const expectedName = module.info.name;
+    const expectedFiles = [...module.info.files].map(String);
+    const dest = join(modulesDir, expectedName);
 
-    if (fs.existsSync(dest)) {
-      if (!overwrite) {
-        const err = new Error('A module with the same directory name already exists');
-        err.code = 'ALREADY_EXISTS';
-        throw err;
-      }
-      await fsp.rm(dest, { recursive: true, force: true });
+    if (fs.existsSync(dest) && !overwrite) {
+      const err = new Error('A module with the same directory name already exists');
+      err.code = 'ALREADY_EXISTS';
+      throw err;
     }
 
-    await ensureDirExists(dest);
-    await copyModuleFiles(module.info.files, pending.sourcePath, dest);
+    // Copy through an app-owned staging directory and rename into place so a
+    // failed install cannot leave a partial module tree at the final path.
+    // safeCopy also rejects intermediate-directory symlink TOCTOU races.
+    // Verify the app-owned staging tree before publish so a mutable source
+    // cannot swap nxs_package.json (name/file list) after the copy plan was
+    // captured and leave a broken or mismatched module at the final path.
+    // Overwrite installs keep the existing module until staging verifies;
+    // installModuleDirectory then swaps it out with rollback on failure.
+    await installModuleDirectory(expectedFiles, pending.sourcePath, dest, {
+      // Archive extracts land under application temp (cleanupPath set) and are
+      // treated as app-owned trusted roots on platforms without fd-relative opens.
+      trustedSource: Boolean(pending.cleanupPath),
+      verifyStaging: async (stagingPath) => {
+        const staged = await loadModuleFromDir(stagingPath, settings);
+        if (staged.info.name !== expectedName) {
+          throw new Error('Module name changed during install');
+        }
+        if (!sameModuleFileList(staged.info.files, expectedFiles)) {
+          throw new Error('Module file list changed during install');
+        }
+      },
+    });
     return loadModuleFromDir(dest, settings);
   } finally {
     if (pending.cleanupPath) {

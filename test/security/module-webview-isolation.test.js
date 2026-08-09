@@ -218,7 +218,40 @@ test('file server uses per-module allowlists and security headers', () => {
   assert.match(server, /realpathSync/);
   assert.match(server, /isRateLimited/);
   assert.match(server, /RATE_LIMIT_MAX/);
+  // Must not bind all interfaces; module assets are local-only.
+  assert.match(server, /listen\(\s*0\s*,\s*['"]127\.0\.0\.1['"]/);
+  assert.match(server, /http:\/\/127\.0\.0\.1:\$\{port\}/);
   assert.doesNotMatch(server, /express\.static\(modulesDir\)/);
+});
+
+test('module directory install copies files without following symlinks', () => {
+  const modules = read('src', 'main', 'modules.js');
+  const safeCopy = read('src', 'main', 'ipc', 'safeCopy.js');
+  assert.match(modules, /installModuleDirectory/);
+  assert.match(safeCopy, /readRegularFileNoFollow/);
+  assert.match(safeCopy, /O_NOFOLLOW/);
+  assert.match(safeCopy, /flag:\s*['"]wx['"]/);
+  assert.match(safeCopy, /proc\/self\/fd/);
+  assert.match(safeCopy, /\/dev\/fd/);
+  assert.match(safeCopy, /assertNoSymlinkComponents/);
+  assert.match(safeCopy, /supportsFdRelativeOpen|directoryFdPath/);
+  assert.match(safeCopy, /COPY_CONCURRENCY\s*=\s*1/);
+  assert.match(safeCopy, /new Set\(/);
+  assert.match(safeCopy, /trustedSource/);
+  assert.match(safeCopy, /readFileHandleBounded/);
+  assert.match(
+    safeCopy,
+    /descriptor-relative opens on this platform/
+  );
+  assert.doesNotMatch(safeCopy, /materializeAppOwnedSourceSnapshot/);
+  assert.match(
+    modules,
+    /package the module as a \.zip archive/
+  );
+  assert.doesNotMatch(
+    modules,
+    /const copyOne = \(file\) => fsp\.copyFile/
+  );
 });
 
 test('documentation and fixtures for isolation exist', () => {

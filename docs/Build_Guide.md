@@ -10,8 +10,8 @@
 Install the following
 
 - Code editor of choice (VSCode)
-- Node.js (min v16.x)
-- NPM (min v8.x)
+- Node.js (min v22.12.0)
+- NPM (min v10.9.0)
 
 ### Step 2
 

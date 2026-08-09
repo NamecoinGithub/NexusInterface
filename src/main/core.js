@@ -12,6 +12,7 @@ import {
   getCoreConfiguration,
   probeCoreApi,
 } from './coreRpc';
+import { assertAdvancedCoreParams } from './ipc/contracts';
 
 // After killing a mismatched Core, wait briefly so OS listen sockets (API/P2P)
 // are released before we spawn a replacement on the same ports.
@@ -557,7 +558,12 @@ function buildConfiguredCoreParams(settings, configuration) {
   if (settings.liteMode) params.push('-client=1');
   if (settings.multiUser) params.push('-multiusername=1');
   if (settings.allowAdvancedCoreOptions && settings.advancedCoreParams) {
-    params.push(...splitCommandParts(settings.advancedCoreParams));
+    // Re-validate at spawn time so a tampered settings.json cannot inject
+    // wallet-managed flags (datadir/api creds/etc.).
+    const safeParams = assertAdvancedCoreParams(settings.advancedCoreParams);
+    if (safeParams) {
+      params.push(...splitCommandParts(safeParams));
+    }
   }
 
   return { params, lockedTestnet };

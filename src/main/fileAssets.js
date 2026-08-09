@@ -1,18 +1,23 @@
 import fs from 'fs/promises';
 import fsSync from 'fs';
 import path from 'path';
-import { pathToFileURL } from 'url';
 import axios from 'axios';
 import { parse } from 'csv-parse/sync';
 import { Reader } from 'maxmind';
 
-import { assertExternalUrl, assertSafeModuleName, assertString } from './ipc/contracts';
+import {
+  assertExternalUrl,
+  assertRelativeModulePath,
+  assertSafeModuleName,
+  assertString,
+} from './ipc/contracts';
 import {
   EXTERNAL_ICON_REQUEST_OPTIONS,
   getPublicGeoIpRequestOptions,
   parsePublicGeoIpResponse,
   PUBLIC_GEO_IP_URL,
 } from './ipc/networkPolicy';
+import { readRegularFileNoFollow } from './ipc/safeCopy';
 import { assetsDir } from './paths';
 import { resolveModuleRoot } from './moduleFiles';
 
@@ -38,18 +43,57 @@ const locales = new Set([
 
 let geoIpReaderPromise;
 
-async function resolveModuleAsset(moduleName, relativePath) {
+const MAX_MODULE_ICON_BYTES = 1024 * 1024;
+
+/**
+ * Resolve a module-relative asset path under the module root, then read its
+ * bytes through a no-follow open. Returning the validated bytes (instead of a
+ * later path re-open or file: URL) closes replace-after-realpath TOCTOU.
+ */
+async function readModuleAssetBytes(moduleName, relativePath, { maxBytes }) {
   const name = assertSafeModuleName(moduleName);
-  const assetPath = assertString(relativePath, 'Module asset path', {
-    min: 1,
-    max: 1024,
-  });
-  const { root: moduleRoot } = await resolveModuleRoot(name);
+  const assetPath = assertRelativeModulePath(
+    assertString(relativePath, 'Module asset path', {
+      min: 1,
+      max: 1024,
+    })
+  );
+  const { root: moduleRoot, development } = await resolveModuleRoot(name);
   const resolvedPath = path.resolve(moduleRoot, assetPath);
-  if (!resolvedPath.startsWith(`${moduleRoot}${path.sep}`)) {
+  if (
+    resolvedPath !== moduleRoot &&
+    !resolvedPath.startsWith(`${moduleRoot}${path.sep}`)
+  ) {
     throw new Error('Module asset must be inside its installed module directory');
   }
-  return resolvedPath;
+
+  const leafStat = await fs.lstat(resolvedPath);
+  if (leafStat.isSymbolicLink() || !leafStat.isFile()) {
+    throw new Error('Module asset must be a regular non-symlink file');
+  }
+  if (leafStat.size > maxBytes) {
+    throw new Error('Module icon exceeds the maximum allowed size');
+  }
+
+  // realpath still matters for intermediate parent-directory symlinks before
+  // the no-follow open binds the bytes we return.
+  const realRoot = await fs.realpath(moduleRoot);
+  const realFile = await fs.realpath(resolvedPath);
+  if (realFile !== realRoot && !realFile.startsWith(`${realRoot}${path.sep}`)) {
+    throw new Error('Module asset realpath escapes module root');
+  }
+
+  return readRegularFileNoFollow(resolvedPath, {
+    root: moduleRoot,
+    label: 'Module icon',
+    maxBytes,
+    // Installed module roots live under the app-owned modules directory. On
+    // Windows the fd-relative walker is unavailable so the trusted-root path
+    // fallback is required after the symlink/realpath checks above.
+    // Development roots are mutable user-selected directories and must not use that
+    // fallback (same TOCTOU reason directory installs fail closed on Windows).
+    allowPathFallback: !development,
+  });
 }
 
 export async function readModuleIcon(moduleName, relativePath) {
@@ -57,13 +101,18 @@ export async function readModuleIcon(moduleName, relativePath) {
   if (!['.svg', '.png'].includes(extension)) {
     throw new Error('Unsupported module icon type');
   }
-  const iconPath = await resolveModuleAsset(moduleName, relativePath);
-  const stat = await fs.stat(iconPath);
-  if (!stat.isFile() || stat.size > 1024 * 1024) {
-    throw new Error('Module icon is not a supported file');
+  const content = await readModuleAssetBytes(moduleName, relativePath, {
+    maxBytes: MAX_MODULE_ICON_BYTES,
+  });
+  if (extension === '.svg') {
+    return { type: 'svg', content: content.toString('utf8') };
   }
-  if (extension === '.svg') return { type: 'svg', content: await fs.readFile(iconPath, 'utf8') };
-  return { type: 'url', content: pathToFileURL(iconPath).toString() };
+  // Return immutable bytes as a data URL so the renderer never re-resolves a
+  // mutable module-tree path (file: URLs can race after validation).
+  return {
+    type: 'url',
+    content: `data:image/png;base64,${content.toString('base64')}`,
+  };
 }
 
 export async function fetchExternalIcon(url) {

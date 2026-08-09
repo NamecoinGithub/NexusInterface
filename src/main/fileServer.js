@@ -121,13 +121,14 @@ server.get('/modules/:moduleName/*', (req, res) => {
   });
 });
 
-const listener = server.listen(() => {
+// Loopback-only: module assets must never be reachable from the LAN/WAN.
+const listener = server.listen(0, '127.0.0.1', () => {
   port = listener.address().port;
-  log.info(`File server listening on port ${port}!`);
+  log.info(`File server listening on 127.0.0.1:${port}`);
 });
 
 export function getDomain() {
-  return `http://localhost:${port}`;
+  return `http://127.0.0.1:${port}`;
 }
 
 /**

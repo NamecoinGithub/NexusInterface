@@ -181,7 +181,8 @@ const allowedMenuRoles = new Set([
   'zoomIn',
   'zoomOut',
   'toggleSpellChecker',
-  'toggleFullScreen',
+  // Electron's built-in role is lowercase; must match appMenu exactly.
+  'togglefullscreen',
   'window',
   'minimize',
   'close',

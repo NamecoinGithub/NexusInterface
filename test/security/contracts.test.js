@@ -4,6 +4,8 @@ const assert = require('node:assert/strict');
 const test = require('node:test');
 
 const {
+  assertAdvancedCoreParams,
+  assertAbsoluteFilesystemPath,
   assertExternalUrl,
   assertRelativeModulePath,
   validateClipboardText,
@@ -11,6 +13,7 @@ const {
   validateCoreRpcUrl,
   validateModuleDownloadRequest,
   validateNoArguments,
+  validateSettingsUpdate,
   validateTrackEventRequest,
 } = require('../../src/main/ipc/contracts');
 
@@ -118,6 +121,116 @@ test('Core RPC URL validation enforces relative paths and namespaces', () => {
     '',
   ]) {
     assert.throws(() => validateCoreRpcUrl(value), TypeError);
+  }
+});
+
+test('settings updates reject dangerous Core overrides and relative paths', () => {
+  assert.deepEqual(
+    validateSettingsUpdate({
+      locale: 'en',
+      allowAdvancedCoreOptions: true,
+      advancedCoreParams: '-verbose=4 -llpallowip=1.2.3.4',
+    }),
+    {
+      locale: 'en',
+      allowAdvancedCoreOptions: true,
+      advancedCoreParams: '-verbose=4 -llpallowip=1.2.3.4',
+    }
+  );
+
+  // Positive case must use a host-platform absolute path: POSIX absolute paths
+  // are intentionally rejected on Windows by assertAbsoluteFilesystemPath.
+  const absoluteCoreDataDir =
+    process.platform === 'win32'
+      ? 'C:\\Users\\user\\.Nexus'
+      : '/home/user/.Nexus';
+  assert.equal(
+    assertAbsoluteFilesystemPath(absoluteCoreDataDir, 'coreDataDir'),
+    absoluteCoreDataDir
+  );
+  assert.equal(
+    assertAdvancedCoreParams('-mining=1 -stake=1'),
+    '-mining=1 -stake=1'
+  );
+
+  for (const updates of [
+    { coreDataDir: 'relative/path' },
+    { coreDataDir: '../.Nexus' },
+    { coreDataDir: '~/.Nexus' },
+    { coreDataDir: '~' },
+    { backupDirectory: 'backups' },
+    { backupDirectory: '~/NexusBackups' },
+    { advancedCoreParams: '-datadir=/tmp/pwn' },
+    { advancedCoreParams: '-apiuser=evil -apipassword=secret' },
+    { advancedCoreParams: '-conf=/tmp/evil.conf' },
+    { advancedCoreParams: '-walletclean' },
+    { advancedCoreParams: '-testnet=1' },
+    { advancedCoreParams: '-private=1' },
+    { advancedCoreParams: '-connect=evil.example' },
+    { advancedCoreParams: '-nodns=0' },
+    { advancedCoreParams: '-noapiauth' },
+    { advancedCoreParams: '-noapiauth=1' },
+    { advancedCoreParams: '-revertblocks=10' },
+    { advancedCoreParams: 'not-a-flag' },
+    { advancedCoreParams: '-verbose=1; rm -rf /' },
+    { allowAdvancedCoreOptions: 'yes' },
+    { walletClean: 1 },
+    { revertBlocks: -1 },
+    { embeddedCoreBinaryPath: 'nexus' },
+  ]) {
+    assert.throws(() => validateSettingsUpdate(updates), TypeError);
+  }
+
+  // Foreign absolute syntax must not pass on the host platform.
+  if (process.platform === 'win32') {
+    assert.throws(
+      () => assertAbsoluteFilesystemPath('/home/user/.Nexus', 'coreDataDir'),
+      TypeError
+    );
+    // coreDataDir must reject UNC/SMB and device namespaces (credential write target).
+    for (const unc of [
+      '\\\\server\\share\\NexusData',
+      '//server/share/NexusData',
+      '\\\\.\\C:\\NexusData',
+      '\\\\?\\C:\\NexusData',
+      '\\\\?\\UNC\\server\\share\\NexusData',
+    ]) {
+      assert.throws(
+        () => assertAbsoluteFilesystemPath(unc, 'coreDataDir'),
+        TypeError
+      );
+      assert.throws(
+        () => validateSettingsUpdate({ coreDataDir: unc }),
+        TypeError
+      );
+    }
+    // backupDirectory may accept UNC shares (network backups) but not devices.
+    assert.equal(
+      assertAbsoluteFilesystemPath('\\\\server\\share\\Backups', 'backupDirectory', {
+        allowUnc: true,
+      }),
+      '\\\\server\\share\\Backups'
+    );
+    assert.deepEqual(
+      validateSettingsUpdate({ backupDirectory: '\\\\server\\share\\Backups' }),
+      { backupDirectory: '\\\\server\\share\\Backups' }
+    );
+    assert.throws(
+      () =>
+        assertAbsoluteFilesystemPath('\\\\.\\C:\\Backups', 'backupDirectory', {
+          allowUnc: true,
+        }),
+      TypeError
+    );
+  } else {
+    assert.throws(
+      () => assertAbsoluteFilesystemPath('C:\\NexusData', 'coreDataDir'),
+      TypeError
+    );
+    assert.throws(
+      () => assertAbsoluteFilesystemPath('\\\\server\\share\\data', 'coreDataDir'),
+      TypeError
+    );
   }
 });
 

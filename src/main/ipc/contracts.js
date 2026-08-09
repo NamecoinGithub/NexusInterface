@@ -300,6 +300,143 @@ function assertExternalUrl(value, name = 'URL', { mailto = false } = {}) {
   return parsed.toString();
 }
 
+/**
+ * Flags that the wallet already manages or that would let a compromised
+ * renderer override Core security boundaries if accepted via advanced params.
+ */
+const FORBIDDEN_ADVANCED_CORE_FLAGS = new Set([
+  'datadir',
+  'conf',
+  'pid',
+  'apiuser',
+  'apipassword',
+  'apiport',
+  'apisslport',
+  'apissl',
+  'ssl',
+  'daemon',
+  'server',
+  'walletclean',
+  // Wallet-managed launch flags; advanced params are appended at spawn and must
+  // not disable API auth or bypass the bounded revertBlocks setting.
+  'noapiauth',
+  'revertblocks',
+  'rpcuser',
+  'rpcpassword',
+  'rpcport',
+  // Network selection is wallet-managed (and locked in LOCK_TESTNET builds).
+  // Advanced params are appended after fixed -connect/-nodns/-testnet/-private
+  // arguments, so these must not be injectable from settings.
+  'connect',
+  'nodns',
+  'testnet',
+  'private',
+]);
+
+/**
+ * Host-platform absolute path check. Intentionally does not treat foreign
+ * syntax (e.g. `C:\...` or UNC on POSIX) as absolute, because Node would
+ * resolve those as relative paths on the running OS.
+ */
+function isHostAbsoluteFilesystemPath(raw) {
+  if (typeof process !== 'undefined' && process.platform === 'win32') {
+    // Local drive paths and UNC. Device namespaces are filtered separately.
+    return /^[a-zA-Z]:[\\/]/.test(raw) || /^[/\\]{2}/.test(raw);
+  }
+  return raw.startsWith('/');
+}
+
+function isWindowsDeviceNamespacePath(raw) {
+  // \\.\pipe\..., \\?\C:\..., \\?\UNC\server\share, and //?/ forms.
+  return /^[/\\]{2}[.?][/\\]/.test(raw);
+}
+
+function isWindowsUncPath(raw) {
+  return /^[/\\]{2}/.test(raw) && !isWindowsDeviceNamespacePath(raw);
+}
+
+/**
+ * Validate an absolute filesystem path for settings.
+ *
+ * @param {unknown} value
+ * @param {string} name
+ * @param {{ allowUnc?: boolean }} [options]
+ *   When `allowUnc` is true (backup destinations only), Windows UNC share paths
+ *   such as `\\server\share\dir` are accepted. `coreDataDir` and other paths
+ *   that may receive generated credentials must keep `allowUnc` false so a
+ *   compromised renderer cannot redirect writes onto an SMB share (NTLM/hash
+ *   exposure). Device namespaces (`\\.\`, `\\?\`) are never accepted.
+ */
+function assertAbsoluteFilesystemPath(value, name, options = {}) {
+  const allowUnc = options.allowUnc === true;
+  const raw = assertString(value, name, { min: 1, max: 4096 });
+  if (raw.includes('\0')) {
+    fail(`${name} is invalid`);
+  }
+  // Settings persistence does not expand `~`; Core/bootstrap consume the value
+  // directly, so home-relative shell syntax must be rejected here.
+  if (raw === '~' || raw.startsWith('~/') || raw.startsWith('~\\')) {
+    fail(`${name} must be an absolute path`);
+  }
+  if (!isHostAbsoluteFilesystemPath(raw)) {
+    fail(`${name} must be an absolute path`);
+  }
+  if (typeof process !== 'undefined' && process.platform === 'win32') {
+    if (isWindowsDeviceNamespacePath(raw)) {
+      fail(`${name} must be a local absolute path`);
+    }
+    if (!allowUnc && isWindowsUncPath(raw)) {
+      fail(`${name} must be a local absolute path`);
+    }
+  }
+  if (raw.split(/[\\/]/).includes('..')) {
+    fail(`${name} must not contain '..' segments`);
+  }
+  return raw;
+}
+
+function assertAdvancedCoreParams(value) {
+  if (value === undefined || value === null || value === '') {
+    return '';
+  }
+  const raw = assertString(value, 'Advanced Core params', {
+    min: 1,
+    max: 2048,
+  });
+  if (/[\r\n\0;|&`$<>]/.test(raw)) {
+    fail('Advanced Core params contain unsupported characters');
+  }
+
+  const parts = [];
+  const pattern = /"([^"]*)"|'([^']*)'|(\S+)/g;
+  let match;
+  while ((match = pattern.exec(raw)) !== null) {
+    parts.push(match[1] ?? match[2] ?? match[3]);
+  }
+  if (!parts.length) {
+    fail('Advanced Core params must contain at least one flag');
+  }
+  if (parts.length > 32) {
+    fail('Advanced Core params exceed the maximum allowed flag count');
+  }
+
+  for (const part of parts) {
+    if (!part.startsWith('-')) {
+      fail('Advanced Core params must be dash flags');
+    }
+    const body = part.replace(/^-+/, '');
+    const eq = body.indexOf('=');
+    const name = (eq === -1 ? body : body.slice(0, eq)).toLowerCase();
+    if (!name || !/^[a-z][a-z0-9_-]*$/i.test(name)) {
+      fail('Advanced Core flag name is invalid');
+    }
+    if (FORBIDDEN_ADVANCED_CORE_FLAGS.has(name)) {
+      fail(`Advanced Core flag -${name} is not allowed`);
+    }
+  }
+  return raw;
+}
+
 function validateSettingsUpdate(value) {
   const updates = assertRecord(value, 'Settings update');
   const entries = Object.entries(updates);
@@ -363,6 +500,66 @@ function validateSettingsUpdate(value) {
         ))
     ) {
       fail(`Settings array value for ${key} is invalid`);
+    }
+    if (
+      [
+        'allowAdvancedCoreOptions',
+        'walletClean',
+        'clearPeers',
+        'manualDaemon',
+        'manualDaemonApiSSL',
+        'embeddedCoreUseNonSSL',
+        'privateTestnet',
+        'enableMining',
+        'enableStaking',
+        'pooledStaking',
+        'multiUser',
+        'liteMode',
+        'safeMode',
+        'avatarMode',
+      ].includes(key)
+    ) {
+      assertBoolean(fieldValue, key);
+    }
+    if (key === 'advancedCoreParams') {
+      validated[key] = assertAdvancedCoreParams(fieldValue);
+      continue;
+    }
+    if (key === 'coreDataDir') {
+      // Must stay local: loadEmbeddedConfig writes API credentials into
+      // <coreDataDir>/nexus.conf. UNC/SMB targets would expose NTLM material.
+      validated[key] = assertAbsoluteFilesystemPath(fieldValue, key, {
+        allowUnc: false,
+      });
+      continue;
+    }
+    if (key === 'backupDirectory') {
+      // Folder-dialog selected network backups may legitimately be UNC shares.
+      validated[key] = assertAbsoluteFilesystemPath(fieldValue, key, {
+        allowUnc: true,
+      });
+      continue;
+    }
+    if (key === 'embeddedCoreBinaryPath') {
+      if (fieldValue === '' || fieldValue === undefined || fieldValue === null) {
+        validated[key] = '';
+        continue;
+      }
+      validated[key] = assertAbsoluteFilesystemPath(
+        fieldValue,
+        'embeddedCoreBinaryPath',
+        { allowUnc: false }
+      );
+      continue;
+    }
+    if (key === 'revertBlocks') {
+      const raw = fieldValue === '' || fieldValue === undefined ? 0 : fieldValue;
+      const num = typeof raw === 'number' ? raw : Number(String(raw));
+      if (!Number.isInteger(num) || num < 0 || num > 1_000_000) {
+        fail('revertBlocks must be an integer between 0 and 1000000');
+      }
+      validated[key] = num;
+      continue;
     }
     validated[key] = fieldValue;
   }
@@ -581,7 +778,10 @@ module.exports = {
   ALLOWED_EXTERNAL_HOSTS,
   CHANNELS,
   EVENTS,
+  FORBIDDEN_ADVANCED_CORE_FLAGS,
   MAX_CLIPBOARD_TEXT_LENGTH,
+  assertAbsoluteFilesystemPath,
+  assertAdvancedCoreParams,
   assertAllowedCoreRpcEndpoint,
   assertBoolean,
   assertExternalUrl,

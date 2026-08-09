@@ -175,7 +175,8 @@ const menuItems = preprocess({
   toggleFullScreen: {
     label: __('Toggle FullScreen'),
     accelerator: 'F11',
-    role: 'toggleFullScreen',
+    // Electron built-in role is all-lowercase (case-sensitive).
+    role: 'togglefullscreen',
   },
   toggleDevTools: {
     label: __('Toggle Developer Tools'),
