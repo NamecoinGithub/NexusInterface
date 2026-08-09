@@ -64,7 +64,7 @@
 ### Bounded reads and resource limits
 
 - Regular-file reads stay bounded by configured size limits.
-- The follow-up PR replaces eager `maxBytes + 1` allocation with fixed-size chunked reads while preserving the overflow check for files that grow during read.
+- The follow-up PR replaces eager `maxBytes + 1` allocation with a single verified-size buffer (plus a one-byte growth probe) or incremental chunk-bounded growth when size is unavailable, avoiding a retained chunk list plus `Buffer.concat` duplicate.
 - Archive extraction retains entry-count, size, expanded-size, and compression-ratio limits.
 
 ### Staged, verified, atomic module publication and rollback

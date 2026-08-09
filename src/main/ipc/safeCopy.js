@@ -561,7 +561,7 @@ function isSafeCopyInternalDirectoryName(name) {
  * Returns null when the entry is not a well-formed internal install directory.
  */
 function parseInternalModuleDirectoryName(name) {
-  if (!isSafeCopyInternalDirectoryName(name) || !name.startsWith('.')) {
+  if (!isSafeCopyInternalDirectoryName(name)) {
     return null;
   }
   const body = name.slice(1);
@@ -956,14 +956,14 @@ async function installModuleDirectory(
       if (replacedPath) {
         try {
           await fsp.rm(replacedPath, { recursive: true, force: true });
-          unregisterActiveInternalPath(replacedPath);
-          replacedPath = null;
         } catch (err) {
           // Install already published; allow later inventory cleanup to retry.
-          unregisterActiveInternalPath(replacedPath);
           console.warn(
             `[modules] Failed to remove replaced module backup ${replacedPath}: ${err?.code || 'ERR'} ${err?.message || String(err)}`
           );
+        } finally {
+          unregisterActiveInternalPath(replacedPath);
+          replacedPath = null;
         }
       }
     } catch (err) {
@@ -975,6 +975,9 @@ async function installModuleDirectory(
           await fsp.rename(replacedPath, destPath);
         } catch {
           // Prefer the original install error; a restore failure is secondary.
+        } finally {
+          unregisterActiveInternalPath(replacedPath);
+          replacedPath = null;
         }
       }
       throw err;
