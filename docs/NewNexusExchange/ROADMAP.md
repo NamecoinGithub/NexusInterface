@@ -19,14 +19,20 @@ Standalone, upstream-friendly. Must land before PR #36 resurrection.
 
 Completes the "modules can't reach the Internet" claim; strongest upstream story. See [Diagrams/egress-enforcement.md](./Diagrams/egress-enforcement.md).
 
-- [ ] Per-module-partition `webRequest.onBeforeRequest` deny-all in the session created by `src/main/webviewSecurity.js`, allowing only the module file server origin
-- [ ] Blackhole `setProxy` on module partitions as defense in depth
-- [ ] Disable WebRTC on module guest contents (close STUN/TURN exfiltration)
-- [ ] Apply identically to development modules (closes the `file://` no-CSP gap from `src/main/moduleFiles.js` `getModuleEntry`)
+- [ ] Per-module-partition `webRequest.onBeforeRequest` deny-all in the session created by `src/main/webviewSecurity.js`, using a **policy-specific local-content allowlist** (not a single shared origin):
+  - [ ] **Production:** allow only that module's assigned **loopback module URL prefix** (`getDomain()` + `/modules/<name>/` from `src/main/fileServer.js` / `moduleUrlPrefix` in `webviewSecurity.js`)
+  - [ ] **Development:** allow only **`file://` URLs under the module's authorized root** (entry + in-root assets from `getModuleEntry` / `resolveModuleRoot` in `src/main/moduleFiles.js`)
+  - [ ] Deny all non-local HTTP(S), WebSocket, and other external schemes/hosts in both modes
+- [ ] Blackhole `setProxy` on module partitions as defense in depth, with an **explicit bypass for the production loopback module-server origin** so legitimate prod asset loads are not blackholed; no broad external proxy escape
+- [ ] **WebRTC suppression (mechanism-validation spike, not a one-line assumed control):** demonstrate an Electron-compatible mechanism that blocks STUN/TURN and peer-connection traffic for **module partitions** without unintentionally changing the **trusted wallet renderer**. Prefer per-session / per-guest controls when available; if only an application-wide disable exists, document whether that blast radius is acceptable before implementing. D3's security objective (no module WebRTC egress) stands either way — this item is about honest feasibility, not relaxing the goal.
+- [ ] Apply the same session-level deny-all + local-content policy pattern to development modules (closes the `file://` no-CSP gap from `src/main/moduleFiles.js` `getModuleEntry` without blocking dev entry/assets)
 - [ ] Keep the file-server CSP (`src/main/fileServer.js`) as defense in depth, not the primary control
 - [ ] Fix B2: make webview entry authorization tolerate legitimate re-attach after DOM reparenting (one-shot `authorizedEntries.delete` in `hardenModuleWebviews`, `src/main/webviewSecurity.js`)
 - [ ] Fix B3: clean up `pendingPoliciesBySession` when an attach aborts before guest `web-contents-created`
-- [ ] Security tests: direct `fetch`/WebSocket/WebRTC attempts from a test module are blocked in both prod and dev loading modes; broker path still works
+- [ ] Security tests cover **both** local-content policies:
+  - [ ] Production loading mode: module entry/assets on the loopback file-server prefix load; direct `fetch`/WebSocket/WebRTC (or equivalent peer-connection/STUN) attempts to non-local targets are blocked; broker path still works
+  - [ ] Development loading mode: authorized `file://` entry/in-root assets load; the same non-local `fetch`/WebSocket/WebRTC attempts are blocked; broker path still works
+  - [ ] Negative checks: prod mode cannot load arbitrary `file://`; dev mode cannot reach non-allowlisted hosts even though CSP headers are absent
 - [ ] Fix B7 while touching tests: make CI fail loudly when security-test deps are missing (fresh checkout without `npm ci` → `yauzl` missing breaks `test/security/archive-safety.test.js`)
 
 ## Phase 3 — Upstream the v2 isolation/broker stack
