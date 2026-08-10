@@ -17,7 +17,24 @@ const path = require('path');
 
 const DEFAULT_MAX_FILE_BYTES = 100 * 1024 * 1024;
 const STAGING_DIR_INFIX = '.installing-';
+const REPLACED_DIR_INFIX = '.replaced-';
+const READ_CHUNK_BYTES = 64 * 1024;
 const COPY_CONCURRENCY = 1;
+const publishLocks = new Map();
+/** Absolute paths of staging/backup dirs currently owned by an in-flight install. */
+const activeInternalPaths = new Set();
+
+function registerActiveInternalPath(dirPath) {
+  activeInternalPaths.add(path.resolve(dirPath));
+}
+
+function unregisterActiveInternalPath(dirPath) {
+  activeInternalPaths.delete(path.resolve(dirPath));
+}
+
+function isActiveInternalPath(dirPath) {
+  return activeInternalPaths.has(path.resolve(dirPath));
+}
 
 function isPathWithinDirectory(candidatePath, directoryPath) {
   const relativePath = path.relative(
@@ -204,28 +221,89 @@ function splitRelativeSegments(rootPath, targetPath, label) {
 /**
  * Read at most maxBytes from an open file handle. Caps allocation even when the
  * underlying inode grows between stat and read by stopping at maxBytes + 1.
+ *
+ * When the handle exposes a verified size, allocate the result once and probe a
+ * single extra byte for growth so a near-limit file does not peak at ~2x by
+ * retaining both chunk list and Buffer.concat output. Without a size, grow one
+ * buffer in place up to the cap instead of concatenating retained chunks.
  */
 async function readFileHandleBounded(handle, maxBytes, label) {
   if (!Number.isFinite(maxBytes) || maxBytes < 0) {
     throw new Error(`${label} has an invalid size limit`);
   }
-  const cap = Math.floor(maxBytes) + 1;
-  const buffer = Buffer.allocUnsafe(cap);
-  let offset = 0;
-  while (offset < cap) {
+  const limit = Math.floor(maxBytes);
+
+  let expectedSize = null;
+  if (typeof handle.stat === 'function') {
+    const stat = await handle.stat();
+    if (!Number.isFinite(stat?.size) || stat.size < 0) {
+      throw new Error(`${label} has an invalid size`);
+    }
+    if (stat.size > limit) {
+      throw new Error(`${label} exceeds the size limit`);
+    }
+    expectedSize = stat.size;
+  }
+
+  if (expectedSize !== null) {
+    const buffer =
+      expectedSize === 0 ? Buffer.alloc(0) : Buffer.allocUnsafe(expectedSize);
+    let total = 0;
+    while (total < expectedSize) {
+      const { bytesRead } = await handle.read(
+        buffer,
+        total,
+        Math.min(READ_CHUNK_BYTES, expectedSize - total),
+        total
+      );
+      if (bytesRead === 0) {
+        break;
+      }
+      total += bytesRead;
+    }
+    // Probe separately for growth beyond the verified size without keeping a
+    // second full copy of the file contents.
+    const probe = Buffer.allocUnsafe(1);
+    const { bytesRead: extra } = await handle.read(probe, 0, 1, total);
+    if (extra > 0) {
+      throw new Error(`${label} exceeds the size limit`);
+    }
+    return total === expectedSize ? buffer : buffer.subarray(0, total);
+  }
+
+  // Size unavailable (tests / unusual handles): one growable buffer capped at
+  // limit + 1, never a retained chunk list plus Buffer.concat duplicate.
+  const cap = limit + 1;
+  let buffer = Buffer.allocUnsafe(Math.min(READ_CHUNK_BYTES, cap));
+  let total = 0;
+  while (total < cap) {
+    if (total === buffer.length) {
+      const nextLength = Math.min(Math.max(buffer.length * 2, 1), cap);
+      if (nextLength <= buffer.length) {
+        break;
+      }
+      const resized = Buffer.allocUnsafe(nextLength);
+      buffer.copy(resized, 0, 0, total);
+      buffer = resized;
+    }
     const { bytesRead } = await handle.read(
       buffer,
-      offset,
-      cap - offset,
-      offset
+      total,
+      buffer.length - total,
+      total
     );
-    if (bytesRead === 0) break;
-    offset += bytesRead;
+    if (bytesRead === 0) {
+      break;
+    }
+    total += bytesRead;
   }
-  if (offset > maxBytes) {
+  if (total > limit) {
     throw new Error(`${label} exceeds the size limit`);
   }
-  return buffer.subarray(0, offset);
+  if (total === 0) {
+    return Buffer.alloc(0);
+  }
+  return total === buffer.length ? buffer : buffer.subarray(0, total);
 }
 
 /**
@@ -470,6 +548,224 @@ async function ensureDirExists(dirPath) {
   await fsp.mkdir(dirPath, { recursive: true });
 }
 
+function isSafeCopyInternalDirectoryName(name) {
+  return (
+    typeof name === 'string' &&
+    name.startsWith('.') &&
+    (name.includes(STAGING_DIR_INFIX) || name.includes(REPLACED_DIR_INFIX))
+  );
+}
+
+/**
+ * Parse `.${destName}.installing-${id}` / `.${destName}.replaced-${id}` names.
+ * Returns null when the entry is not a well-formed internal install directory.
+ */
+function parseInternalModuleDirectoryName(name) {
+  if (!isSafeCopyInternalDirectoryName(name)) {
+    return null;
+  }
+  const body = name.slice(1);
+  let kind = null;
+  let infix = null;
+  if (body.includes(STAGING_DIR_INFIX)) {
+    kind = 'staging';
+    infix = STAGING_DIR_INFIX;
+  } else if (body.includes(REPLACED_DIR_INFIX)) {
+    kind = 'replaced';
+    infix = REPLACED_DIR_INFIX;
+  } else {
+    return null;
+  }
+  const infixIndex = body.indexOf(infix);
+  if (infixIndex <= 0) {
+    return null;
+  }
+  const destName = body.slice(0, infixIndex);
+  const suffix = body.slice(infixIndex + infix.length);
+  if (
+    !destName ||
+    destName.includes(path.sep) ||
+    destName === '.' ||
+    destName === '..' ||
+    !suffix
+  ) {
+    return null;
+  }
+  return { kind, destName, suffix };
+}
+
+async function cleanupInternalModuleDirectory(
+  modulesRoot,
+  entryName,
+  { log = console.warn } = {}
+) {
+  if (!isSafeCopyInternalDirectoryName(entryName)) {
+    return false;
+  }
+
+  const rootPath = path.resolve(modulesRoot);
+  const targetPath = path.join(rootPath, entryName);
+  if (!isPathWithinDirectory(targetPath, rootPath)) {
+    log(
+      `[modules] Refusing to clean internal install directory outside modulesDir: ${entryName}`
+    );
+    return false;
+  }
+
+  // In-flight installs own their staging/backup trees; inventory/finalize
+  // cleanup must not remove them out from under copy or rename.
+  if (isActiveInternalPath(targetPath)) {
+    return false;
+  }
+
+  let stat;
+  try {
+    stat = await fsp.lstat(targetPath);
+  } catch (err) {
+    if (err?.code === 'ENOENT') {
+      return false;
+    }
+    throw err;
+  }
+
+  if (stat.isSymbolicLink()) {
+    log(
+      `[modules] Skipping internal install cleanup for symbolic link entry: ${targetPath}`
+    );
+    return false;
+  }
+
+  if (!stat.isDirectory()) {
+    log(
+      `[modules] Skipping internal install cleanup for non-directory entry: ${targetPath}`
+    );
+    return false;
+  }
+
+  const parsed = parseInternalModuleDirectoryName(entryName);
+  if (parsed?.kind === 'replaced') {
+    const publicDest = path.join(rootPath, parsed.destName);
+    if (
+      parsed.destName &&
+      isPathWithinDirectory(publicDest, rootPath) &&
+      path.basename(publicDest) === parsed.destName
+    ) {
+      let publicExists = false;
+      try {
+        await fsp.lstat(publicDest);
+        publicExists = true;
+      } catch (err) {
+        if (err?.code !== 'ENOENT') {
+          throw err;
+        }
+      }
+
+      // After interruption between rename-aside and publish, the backup may be
+      // the only recoverable module tree. Restore it instead of deleting.
+      if (!publicExists) {
+        try {
+          await fsp.rename(targetPath, publicDest);
+          return true;
+        } catch (err) {
+          log(
+            `[modules] Failed to restore replaced module backup ${targetPath} -> ${publicDest}: ${err?.code || 'ERR'} ${err?.message || String(err)}`
+          );
+          return false;
+        }
+      }
+    }
+  }
+
+  try {
+    await fsp.rm(targetPath, { recursive: true, force: true });
+    return true;
+  } catch (err) {
+    log(
+      `[modules] Failed to clean internal install directory ${targetPath}: ${err?.code || 'ERR'} ${err?.message || String(err)}`
+    );
+    return false;
+  }
+}
+
+async function cleanupInternalModuleDirectories(modulesRoot, options = {}) {
+  let childNames = [];
+  try {
+    childNames = await fsp.readdir(modulesRoot);
+  } catch (err) {
+    if (err?.code === 'ENOENT') {
+      return [];
+    }
+    throw err;
+  }
+
+  const cleaned = [];
+  for (const entryName of childNames) {
+    if (
+      await cleanupInternalModuleDirectory(modulesRoot, entryName, options)
+    ) {
+      cleaned.push(entryName);
+    }
+  }
+  return cleaned;
+}
+
+async function listPublicModuleDirectoryNames(modulesRoot, options = {}) {
+  await cleanupInternalModuleDirectories(modulesRoot, options);
+
+  let childNames = [];
+  try {
+    childNames = await fsp.readdir(modulesRoot);
+  } catch (err) {
+    if (err?.code === 'ENOENT') {
+      return [];
+    }
+    throw err;
+  }
+
+  const publicNames = [];
+  for (const name of childNames) {
+    if (isSafeCopyInternalDirectoryName(name)) {
+      continue;
+    }
+    const childPath = path.join(modulesRoot, name);
+    let stat;
+    try {
+      stat = await fsp.stat(childPath);
+    } catch (err) {
+      if (err?.code === 'ENOENT') {
+        continue;
+      }
+      throw err;
+    }
+    if (stat.isDirectory()) {
+      publicNames.push(name);
+    }
+  }
+  return publicNames;
+}
+
+async function withSerializedPublication(destPath, worker) {
+  const key = path.resolve(destPath);
+  const previous = publishLocks.get(key) || Promise.resolve();
+  let release;
+  const current = new Promise((resolve) => {
+    release = resolve;
+  });
+  // Future same-destination callers intentionally wait on `tail`, which does
+  // not settle until this call's finally block invokes `release()`.
+  const tail = previous.catch(() => {}).then(() => current);
+  publishLocks.set(key, tail);
+  await previous.catch(() => {});
+  try {
+    return await worker();
+  } finally {
+    release();
+    if (publishLocks.get(key) === tail) {
+      publishLocks.delete(key);
+    }
+  }
+}
+
 async function mapPool(items, concurrency, worker) {
   if (!items.length) return [];
   const limit = Math.max(1, Math.min(concurrency, items.length));
@@ -601,76 +897,119 @@ async function installModuleDirectory(
   dest,
   {
     maxBytes = DEFAULT_MAX_FILE_BYTES,
+    overwrite = true,
     verifyStaging,
     trustedSource = false,
   } = {}
 ) {
   const destPath = path.resolve(dest);
-  const destParent = path.dirname(destPath);
-  const destName = path.basename(destPath);
-  const stagingPath = path.join(
-    destParent,
-    `.${destName}${STAGING_DIR_INFIX}${crypto.randomUUID()}`
-  );
+  return withSerializedPublication(destPath, async () => {
+    const destParent = path.dirname(destPath);
+    const destName = path.basename(destPath);
+    const stagingPath = path.join(
+      destParent,
+      `.${destName}${STAGING_DIR_INFIX}${crypto.randomUUID()}`
+    );
 
-  await ensureDirExists(destParent);
-  await fsp.mkdir(stagingPath, { recursive: false });
-  let replacedPath = null;
-  try {
-    await copyModuleFiles(files, source, stagingPath, {
-      maxBytes,
-      trustedSource,
-    });
-    // Validate the app-owned staging tree before publishing so a source that
-    // mutates after the copy plan was captured cannot land a mismatched
-    // descriptor/file set at the final install path.
-    if (typeof verifyStaging === 'function') {
-      await verifyStaging(stagingPath);
-    }
-
-    // Overwrite path: move the live install aside only after staging is ready.
-    // lstat (not access) so a dangling destination symlink is not treated as
-    // missing and left in place to block/confuse the publish rename.
+    await ensureDirExists(destParent);
+    // Register before mkdir so concurrent inventory cleanup cannot treat the
+    // new staging directory as a stale leftover during the post-create gap.
+    registerActiveInternalPath(stagingPath);
+    await fsp.mkdir(stagingPath, { recursive: false });
+    let replacedPath = null;
     try {
-      await fsp.lstat(destPath);
-      replacedPath = path.join(
-        destParent,
-        `.${destName}.replaced-${crypto.randomUUID()}`
-      );
-      await fsp.rename(destPath, replacedPath);
-    } catch (err) {
-      if (err?.code !== 'ENOENT') throw err;
-    }
+      await copyModuleFiles(files, source, stagingPath, {
+        maxBytes,
+        trustedSource,
+      });
+      // Validate the app-owned staging tree before publishing so a source that
+      // mutates after the copy plan was captured cannot land a mismatched
+      // descriptor/file set at the final install path.
+      if (typeof verifyStaging === 'function') {
+        await verifyStaging(stagingPath);
+      }
 
-    await fsp.rename(stagingPath, destPath);
-
-    if (replacedPath) {
-      await fsp.rm(replacedPath, { recursive: true, force: true }).catch(() => {});
-      replacedPath = null;
-    }
-  } catch (err) {
-    await fsp.rm(stagingPath, { recursive: true, force: true }).catch(() => {});
-    if (replacedPath) {
+      // Publish while still holding the per-destination reservation so another
+      // same-name install cannot change the overwrite decision mid-swap.
       try {
-        // Drop any partial publish before restoring the previous install.
-        await fsp.rm(destPath, { recursive: true, force: true }).catch(() => {});
-        await fsp.rename(replacedPath, destPath);
-      } catch {
-        // Prefer the original install error; a restore failure is secondary.
+        await fsp.lstat(destPath);
+        if (!overwrite) {
+          const existsError = new Error(
+            'A module with the same directory name already exists'
+          );
+          existsError.code = 'ALREADY_EXISTS';
+          throw existsError;
+        }
+        replacedPath = path.join(
+          destParent,
+          `.${destName}${REPLACED_DIR_INFIX}${crypto.randomUUID()}`
+        );
+        // Register before rename so concurrent cleanup cannot delete the live
+        // module tree while it is parked under the backup name.
+        registerActiveInternalPath(replacedPath);
+        await fsp.rename(destPath, replacedPath);
+      } catch (err) {
+        if (err?.code !== 'ENOENT') throw err;
+      }
+
+      await fsp.rename(stagingPath, destPath);
+      unregisterActiveInternalPath(stagingPath);
+
+      if (replacedPath) {
+        try {
+          await fsp.rm(replacedPath, { recursive: true, force: true });
+        } catch (err) {
+          // Install already published; allow later inventory cleanup to retry.
+          console.warn(
+            `[modules] Failed to remove replaced module backup ${replacedPath}: ${err?.code || 'ERR'} ${err?.message || String(err)}`
+          );
+        } finally {
+          unregisterActiveInternalPath(replacedPath);
+          replacedPath = null;
+        }
+      }
+    } catch (err) {
+      await fsp.rm(stagingPath, { recursive: true, force: true }).catch(() => {});
+      if (replacedPath) {
+        try {
+          // Drop any partial publish before restoring the previous install.
+          await fsp.rm(destPath, { recursive: true, force: true }).catch(() => {});
+          await fsp.rename(replacedPath, destPath);
+        } catch {
+          // Prefer the original install error; a restore failure is secondary.
+        } finally {
+          unregisterActiveInternalPath(replacedPath);
+          replacedPath = null;
+        }
+      }
+      throw err;
+    } finally {
+      unregisterActiveInternalPath(stagingPath);
+      if (replacedPath) {
+        unregisterActiveInternalPath(replacedPath);
       }
     }
-    throw err;
-  }
+  });
 }
 
 module.exports = {
   DEFAULT_MAX_FILE_BYTES,
+  READ_CHUNK_BYTES,
   STAGING_DIR_INFIX,
+  REPLACED_DIR_INFIX,
   assertNoSymlinkComponents,
+  cleanupInternalModuleDirectories,
   copyModuleFiles,
   installModuleDirectory,
+  isActiveInternalPath,
+  isSafeCopyInternalDirectoryName,
   isPathWithinDirectory,
+  listPublicModuleDirectoryNames,
+  parseInternalModuleDirectoryName,
+  readFileHandleBounded,
   readRegularFileNoFollow,
+  registerActiveInternalPath,
   setSupportsFdRelativeOpenForTests,
   supportsFdRelativeOpen,
+  unregisterActiveInternalPath,
 };
