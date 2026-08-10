@@ -20,7 +20,7 @@
 
 - **D1 = H:** A first-party shared tab does **not** weaken the module security guarantee ("modules can't reach the Internet"). Wallet-owned tabs (Send, Transactions) are main-renderer code whose network runs in the main process — the same trust domain that already fetches market data (`src/main/updater.js` `getMarketData`) and GeoIP (`src/main/ipc/networkPolicy.js`, `https://ipwho.is/`). Routing is one `<Route>` in `src/App/index.tsx` plus one `NavItem` in `src/App/Navigation/index.tsx`. Building the broker once and deferring (not blocking) the module decision is the best long-term shape.
 - **D2 = 1(a):** PR #36's transport is architecturally sound (cookie auth in main, frozen RPC allowlist, stale≠connected fixed, config-keyed cache, 17 transport tests). Loopback-only is the smallest reviewed step and preserves the invariant; an SSH local forward works with any VPN topology with zero policy change. Widening to RFC1918 (1b) remains a documented fallback requiring explicit opt-in + warnings, only if SSH forwarding proves unworkable.
-- **D3 = E3+E1:** Current enforcement is a CSP header (`connect-src 'none'`) served by the module file server (`src/main/fileServer.js`). That leaves three gaps: development modules load via `file://` (`src/main/moduleFiles.js`, `getModuleEntryUrl`) with **no CSP headers at all**; CSP does not govern WebRTC; and there is no network-layer enforcement. Since `src/main/webviewSecurity.js` already gives each module webview a unique session partition (`nexus-module:<random>`), a per-session deny-all is the correct enforcement point — and the same mechanism that would later grant a narrowly allowlisted egress if that were ever wanted. Under E3, it never is: capabilities grant *broker methods*, not egress.
+- **D3 = E3+E1:** Current enforcement is a CSP header (`connect-src 'none'`) served by the module file server (`src/main/fileServer.js`). That leaves three gaps: development modules load via `file://` (`src/main/moduleFiles.js`, `getModuleEntry`) with **no CSP headers at all**; CSP does not govern WebRTC; and there is no network-layer enforcement. Since `src/main/webviewSecurity.js` already gives each module webview a unique session partition (`nexus-module:<random>`), a per-session deny-all is the correct enforcement point — and the same mechanism that would later grant a narrowly allowlisted egress if that were ever wanted. Under E3, it never is: capabilities grant *broker methods*, not egress.
 
 ---
 
@@ -28,7 +28,7 @@
 
 The original in-wallet exchange exists only at old tags, under the pre-2019 `app/` layout (renamed to `src/` in July 2019):
 
-- **Location:** `Nexusoft/NexusInterface` @ tag `Release-0.8.5` (commit `8cabb0e`), path `app/App/Exchange/` — `index.js`, `Fast.js`, `Precise.js`, `ExchangeForm.js`, `style.css`
+- **Location:** `Nexusoft/NexusInterface` @ tag `Release-0.8.5` (tag object `8cabb0e`), path `app/App/Exchange/` — `index.js`, `Fast.js`, `Precise.js`, `ExchangeForm.js`, `style.css`
 - **Provider:** ShapeShift v1 (`shapeshift.io`) — *Precise* (locked quote via `POST /sendamount`) and *Fast* (market rate via `POST /shift`) modes, address validation, deposit-address + countdown modal
 - **Death:** commit `c90ab9dc` (2019-01-17), message *"well that sucks Shapeshift changed their api so ow we have to disable it"* — ShapeShift v1 was retired in favor of an account/KYC-required v2. The route and nav item were commented out, never deleted (at that tag).
 - **Successor:** `Nexusoft/nexus-market-data-module` — read-only market data (TradeOgre, Xeggex, Coinstore; Bittrex/Binance commented out), **no swap capability**, and it depends on `proxyRequest`, which this fork's v2 isolation removed — so the upstream module is already incompatible with the hardened module API.
@@ -92,7 +92,7 @@ Wallet renderer                          Main process                        Ext
         ▲  E1 deny-all: no direct egress from module partitions            └───────────┘
 ```
 
-- **One broker, two frontends.** The main-process exchange service is written once. Phase 1 wires it to the built-in `/Exchange` tab over the existing IPC-contract pattern (`src/main/ipc/contracts.js`). Phase 2 exposes the *same* methods to modules as `exchange.quote` / `exchange.submitSwap` / `exchange.getSwapStatus` capabilities per PR #35 and `docs/security/exchange-capability-spec.md`.
+- **One broker, two frontends.** The main-process exchange service is written once. Phase 1 wires it to the built-in `/Exchange` tab over the existing IPC-contract pattern (`src/main/ipc/contracts.js`). Phase 2 exposes the *same* methods to modules (`exchange.getQuote` / `exchange.submitSwap` / `exchange.getSwapStatus`, gated by the `exchange.quote` / `exchange.submitSwap` capabilities) per PR #35 and `docs/security/exchange-capability-spec.md`.
 - **Funds movement:** the broker registers swap intent and reports status. Sending coins always goes through the existing Send flow with explicit user confirmation.
 - **LTC connectivity (D2):** PR #36's transport (resurrected after B1) provides loopback-only litecoind RPC with cookie auth held in main. See [Diagrams/ltc-connectivity.md](./Diagrams/ltc-connectivity.md).
 
@@ -159,7 +159,7 @@ Resurrection criteria (all must hold before re-merge):
 Matches issue #34 and `docs/security/exchange-capability-spec.md`. Under D1 = H it is resurrected in two stages:
 
 1. **Stage 1 (built-in tab):** lift the broker/validators/adapters out of the draft as the main-process exchange service; wire to the `/Exchange` tab via IPC contracts. No module capability exposure yet, so no change to the module trust model.
-2. **Stage 2 (module capability):** after E1 egress enforcement has landed, wire `exchange.quote` / `exchange.submitSwap` / `exchange.getSwapStatus` into the v2 broker per the spec (`CAPABILITIES` but **not** `DEFAULT_CAPABILITIES`; per-module rate limits; server-side enforcement only).
+2. **Stage 2 (module capability):** after E1 egress enforcement has landed, wire the `exchange.getQuote` / `exchange.submitSwap` / `exchange.getSwapStatus` methods into the v2 broker per the spec, gated by the `exchange.quote` / `exchange.submitSwap` capabilities (`CAPABILITIES` but **not** `DEFAULT_CAPABILITIES`; per-module rate limits; server-side enforcement only).
 
 Ordering rationale: upstream the hardening first — #35 builds directly on the v2 broker being upstreamed, and E1 makes the module-path security claim honest before any module-facing exchange surface exists.
 

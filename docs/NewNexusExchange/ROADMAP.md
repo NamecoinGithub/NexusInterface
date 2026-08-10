@@ -22,7 +22,7 @@ Completes the "modules can't reach the Internet" claim; strongest upstream story
 - [ ] Per-module-partition `webRequest.onBeforeRequest` deny-all in the session created by `src/main/webviewSecurity.js`, allowing only the module file server origin
 - [ ] Blackhole `setProxy` on module partitions as defense in depth
 - [ ] Disable WebRTC on module guest contents (close STUN/TURN exfiltration)
-- [ ] Apply identically to development modules (closes the `file://` no-CSP gap from `src/main/moduleFiles.js` `getModuleEntryUrl`)
+- [ ] Apply identically to development modules (closes the `file://` no-CSP gap from `src/main/moduleFiles.js` `getModuleEntry`)
 - [ ] Keep the file-server CSP (`src/main/fileServer.js`) as defense in depth, not the primary control
 - [ ] Fix B2: make webview entry authorization tolerate legitimate re-attach after DOM reparenting (one-shot `authorizedEntries.delete` in `hardenModuleWebviews`, `src/main/webviewSecurity.js`)
 - [ ] Fix B3: clean up `pendingPoliciesBySession` when an attach aborts before guest `web-contents-created`

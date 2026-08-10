@@ -68,4 +68,4 @@ sequenceDiagram
     Note over A,B: Refund paths: if unredeemed, B refunds LTC after T2, A refunds NXS after T1
 ```
 
-Phasing: this sequence lands only after D2 = 1(a) connectivity (PR #36 resurrection) is stable — see [ROADMAP Phase 6](../ROADMAP.md#phase-6--atomic-swap-research-track).
+Phasing: this sequence lands only after D2 = 1(a) connectivity (PR #36 resurrection) is stable — see [ROADMAP Phase 6](../ROADMAP.md#phase-6--atomic-swap-research-track-d2-end-state).

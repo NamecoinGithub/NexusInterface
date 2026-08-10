@@ -11,7 +11,7 @@ flowchart TB
     subgraph today["Current enforcement (CSP-only)"]
         fs["Module file server: CSP connect-src 'none' (src/main/fileServer.js)"]
         prodmod["Production module (served over loopback HTTP)"]
-        devmod["Development module (file:// URL, src/main/moduleFiles.js getModuleEntryUrl)"]
+        devmod["Development module (file:// URL, src/main/moduleFiles.js getModuleEntry)"]
         fs -->|"CSP header applies"| prodmod
         devmod ---|"no HTTP response = no CSP header"| gap1["GAP 1: dev modules can fetch() the Internet"]
         prodmod --- gap2["GAP 2: CSP does not govern WebRTC — STUN/TURN data-channel exfiltration"]
