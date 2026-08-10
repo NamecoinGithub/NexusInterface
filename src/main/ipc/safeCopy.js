@@ -912,8 +912,10 @@ async function installModuleDirectory(
     );
 
     await ensureDirExists(destParent);
-    await fsp.mkdir(stagingPath, { recursive: false });
+    // Register before mkdir so concurrent inventory cleanup cannot treat the
+    // new staging directory as a stale leftover during the post-create gap.
     registerActiveInternalPath(stagingPath);
+    await fsp.mkdir(stagingPath, { recursive: false });
     let replacedPath = null;
     try {
       await copyModuleFiles(files, source, stagingPath, {
