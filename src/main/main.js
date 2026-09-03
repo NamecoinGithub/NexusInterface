@@ -19,6 +19,7 @@ import {
 import { getDomain, serveModuleFiles } from './fileServer';
 import { createWindow, getMainWindowUrl } from './renderer';
 import { isTrustedWindowUrl } from './ipc/navigationPolicy';
+import { createCoreRpcSessionPolicy } from './ipc/coreRpcSessionPolicy';
 import { authorizeModuleEntry } from './webviewSecurity';
 import {
   registerModuleBrokerHandlers,
@@ -109,6 +110,7 @@ import {
 let mainWindow;
 global.forceQuit = false;
 const coreLifecycle = createCoreLifecycleCoordinator();
+const coreRpcSessionPolicy = createCoreRpcSessionPolicy();
 // Guards against re-entrant Core shutdown during quit/exit (IPC + before-quit).
 let embeddedCoreShutdownPromise = null;
 // Once Core cleanup finished, allow Electron to complete quit/exit/install.
@@ -886,7 +888,12 @@ registerOperation(
 registerOperation(
   CHANNELS.coreRpc.call,
   validateCoreRpcRequest,
-  async (request) => callCoreRpc(request)
+  async (request) => {
+    const authorizedRequest = coreRpcSessionPolicy.authorize(request);
+    const result = await callCoreRpc(authorizedRequest);
+    coreRpcSessionPolicy.observe(authorizedRequest, result);
+    return result;
+  }
 );
 // Terminal / Nexus API console capability. Broader than structured call():
 // relative paths under allowlisted namespaces, including query strings.
