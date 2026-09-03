@@ -13,6 +13,10 @@ import {
   probeCoreApi,
 } from './coreRpc';
 import { assertAdvancedCoreParams } from './ipc/contracts';
+import {
+  commandUsesDataDir,
+  splitCommandParts,
+} from './coreProcessPolicy';
 
 // After killing a mismatched Core, wait briefly so OS listen sockets (API/P2P)
 // are released before we spawn a replacement on the same ports.
@@ -24,6 +28,9 @@ const CORE_API_READY_TIMEOUT_MS = 15000;
 const CORE_API_READY_POLL_MS = 500;
 const CORE_STOP_GRACE_ATTEMPTS = 10;
 const CORE_STOP_GRACE_DELAY_MS = 1000;
+const CORE_KILL_RETRIES = 3;
+const CORE_KILL_CONFIRM_ATTEMPTS = 10;
+const CORE_KILL_CONFIRM_DELAY_MS = 250;
 
 const coreBinaryName = `nexus-${process.platform}-${process.arch}${
   process.platform === 'win32' ? '.exe' : ''
@@ -193,43 +200,6 @@ function commandMatchesCore(
   );
 }
 
-function splitCommandParts(command) {
-  const parts = [];
-  const pattern = /"([^"]*)"|'([^']*)'|(\S+)/g;
-  let match;
-
-  while ((match = pattern.exec(command)) !== null) {
-    parts.push(match[1] ?? match[2] ?? match[3]);
-  }
-
-  return parts;
-}
-
-/**
- * True when a process command line targets the wallet's Core data directory.
- * Used to avoid killing an unrelated user-managed Core that shares the same
- * binary name/path but was started with a different -datadir=.
- */
-function commandUsesDataDir(command, dataDir) {
-  if (!command || !dataDir) {
-    return false;
-  }
-
-  const normalizedDataDir = path.normalize(String(dataDir).trim());
-  if (!normalizedDataDir) {
-    return false;
-  }
-
-  return splitCommandParts(command).some((part) => {
-    const match = /^[-/]datadir=(.+)$/i.exec(part);
-    if (!match) {
-      return false;
-    }
-    const value = match[1].replace(/^(['"])(.*)\1$/, '$2');
-    return path.normalize(value) === normalizedDataDir;
-  });
-}
-
 function parseWindowsCSVLine(line) {
   const fields = [];
   let field = '';
@@ -254,6 +224,31 @@ function parseWindowsCSVLine(line) {
 
   fields.push(field);
   return fields;
+}
+
+function parseWindowsProcessCsv(stdout) {
+  return String(stdout)
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .slice(1)
+    .map((line) => {
+      const fields = parseWindowsCSVLine(line);
+      const pid = Number(fields[0]);
+      const command = fields[1] || '';
+      if (!pid || Number.isNaN(pid) || pid < 2) return null;
+      return { pid, command };
+    })
+    .filter(Boolean);
+}
+
+async function queryWindowsProcessCommandLines(command, env) {
+  const stdout = await execFile(
+    'powershell.exe',
+    ['-NoProfile', '-NonInteractive', '-Command', command],
+    { env }
+  );
+  return parseWindowsProcessCsv(stdout);
 }
 
 function findCoreProcessesInProcessList(
@@ -336,41 +331,33 @@ async function listCoreProcesses() {
         ...modEnv,
         NEXUS_CORE_IMAGE_NAME: resolvedCoreBinaryName,
       };
-      const stdout = await execFile(
-        'powershell.exe',
-        [
-          '-NoProfile',
-          '-Command',
-          "Get-CimInstance Win32_Process | Where-Object { $_.Name -eq $env:NEXUS_CORE_IMAGE_NAME } | Select-Object ProcessId,CommandLine | ConvertTo-Csv -NoTypeInformation",
-        ],
-        { env: psEnv }
+      return await queryWindowsProcessCommandLines(
+        "Get-CimInstance Win32_Process | Where-Object { $_.Name -eq $env:NEXUS_CORE_IMAGE_NAME } | Select-Object ProcessId,CommandLine | ConvertTo-Csv -NoTypeInformation",
+        psEnv
       );
-      // execFile wrapper resolves with stdout text (string or Buffer).
-      const lines = String(stdout)
-        .split(/\r?\n/)
-        .map((line) => line.trim())
-        .filter(Boolean)
-        // Skip CSV header: "ProcessId","CommandLine"
-        .slice(1);
+    } catch (cimError) {
+      log.warn('core.processes.cim.failed', {
+        error: cimError?.message || String(cimError),
+        fallback: 'wmi',
+      });
+    }
 
-      return lines
-        .map((line) => {
-          const fields = parseWindowsCSVLine(line);
-          const pid = Number(fields[0]);
-          const command = fields[1] || '';
-          if (!pid || Number.isNaN(pid) || pid < 2) {
-            return null;
-          }
-          return { pid, command };
-        })
-        .filter(Boolean);
-    } catch (error) {
-      // Fall back to tasklist (name/PID only) when CIM is unavailable.
-      log.info(
-        `Core Manager: Unable to read Core command lines on Windows (${
-          error?.message || error
-        }); falling back to tasklist`
+    try {
+      const psEnv = {
+        ...modEnv,
+        NEXUS_CORE_IMAGE_NAME: resolvedCoreBinaryName,
+      };
+      return await queryWindowsProcessCommandLines(
+        "Get-WmiObject Win32_Process | Where-Object { $_.Name -eq $env:NEXUS_CORE_IMAGE_NAME } | Select-Object ProcessId,CommandLine | ConvertTo-Csv -NoTypeInformation",
+        psEnv
       );
+    } catch (wmiError) {
+      // Last-resort tasklist has no argv. Destructive callers will refuse to
+      // treat these entries as wallet-managed because -datadir is unavailable.
+      log.warn('core.processes.wmi.failed', {
+        error: wmiError?.message || String(wmiError),
+        fallback: 'tasklist',
+      });
       const taskList = await execFile(
         'tasklist',
         ['/NH', '/v', '/fo', 'CSV'],
@@ -379,7 +366,11 @@ async function listCoreProcesses() {
       return String(taskList)
         .split('\n')
         .map((output) => {
-          if (!output.includes(`"${resolvedCoreBinaryName}"`)) {
+          if (
+            !output
+              .toLowerCase()
+              .includes(`"${resolvedCoreBinaryName.toLowerCase()}"`)
+          ) {
             return null;
           }
           const fields = parseWindowsCSVLine(output);
@@ -613,7 +604,7 @@ export async function stopEmbeddedCore() {
     return { stopped: false, reason: 'manual-daemon' };
   }
 
-  if (!(await isCoreRunning())) {
+  if (!(await getCorePID({ dataDir: settings.coreDataDir }))) {
     return { stopped: true, reason: 'not-running' };
   }
 
@@ -629,7 +620,7 @@ export async function stopEmbeddedCore() {
   }
 
   for (let attempt = 0; attempt < CORE_STOP_GRACE_ATTEMPTS; attempt += 1) {
-    if (!(await isCoreRunning())) {
+    if (!(await getCorePID({ dataDir: settings.coreDataDir }))) {
       log.info('Core Manager: Core stopped gracefully');
       return { stopped: true, reason: 'graceful' };
     }
@@ -638,15 +629,33 @@ export async function stopEmbeddedCore() {
     );
   }
 
-  if (await isCoreRunning()) {
-    const killed = await killCoreProcess();
-    return {
-      stopped: killed,
-      reason: killed ? 'killed' : 'kill-failed',
-    };
+  for (let attempt = 1; attempt <= CORE_KILL_RETRIES; attempt += 1) {
+    try {
+      await killCoreProcess();
+    } catch (error) {
+      log.warn('core.kill.failed', {
+        attempt,
+        error: error?.message || String(error),
+      });
+    }
+
+    for (
+      let check = 0;
+      check < CORE_KILL_CONFIRM_ATTEMPTS;
+      check += 1
+    ) {
+      if (!(await getCorePID({ dataDir: settings.coreDataDir }))) {
+        log.info('core.stop.confirmed', { reason: 'killed', attempt });
+        return { stopped: true, reason: 'killed' };
+      }
+      await new Promise((resolve) =>
+        setTimeout(resolve, CORE_KILL_CONFIRM_DELAY_MS)
+      );
+    }
   }
 
-  return { stopped: true, reason: 'graceful' };
+  log.error('core.stop.unconfirmed', { attempts: CORE_KILL_RETRIES });
+  return { stopped: false, reason: 'kill-unconfirmed' };
 }
 
 /**
@@ -797,11 +806,57 @@ export async function resyncLiteDatabase() {
   if (settings.manualDaemon || !settings.liteMode) {
     throw new Error('Lite database resync is only available for embedded lite mode');
   }
-  await fs.promises.rm(path.join(settings.coreDataDir, 'client'), {
-    recursive: true,
-    force: true,
-  });
-  return { removed: true };
+
+  const anyCoreRunning = await isCoreRunning();
+  const managedPid = await getCorePID({ dataDir: settings.coreDataDir });
+  if (anyCoreRunning && !managedPid) {
+    throw new Error(
+      'Lite database resync refused because a wallet-managed Core shutdown cannot be confirmed'
+    );
+  }
+
+  const shouldRestartCore = !!managedPid;
+  if (shouldRestartCore) {
+    const stopResult = await stopEmbeddedCore();
+    if (
+      !stopResult?.stopped ||
+      (await getCorePID({ dataDir: settings.coreDataDir }))
+    ) {
+      throw new Error(
+        'Lite database resync refused because Core shutdown was not confirmed'
+      );
+    }
+  }
+
+  let dataError;
+  try {
+    await fs.promises.rm(path.join(settings.coreDataDir, 'client'), {
+      recursive: true,
+      force: true,
+    });
+  } catch (error) {
+    dataError = error;
+  }
+
+  let restartError;
+  if (shouldRestartCore) {
+    try {
+      await startConfiguredCore();
+    } catch (error) {
+      restartError = error;
+    }
+  }
+
+  if (dataError) {
+    if (restartError) {
+      log.error('core.resync.restart.failed', {
+        error: restartError?.message || String(restartError),
+      });
+    }
+    throw dataError;
+  }
+  if (restartError) throw restartError;
+  return { removed: true, restarted: shouldRestartCore };
 }
 
 /**

@@ -34,6 +34,7 @@ const CHANNELS = Object.freeze({
     getStatus: 'core:get-status',
     getConfiguration: 'core:get-configuration',
     start: 'core:start',
+    stop: 'core:stop',
     kill: 'core:kill',
     resyncLiteDatabase: 'core:resync-lite-database',
     executeConsoleCommand: 'core:execute-console-command',

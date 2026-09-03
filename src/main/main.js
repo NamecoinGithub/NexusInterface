@@ -5,6 +5,7 @@ import { initialize, trackEvent } from '@aptabase/electron/main';
 
 import { ensureApplicationDirectories } from './paths';
 import { loadSettingsFromFile } from './settings';
+import { createCoreLifecycleCoordinator } from './coreLifecycle';
 import {
   coreBinaryExists,
   coreBinaryStatus,
@@ -107,6 +108,7 @@ import {
 
 let mainWindow;
 global.forceQuit = false;
+const coreLifecycle = createCoreLifecycleCoordinator();
 // Guards against re-entrant Core shutdown during quit/exit (IPC + before-quit).
 let embeddedCoreShutdownPromise = null;
 // Once Core cleanup finished, allow Electron to complete quit/exit/install.
@@ -119,13 +121,16 @@ log.initialize();
 
 async function ensureEmbeddedCoreStopped() {
   if (!embeddedCoreShutdownPromise) {
-    embeddedCoreShutdownPromise = stopEmbeddedCore().catch((error) => {
-      log.warn(
-        `Core Manager: shutdown during app quit failed: ${
-          error?.message || error
-        }`
-      );
-    });
+    embeddedCoreShutdownPromise = coreLifecycle
+      .run('shutdown', () => stopEmbeddedCore())
+      .catch((error) => {
+        log.warn(
+          `Core Manager: shutdown during app quit failed: ${
+            error?.message || error
+          }`
+        );
+        return { stopped: false, reason: 'error' };
+      });
   }
   return embeddedCoreShutdownPromise;
 }
@@ -486,7 +491,9 @@ const CORE_TRACE_CHANNELS = new Set([
   CHANNELS.core.getStatus,
   CHANNELS.core.getConfiguration,
   CHANNELS.core.start,
+  CHANNELS.core.stop,
   CHANNELS.core.kill,
+  CHANNELS.core.resyncLiteDatabase,
   CHANNELS.core.subscribeOutput,
   CHANNELS.core.unsubscribeOutput,
   CHANNELS.coreRpc.call,
@@ -826,9 +833,14 @@ registerOperation(
     }
     return undefined;
   },
-  async () => startConfiguredCore()
+  async () => coreLifecycle.run('start', () => startConfiguredCore())
 );
-registerOperation(CHANNELS.core.kill, undefined, async () => killCoreProcess());
+registerOperation(CHANNELS.core.stop, undefined, async () =>
+  coreLifecycle.run('stop', () => stopEmbeddedCore())
+);
+registerOperation(CHANNELS.core.kill, undefined, async () =>
+  coreLifecycle.run('kill', () => killCoreProcess())
+);
 registerOperation(
   CHANNELS.core.resyncLiteDatabase,
   (request) => {
@@ -837,7 +849,7 @@ registerOperation(
     }
     return undefined;
   },
-  async () => resyncLiteDatabase()
+  async () => coreLifecycle.run('resync-lite', () => resyncLiteDatabase())
 );
 registerOperation(
   CHANNELS.core.subscribeOutput,
@@ -889,8 +901,10 @@ registerOperation(
     return undefined;
   },
   async () =>
-    startBootstrap((status) =>
-      mainWindow?.webContents.send(EVENTS.bootstrapStatus, status)
+    coreLifecycle.run('bootstrap', () =>
+      startBootstrap((status) =>
+        mainWindow?.webContents.send(EVENTS.bootstrapStatus, status)
+      )
     )
 );
 registerOperation(

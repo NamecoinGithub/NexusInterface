@@ -145,9 +145,17 @@ async function turnOffRemoteCore(restartForm: () => void) {
   });
   if (confirmed) {
     restartForm();
-    await startCore();
     updateSettings({ manualDaemon: false });
-    coreInfoQuery.refetch();
+    try {
+      await window.nexusElectron.settings.update({ manualDaemon: false });
+      await startCore();
+      coreInfoQuery.refetch();
+    } catch (error) {
+      showNotification(
+        (error as Error)?.message || __('Unable to start Nexus Core'),
+        'error'
+      );
+    }
   }
 }
 
@@ -163,9 +171,16 @@ async function turnOnRemoteCore(restartForm: () => void) {
   });
   if (confirmed) {
     restartForm();
-    await stopCore();
-    updateSettings({ manualDaemon: true });
-    coreInfoQuery.refetch();
+    try {
+      await stopCore();
+      updateSettings({ manualDaemon: true });
+      coreInfoQuery.refetch();
+    } catch (error) {
+      showNotification(
+        (error as Error)?.message || __('Unable to stop Nexus Core'),
+        'error'
+      );
+    }
   }
 }
 

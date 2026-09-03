@@ -102,12 +102,12 @@ test('embedded Core start always supplies API auth and probes already-running Co
     main,
     /registerOperation\(\s*CHANNELS\.app\.quit,\s*undefined,\s*async \(\) => \{\s*await shutdownEmbeddedCoreAndAllowQuit\(\);\s*app\.exit\(0\);\s*\}\)/
   );
-  // Renderer stop must still force-kill when system/stop fails.
-  assert.match(rendererCore, /window\.nexusElectron\.core\.kill\(\)/);
-  assert.match(
-    rendererCore,
-    /Graceful stop request failed[\s\S]*core\.kill\(\)/
-  );
+  // Renderer delegates the complete graceful-stop/kill/confirmation sequence
+  // to the serialized main-process lifecycle operation.
+  assert.match(rendererCore, /window\.nexusElectron\.core\.stop\(\)/);
+  assert.match(main, /coreLifecycle\.run\(['"]stop['"]/);
+  assert.match(core, /core\.stop\.confirmed/);
+  assert.match(core, /core\.stop\.unconfirmed/);
   // Wallet close relies on main-process exit to stop Core (no double wait).
   assert.match(wallet, /app\.exit\(\)/);
   assert.doesNotMatch(wallet, /await stopCore\(\)/);
