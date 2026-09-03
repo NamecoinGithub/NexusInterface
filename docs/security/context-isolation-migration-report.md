@@ -91,18 +91,68 @@ regains:
 - direct `process.env` / `process.platform` / `process.arch` / `process.cwd`
 
 Allowed privileged files remain limited to `src/main/**`,
-`src/keyboard/preload.js`, and `src/module_preload.js`.
+`src/keyboard/preload.js`, `src/module_preload.js`, and the isolated v2 preload
+under `src/module/**`.
 
 ### 5. Expanded contract tests
 
 Additional coverage for:
 
-- Core RPC namespace rejection
+- unregistered Core RPC endpoint and invalid parameter rejection
 - Core RPC URL rejection
 - clipboard size bounds
 - analytics event validation
 - main-window sandbox configuration
 - preload no longer importing clipboard/Aptabase renderer SDK
+
+### 6. Main-window document trust enforced
+
+`src/main/renderer.js` now denies popups and rejects navigation or redirects
+away from the exact application document. `src/main/main.js` authorizes
+privileged IPC using both the expected main-window `webContents` and its trusted
+top-frame URL. The application document also ships a restrictive
+Content-Security-Policy with no inline script.
+
+The sandbox debug override is available only while the application is
+unpackaged; a production environment variable cannot weaken the packaged
+renderer sandbox.
+
+### 7. Module isolation and side-effect policy completed
+
+Production and development module WebViews now use the isolated NEXUS v2
+preload with `nodeIntegration: false`, `contextIsolation: true`, and
+`sandbox: true`. Module pages do not receive React/Emotion libraries, generic
+Core RPC, generic networking, raw Electron, or Node access.
+
+External-link opening and clipboard writes are opt-in manifest capabilities.
+Each action receives a wallet-owned confirmation and a per-module-session rate
+limit. Unique module session partitions deny non-local requests, use a
+blackhole proxy for external traffic, and disable WebRTC; production modules
+can load only their assigned loopback asset path, and development modules only
+their authorized local root.
+
+### 8. Core lifecycle and bootstrap made data-safe
+
+Start, stop, kill, resync, bootstrap, and application-shutdown operations share
+a FIFO lifecycle coordinator. Graceful stop, forced termination, and retries
+are owned by the main process, and destructive resync refuses to continue
+without confirmed Core shutdown.
+
+Windows process matching handles quoted data directories, compares paths
+case-insensitively, and falls back from CIM to legacy WMI and then `tasklist`
+discovery.
+
+Bootstrap is disabled and fails closed because the publisher does not provide
+an authenticated signed-manifest contract. Re-enabling it requires
+pre-extraction authenticity verification and a staged data-directory swap with
+rollback; unauthenticated archives are no longer merged into live Core data.
+
+### 9. Cross-platform release checks added
+
+`.github/workflows/security.yml` runs the security suite and complete production
+build on Ubuntu, macOS, and Windows. Each runner also creates an unpacked
+application with `electron-builder --dir`; interactive wallet/Core smoke tests
+remain a manual release gate.
 
 ## Removed renderer capabilities
 
@@ -112,26 +162,19 @@ Additional coverage for:
 | Shared module install/repo/storage Node ports | `src/main/modules.js` + IPC |
 | Preload `clipboard.writeText` | `app:write-clipboard` |
 | Preload Aptabase renderer SDK | `app:track-event` |
-| Open Core RPC namespaces | Allowlisted namespaces only |
+| Namespace-wide structured Core RPC | Concrete endpoint registry and per-endpoint schemas |
+| Legacy privileged module bridge | Isolated capability-based NEXUS v2 bridge |
+| Default module clipboard/external-link access | Explicit capability + wallet confirmation + rate limit |
+| Unauthenticated bootstrap merge | Disabled until signed-manifest and staged-swap contracts exist |
 
-## Remaining intentional exceptions
+## Remaining release limitations
 
 | Item | Status | Reason |
 | --- | --- | --- |
-| Production/development module WebView `contextIsolation` | Deferred | React/Emotion/`NEXUS` bridge compatibility milestone still required |
-| Development module `nodeIntegration` | Deferred with production disabled | Local developer modules only; still navigation-restricted |
-| Bootstrap artifact signature/digest verification | Blocked | Bootstrap service has not published a stable signed manifest contract |
-| Full packaged GUI smoke matrix | Environment-dependent release check | Requires display + Core fixtures outside CI |
-
-Module WebViews still receive:
-
-- authorized entry URLs only
-- navigation restriction to the module origin/root
-- `enableRemoteModule: false`
-- denied `window.open`
-- dedicated module preload, not the main wallet bridge
-
-They do **not** yet receive the main-window isolation properties.
+| Bootstrap | Disabled (fail closed) | Publisher has not supplied an authenticated signed-manifest contract |
+| Terminal URL/CLI console | Advanced Developer-mode exception | Main-process policy requires persisted Developer mode; ordinary UI uses registered endpoints |
+| Interactive packaged GUI/Core matrix | Manual release gate | CI verifies unpacked packaging, but display and controlled Core fixtures are still required |
+| Real-module compatibility | Manual release gate | At least one production NEXUS v2 module must be exercised before a release claim |
 
 ## Test evidence
 
@@ -139,9 +182,8 @@ Commands:
 
 ```sh
 npm run test:security
-npm run build-renderer
-npm run build-main
-npm run build-preload
+npm run build
+npx electron-builder --dir --publish never
 ```
 
 Security tests now include:
@@ -150,8 +192,11 @@ Security tests now include:
 - `test/security/ipc-handlers.test.js`
 - `test/security/contracts.test.js`
 - `test/security/core-rpc-registry.test.js`
+- `test/security/core-lifecycle.test.js`
 - `test/security/core-transport.test.js`
 - `test/security/network-policy.test.js`
+- `test/security/module-network-policy.test.js`
+- `test/security/module-webview-isolation.test.js`
 - `test/security/archive-safety.test.js`
 - `test/security/renderer-boundary.test.js`
 
@@ -161,5 +206,9 @@ Security tests now include:
 - Clipboard copy of addresses
 - Usage-tracking events when enabled
 - Core RPC login/session and ordinary wallet API calls
-- Terminal Core API console relative paths under allowed namespaces
-- Module install/launch still works under the deferred WebView policy
+- Terminal URL/CLI access denied unless Developer mode is enabled
+- Core concurrent start/stop, application shutdown, and lite-mode resync
+- Bootstrap reports its disabled status without modifying Core data
+- Production and development NEXUS v2 module install/launch
+- Module external-link/clipboard confirmation and rate-limit behavior
+- Module network denial for HTTP(S), WebSocket, and WebRTC paths
