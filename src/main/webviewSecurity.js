@@ -10,6 +10,10 @@ import {
   registerModuleGuest,
   unregisterModuleGuest,
 } from './moduleBroker';
+import {
+  getModuleProxyConfig,
+  isAllowedModuleRequest,
+} from './ipc/moduleNetworkPolicy';
 
 const authorizedEntries = new Map();
 /** @type {Map<Electron.Session, object>} */
@@ -78,6 +82,7 @@ export function hardenModuleWebviews(mainWindow) {
       webPreferences.webSecurity = true;
       webPreferences.allowRunningInsecureContent = false;
       webPreferences.experimentalFeatures = false;
+      webPreferences.disableBlinkFeatures = 'WebRTC';
       webPreferences.preload = getModulePreloadPath();
       delete webPreferences.preloadURL;
 
@@ -85,7 +90,26 @@ export function hardenModuleWebviews(mainWindow) {
       // attaches cannot apply the wrong navigation/window-open restrictions.
       const partition = `nexus-module:${randomBytes(16).toString('hex')}`;
       webPreferences.partition = partition;
-      pendingPoliciesBySession.set(session.fromPartition(partition), policy);
+      const guestSession = session.fromPartition(partition);
+      const fileServerDomain = getDomain();
+      guestSession.webRequest.onBeforeRequest(
+        { urls: ['<all_urls>'] },
+        (details, callback) => {
+          callback({
+            cancel: !isAllowedModuleRequest(
+              details.url,
+              policy,
+              fileServerDomain
+            ),
+          });
+        }
+      );
+      guestSession
+        .setProxy(getModuleProxyConfig(policy, fileServerDomain))
+        .catch((error) => {
+          console.error('Failed to set module network proxy', error);
+        });
+      pendingPoliciesBySession.set(guestSession, policy);
     }
   );
 }
@@ -125,6 +149,7 @@ app.on('web-contents-created', (_event, contents) => {
   contents.session.setPermissionRequestHandler((_wc, _permission, callback) => {
     callback(false);
   });
+  contents.session.setPermissionCheckHandler(() => false);
 
   contents.on('destroyed', () => {
     unregisterModuleGuest(contents.id);

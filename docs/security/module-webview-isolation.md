@@ -31,7 +31,7 @@ the isolated NEXUS v2 preload (`contextIsolation: true`, `nodeIntegration: false
 | Threat | Mitigations |
 | --- | --- |
 | Malicious installed module | Process isolation (WebView), no Node/Electron in page, capability broker, open-source policy + hash verification |
-| Compromised module update/release | Manifest file allowlist, hash/signature checks, capability defaults are read-only-ish UI + storage |
+| Compromised module update/release | Manifest file allowlist, hash/signature checks, side-effect capabilities are opt-in and user-mediated |
 | Compromised module repository | Existing repo verification / Nexus signature on `repo_info.json` |
 | XSS in module content | CSP on module file server, no `file:` reads of wallet data, no Node integration |
 | Path traversal (entry/icon/files/storage) | `assertRelativeModulePath`, resolve-under-root checks, symlink policy, storage file name fixed |
@@ -39,7 +39,8 @@ the isolated NEXUS v2 preload (`contextIsolation: true`, `nodeIntegration: false
 | Renderer compromise forging module auth | Main authorizes privileged actions; host UI actions require main-issued request IDs |
 | User approval confusion (spend) | `wallet.requestSend` only navigates to wallet-owned Send review; no silent sign/broadcast |
 | Generic proxy SSRF / redirects | `proxyRequest` disabled; no generic network API in v2 |
-| External URL abuse | Protocol allowlist `http:`, `https:`, `mailto:` only; blocks `file:`, `javascript:`, `data:` |
+| External URL / clipboard abuse | Capabilities are opt-in, each action uses a wallet-owned confirmation, requests are rate-limited, and URL schemes are constrained |
+| Direct module network egress | Per-module session request denial and blackhole proxy; production can load only its loopback asset prefix, development only its authorized `file:` root; WebRTC is disabled |
 
 ## NEXUS API inventory (v1 → v2)
 
@@ -109,6 +110,9 @@ manifest I/O on the critical path), so the guest's first
 - `webSecurity: true`
 - popups denied; permission requests denied
 - navigation limited to module origin / dev module root
+- direct network requests denied per unique module session
+- external traffic blackholed by the module-session proxy
+- WebRTC disabled for module guests
 
 ### File server
 
@@ -126,15 +130,15 @@ Optional `capabilities` array in `nxs_package.json`. Default:
   "wallet.context",
   "ui.notify",
   "ui.confirm",
-  "ui.openExternal",
-  "ui.copyText",
   "storage",
   "state",
   "wallet.requestSend"
 ]
 ```
 
-`legacy.api` is rejected for production modules.
+`ui.openExternal` and `ui.copyText` must be declared explicitly. Their broker
+handlers show a wallet-owned confirmation for each action and enforce
+per-module-session limits. `legacy.api` is rejected for production modules.
 
 ## Audit events
 
