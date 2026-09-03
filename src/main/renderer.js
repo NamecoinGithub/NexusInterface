@@ -1,15 +1,23 @@
-import { BrowserWindow, screen } from 'electron';
+import { app, BrowserWindow, screen } from 'electron';
 import path from 'path';
+import { pathToFileURL } from 'url';
 import installExtension, {
   REACT_DEVELOPER_TOOLS,
 } from 'electron-devtools-installer';
 
 // Internal
+import { isTrustedWindowUrl } from './ipc/navigationPolicy';
 import { assetsDir } from './paths';
 import { updateSettingsFile } from './settings';
 import { debounced } from 'utils/universal';
 
 const port = process.env.PORT || 1212;
+
+export function getMainWindowUrl() {
+  return process.env.NODE_ENV === 'development'
+    ? `http://localhost:${port}/assets/app.html`
+    : pathToFileURL(path.resolve(__dirname, 'app.html')).toString();
+}
 
 /**
  * Enable development tools for REACT
@@ -41,6 +49,11 @@ export async function createWindow(settings) {
   const display = screen.getPrimaryDisplay().workAreaSize;
   const width = Math.min(settings.windowWidth, display.width);
   const height = Math.min(settings.windowHeight, display.height);
+  const allowSandboxOverride =
+    !app.isPackaged &&
+    (process.env.NODE_ENV === 'development' ||
+      process.env.DEBUG_PROD === 'true');
+
   // Create the main browser window
   const mainWindow = new BrowserWindow({
     x,
@@ -60,25 +73,28 @@ export async function createWindow(settings) {
       nodeIntegration: false,
       contextIsolation: true,
       // Diagnostic-only: NEXUS_DISABLE_SANDBOX=1 may disable sandbox but only
-      // in development/debug builds. It has no effect in packaged production
-      // builds so an injected environment variable cannot weaken hardening.
-      sandbox:
-        process.env.NEXUS_DISABLE_SANDBOX === '1' &&
-        (process.env.NODE_ENV === 'development' ||
-          process.env.DEBUG_PROD === 'true')
-          ? false
-          : true,
+      // in an unpackaged development/debug app.
+      sandbox: !(
+        allowSandboxOverride &&
+        process.env.NEXUS_DISABLE_SANDBOX === '1'
+      ),
       webviewTag: true,
       enableRemoteModule: false,
     },
   });
 
+  const htmlPath = getMainWindowUrl();
+  const preventUntrustedNavigation = (event, url) => {
+    if (!isTrustedWindowUrl(url, htmlPath)) {
+      event.preventDefault();
+    }
+  };
+  mainWindow.webContents.on('will-navigate', preventUntrustedNavigation);
+  mainWindow.webContents.on('will-redirect', preventUntrustedNavigation);
+  mainWindow.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
+
   // Load the index.html into the new browser window
-  const htmlPath =
-    process.env.NODE_ENV === 'development'
-      ? `http://localhost:${port}/assets/app.html`
-      : `file://${path.resolve(__dirname, 'app.html')}`;
-  mainWindow.loadURL(htmlPath);
+  await mainWindow.loadURL(htmlPath);
 
   // Show the window only once the contents finish loading, then check for updates
   mainWindow.webContents.on('did-finish-load', function () {

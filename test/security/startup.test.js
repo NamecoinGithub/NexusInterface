@@ -13,14 +13,15 @@ test('window startup configuration keeps wallet and keyboard renderers isolated'
   const renderer = read('src', 'main', 'renderer.js');
   const keyboard = read('src', 'main', 'keyboard.js');
   const preload = read('src', 'main', 'preload.js');
+  const main = read('src', 'main', 'main.js');
 
   assert.match(renderer, /nodeIntegration:\s*false/);
   assert.match(renderer, /contextIsolation:\s*true/);
-  // Default remains sandboxed; NEXUS_DISABLE_SANDBOX=1 only takes effect in
-  // development/debug builds, not in packaged production builds.
+  // Default remains sandboxed; the override is unavailable to packaged apps.
+  assert.match(renderer, /const allowSandboxOverride =\s*!app\.isPackaged/);
   assert.match(
     renderer,
-    /NEXUS_DISABLE_SANDBOX[\s\S]{0,200}NODE_ENV.*development/
+    /sandbox:\s*!\(\s*allowSandboxOverride\s*&&\s*process\.env\.NEXUS_DISABLE_SANDBOX/
   );
   // The sandbox expression must guard with a dev/debug check so production
   // builds cannot have sandbox disabled by an environment variable alone.
@@ -36,6 +37,11 @@ test('window startup configuration keeps wallet and keyboard renderers isolated'
   assert.match(preload, /preload\.init/);
   assert.doesNotMatch(preload, /from ['"]electron['"].*clipboard|clipboard.*from ['"]electron['"]/);
   assert.doesNotMatch(preload, /@aptabase\/electron\/renderer/);
+  assert.match(renderer, /setWindowOpenHandler\(\(\) => \(\{ action: 'deny' \}\)\)/);
+  assert.match(renderer, /will-navigate/);
+  assert.match(renderer, /will-redirect/);
+  assert.match(main, /event\.senderFrame === windowContents\.mainFrame/);
+  assert.match(main, /isTrustedWindowUrl\(event\.senderFrame\?\.url/);
 });
 
 test('renderer build fails rather than externalizing Node or Electron imports', () => {

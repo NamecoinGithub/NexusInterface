@@ -16,7 +16,8 @@ import {
   stopEmbeddedCore,
 } from './core';
 import { getDomain, serveModuleFiles } from './fileServer';
-import { createWindow } from './renderer';
+import { createWindow, getMainWindowUrl } from './renderer';
+import { isTrustedWindowUrl } from './ipc/navigationPolicy';
 import { authorizeModuleEntry, hardenModuleWebviews } from './webviewSecurity';
 import {
   registerModuleBrokerHandlers,
@@ -458,7 +459,12 @@ function sanitizeProxyRequest(url, config = {}) {
 
 function isMainWindowSender(event) {
   const windowContents = mainWindow?.webContents || global.mainWindow?.webContents;
-  return !!windowContents && event.sender.id === windowContents.id;
+  return (
+    !!windowContents &&
+    event.sender.id === windowContents.id &&
+    event.senderFrame === windowContents.mainFrame &&
+    isTrustedWindowUrl(event.senderFrame?.url, getMainWindowUrl())
+  );
 }
 
 function senderError() {

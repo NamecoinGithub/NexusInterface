@@ -47,7 +47,8 @@
         "from": "assets/static",
         "to": "build",
         "filter": [
-          "app.html"
+          "app.html",
+          "app-bootstrap.js"
         ]
       },
       {
