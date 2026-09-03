@@ -498,6 +498,7 @@ const CORE_TRACE_CHANNELS = new Set([
   CHANNELS.core.getStatus,
   CHANNELS.core.getConfiguration,
   CHANNELS.core.start,
+  CHANNELS.core.restart,
   CHANNELS.core.stop,
   CHANNELS.core.kill,
   CHANNELS.core.resyncLiteDatabase,
@@ -844,6 +845,15 @@ registerOperation(
     return undefined;
   },
   async () => coreLifecycle.run('start', () => startConfiguredCore())
+);
+registerOperation(CHANNELS.core.restart, undefined, async () =>
+  coreLifecycle.run('restart', async () => {
+    const result = await stopEmbeddedCore();
+    if (!result?.stopped && result?.reason !== 'manual-daemon') {
+      throw new Error('Nexus Core shutdown could not be confirmed');
+    }
+    return startConfiguredCore();
+  })
 );
 registerOperation(CHANNELS.core.stop, undefined, async () =>
   coreLifecycle.run('stop', () => stopEmbeddedCore())
@@ -1207,7 +1217,7 @@ if (!gotTheLock) {
   app.on('ready', async () => {
     const settings = loadSettingsFromFile();
     initializeUpdater(settings);
-    global.mainWindow = mainWindow = await createWindow(settings);
+    global.mainWindow = mainWindow = createWindow(settings);
     mainWindow.on('close', () => {
       mainWindow.webContents.send('window-close');
     });

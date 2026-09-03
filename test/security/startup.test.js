@@ -41,6 +41,8 @@ test('window startup configuration keeps wallet and keyboard renderers isolated'
   assert.match(renderer, /will-navigate/);
   assert.match(renderer, /will-redirect/);
   assert.doesNotMatch(renderer, /await mainWindow\.loadURL/);
+  assert.doesNotMatch(renderer, /await installExtensions/);
+  assert.match(main, /mainWindow = createWindow\(settings\)/);
   assert.ok(
     renderer.indexOf('hardenModuleWebviews(mainWindow)') <
       renderer.indexOf('mainWindow.loadURL(htmlPath)')
@@ -188,6 +190,7 @@ test('main process emits structured Core lifecycle diagnostics', () => {
   assert.match(core, /core\.api\.ready|core\.api\.wait\.timeout/);
   assert.match(coreRpc, /core\.probe\.begin|core\.probe\.failed|core\.probe\.ok/);
   assert.match(coreRpc, /summarizeConfig/);
+  assert.match(coreRpc, /endpoint:\s*redactSensitiveText\(endpoint\)/);
   assert.match(main, /ipc\.core\.enter/);
   assert.match(main, /ipc\.core\.exit/);
   assert.match(main, /CORE_TRACE_CHANNELS/);

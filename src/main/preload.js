@@ -116,6 +116,7 @@ const nexusElectron = {
     getStatus: () => invoke(CHANNELS.core.getStatus),
     getConfiguration: () => invoke(CHANNELS.core.getConfiguration),
     start: () => invoke(CHANNELS.core.start),
+    restart: () => invoke(CHANNELS.core.restart),
     stop: () => invoke(CHANNELS.core.stop),
     kill: () => invoke(CHANNELS.core.kill),
     resyncLiteDatabase: () => invoke(CHANNELS.core.resyncLiteDatabase),

@@ -330,6 +330,11 @@ export interface AssetSchemaItem {
   maxlength?: number;
 }
 
+export interface AssetSchemaInputItem
+  extends Omit<AssetSchemaItem, 'maxlength'> {
+  maxlength?: number | string;
+}
+
 export interface AssetHistoryEvent extends NxsObject {
   address: string;
   name: string;
@@ -738,7 +743,7 @@ async function callAPI<
     pin: string;
     name?: string;
     format?: string;
-    json?: AssetSchemaItem[];
+    json?: AssetSchemaInputItem[];
   }
 >(
   endpoint: 'assets/create/asset',

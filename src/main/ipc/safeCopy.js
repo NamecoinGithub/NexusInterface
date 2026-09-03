@@ -388,24 +388,26 @@ async function openRegularFileNoFollowFdRelative(
             err = fallbackErr;
           }
         }
-        if (
-          err?.code === 'ELOOP' ||
-          err?.code === 'EMLINK' ||
-          err?.code === 'EINVAL'
-        ) {
-          throw new Error(`${label} path contains a symbolic link`);
+        if (!nextHandle) {
+          if (
+            err?.code === 'ELOOP' ||
+            err?.code === 'EMLINK' ||
+            err?.code === 'EINVAL'
+          ) {
+            throw new Error(`${label} path contains a symbolic link`);
+          }
+          if (err?.code === 'ENOENT') {
+            throw new Error(`${label} not found`);
+          }
+          if (err?.code === 'ENOTDIR') {
+            throw new Error(
+              isLast
+                ? `${label} must be a regular non-symlink file`
+                : `${label} path contains a symbolic link`
+            );
+          }
+          throw err;
         }
-        if (err?.code === 'ENOENT') {
-          throw new Error(`${label} not found`);
-        }
-        if (err?.code === 'ENOTDIR') {
-          throw new Error(
-            isLast
-              ? `${label} must be a regular non-symlink file`
-              : `${label} path contains a symbolic link`
-          );
-        }
-        throw err;
       }
       const previousHandle = dirHandle;
       dirHandle = nextHandle;

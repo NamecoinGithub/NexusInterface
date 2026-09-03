@@ -38,15 +38,19 @@ function createCoreRpcSessionPolicy() {
         activeSession = explicitSession;
       } else if (
         request.endpoint === 'sessions/list/local' &&
-        !activeSession &&
-        Array.isArray(result) &&
-        result.length
+        Array.isArray(result)
       ) {
-        const latest = result.reduce((current, session) =>
-          !current || session.accessed > current.accessed ? session : current
+        const sessions = result.filter(
+          (session) => typeof session?.session === 'string'
         );
-        activeSession =
-          typeof latest?.session === 'string' ? latest.session : activeSession;
+        if (!sessions.some((session) => session.session === activeSession)) {
+          const latest = sessions.reduce(
+            (current, session) =>
+              !current || session.accessed > current.accessed ? session : current,
+            null
+          );
+          activeSession = latest?.session || null;
+        }
       } else if (
         request.endpoint === 'sessions/terminate/local' &&
         (!explicitSession || explicitSession === activeSession)

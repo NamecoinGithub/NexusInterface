@@ -135,8 +135,12 @@ export const stopCore = async (forRestart?: boolean) => {
  */
 export const restartCore = async () => {
   try {
-    await stopCore(true);
-    await startCore();
+    await window.nexusElectron.core.restart();
+    store.set(
+      coreConfigAtom,
+      await window.nexusElectron.core.getConfiguration()
+    );
+    clearCoreConnectionError();
     store.set(coreInfoPausedAtom, false);
     return true;
   } catch (error) {

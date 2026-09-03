@@ -40,7 +40,7 @@ function installExtensions() {
  *
  * @export
  */
-export async function createWindow(settings) {
+export function createWindow(settings) {
   const fileName =
     process.platform == 'darwin' ? 'nexuslogo.ico' : 'Nexus_App_Icon_64.png';
   const iconPath = path.join(assetsDir, 'tray', fileName);
@@ -153,11 +153,9 @@ export async function createWindow(settings) {
     process.env.DEBUG_PROD === 'true' ||
     settings.devMode
   ) {
-    try {
-      await installExtensions();
-    } catch (err) {
+    installExtensions().catch((err) => {
       console.error('Failed to install extensions', err);
-    }
+    });
   }
 
   return mainWindow;

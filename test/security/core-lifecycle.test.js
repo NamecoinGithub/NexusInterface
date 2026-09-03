@@ -103,6 +103,7 @@ test('all destructive Core operations use the lifecycle coordinator', () => {
 
   for (const label of [
     'start',
+    'restart',
     'stop',
     'kill',
     'resync-lite',
@@ -115,6 +116,7 @@ test('all destructive Core operations use the lifecycle coordinator', () => {
     );
   }
   assert.match(rendererCore, /nexusElectron\.core\.stop\(\)/);
+  assert.match(rendererCore, /nexusElectron\.core\.restart\(\)/);
   assert.match(
     rendererCore,
     /resyncLiteCore[\s\S]*coreInfoPausedAtom,\s*true[\s\S]*resyncLiteDatabase\(\)[\s\S]*coreInfoPausedAtom,\s*false/

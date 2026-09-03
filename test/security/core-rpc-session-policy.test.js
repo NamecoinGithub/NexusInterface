@@ -60,3 +60,32 @@ test('session lists initialize the main-owned session deterministically', () => 
     params: { session: 'latest-session-01' },
   });
 });
+
+test('session lists reconcile stale main-owned sessions', () => {
+  const policy = createCoreRpcSessionPolicy();
+  policy.observe(
+    {
+      endpoint: 'sessions/create/local',
+      params: { username: 'alice', password: 'secret', pin: '1234' },
+    },
+    { session: 'stale-session-01' }
+  );
+
+  policy.observe(
+    { endpoint: 'sessions/list/local' },
+    [
+      { session: 'older-session-01', accessed: 10 },
+      { session: 'latest-session-01', accessed: 20 },
+    ]
+  );
+  assert.equal(
+    policy.authorize({ endpoint: 'finance/get/balances' }).params.session,
+    'latest-session-01'
+  );
+
+  policy.observe({ endpoint: 'sessions/list/local' }, []);
+  assert.deepEqual(policy.authorize({ endpoint: 'finance/get/balances' }), {
+    endpoint: 'finance/get/balances',
+    params: undefined,
+  });
+});

@@ -66,6 +66,7 @@ interface NexusElectronBridge {
       txExpiry?: number;
     }>;
     start(): Promise<unknown>;
+    restart(): Promise<unknown>;
     stop(): Promise<unknown>;
     kill(): Promise<unknown>;
     resyncLiteDatabase(): Promise<unknown>;
