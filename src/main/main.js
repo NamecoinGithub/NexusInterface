@@ -46,8 +46,9 @@ import {
   result as ipcResult,
   validateClipboardText,
   validateCoreConsoleCommand,
+  redactSensitiveText,
   validateCoreRpcRequest,
-  validateCoreRpcUrl,
+  validateCoreConsoleRpcUrl,
   validateMenuTemplate,
   validateTrackEventRequest,
   validateModuleDownloadRequest,
@@ -57,6 +58,7 @@ import {
   validateSettingsUpdate,
   validateThemeUpdate,
 } from './ipc/contracts';
+import { assertCoreConsoleAllowed } from './ipc/coreConsolePolicy';
 import { abortBootstrap, startBootstrap } from './bootstrap';
 import { subscribeCoreOutput, unsubscribeCoreOutput } from './coreOutput';
 import {
@@ -472,7 +474,10 @@ function senderError() {
 }
 
 function operationError(err) {
-  const message = err instanceof Error ? err.message : 'Operation failed';
+  const rawMessage = err instanceof Error ? err.message : 'Operation failed';
+  // Defense in depth: never write credentials/session material to logs even if
+  // a lower layer accidentally included them in an Error message.
+  const message = redactSensitiveText(rawMessage) || 'Operation failed';
   log.warn(`IPC operation failed: ${message}`);
   return ipcError('OPERATION_FAILED', message);
 }
@@ -853,17 +858,26 @@ registerOperation(
 registerOperation(
   CHANNELS.core.executeConsoleCommand,
   validateCoreConsoleCommand,
-  async (command) => executeCommand(command)
+  async (command) => {
+    assertCoreConsoleAllowed(loadSettingsFromFile());
+    return executeCommand(command);
+  }
 );
 registerOperation(
   CHANNELS.coreRpc.call,
   validateCoreRpcRequest,
   async (request) => callCoreRpc(request)
 );
+// Terminal / Nexus API console capability. Broader than structured call():
+// relative paths under allowlisted namespaces, including query strings.
+// See docs/security/core-rpc-endpoint-registry.md.
 registerOperation(
   CHANNELS.coreRpc.callByUrl,
-  validateCoreRpcUrl,
-  async (url) => callCoreRpcByUrl(url)
+  validateCoreConsoleRpcUrl,
+  async (url) => {
+    assertCoreConsoleAllowed(loadSettingsFromFile());
+    return callCoreRpcByUrl(url);
+  }
 );
 
 registerOperation(

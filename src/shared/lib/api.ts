@@ -2,6 +2,15 @@ import { coreInfoQuery } from 'lib/coreInfo';
 import { activeSessionIdAtom } from 'lib/session';
 import { store } from 'lib/store';
 
+// Session-management endpoints may pass an explicit multi-user `session`
+// (terminate a specific session, unlock immediately after login). All other
+// endpoints always prefer the active store session.
+const SESSION_OVERRIDE_ENDPOINTS = new Set([
+  'sessions/terminate/local',
+  'sessions/unlock/local',
+  'sessions/status/local',
+]);
+
 /**
  * Send a Tritium API request in GET method
  */
@@ -423,6 +432,12 @@ async function callAPI<
     transactions: boolean;
   };
 }>;
+async function callAPI<
+  TParams extends {
+    pin: string;
+    session?: string;
+  }
+>(endpoint: 'sessions/validate/pin', customParams: TParams): Promise<boolean>;
 
 async function callAPI<
   TParams extends {
@@ -499,10 +514,17 @@ async function callAPI<
   TParams extends {
     pin: string;
     from: string;
-    recipients: {
-      address_to: string;
-      amount: number;
-    };
+    recipients:
+      | {
+          address_to: string;
+          amount: number;
+          reference?: number | string;
+        }
+      | Array<{
+          address_to: string;
+          amount: number;
+          reference?: number | string;
+        }>;
     reference?: number;
     expires?: number;
   }
@@ -514,10 +536,17 @@ async function callAPI<
   TParams extends {
     pin: string;
     from: string;
-    recipients: {
-      address_to: string;
-      amount: number;
-    };
+    recipients:
+      | {
+          address_to: string;
+          amount: number;
+          reference?: number | string;
+        }
+      | Array<{
+          address_to: string;
+          amount: number;
+          reference?: number | string;
+        }>;
     reference?: number;
     expires?: number;
   }
@@ -569,8 +598,8 @@ async function callAPI<
   TParams extends {
     pin: string;
     name?: string;
-    data?: any;
-    suppply: number;
+    data?: string | number | boolean;
+    supply: number;
     decimals: number;
   }
 >(
@@ -623,7 +652,6 @@ async function callAPI<
   endpoint: 'names/history/namespace',
   customParams?: TParams
 ): Promise<NamespaceEvent[]>;
-// TODO: double check if these params are correct
 async function callAPI<
   TParams extends {
     address?: string;
@@ -634,9 +662,8 @@ async function callAPI<
   }
 >(
   endpoint: 'names/transfer/name',
-  customParams?: TParams
+  customParams: TParams
 ): Promise<OperationResultWithAddress>;
-// TODO: double check if these params are correct
 async function callAPI<
   TParams extends {
     address?: string;
@@ -647,8 +674,49 @@ async function callAPI<
   }
 >(
   endpoint: 'names/transfer/namespace',
-  customParams?: TParams
+  customParams: TParams
 ): Promise<OperationResultWithAddress>;
+async function callAPI<
+  TParams extends {
+    pin: string;
+    name: string;
+    global?: boolean;
+    namespace?: string;
+    register?: string;
+  }
+>(
+  endpoint: 'names/create/name',
+  customParams: TParams
+): Promise<OperationResultWithAddress>;
+async function callAPI<
+  TParams extends {
+    pin: string;
+    namespace: string;
+  }
+>(
+  endpoint: 'names/create/namespace',
+  customParams: TParams
+): Promise<OperationResultWithAddress>;
+async function callAPI<
+  TParams extends {
+    pin: string;
+    address: string;
+    register: string;
+  }
+>(
+  endpoint: 'names/update/name',
+  customParams: TParams
+): Promise<OperationResult>;
+async function callAPI<
+  TParams extends {
+    pin: string;
+    name: string;
+    new: string;
+  }
+>(
+  endpoint: 'names/rename/name',
+  customParams: TParams
+): Promise<OperationResult>;
 
 async function callAPI<
   TParams extends {
@@ -656,7 +724,7 @@ async function callAPI<
   }
 >(
   endpoint: 'assets/get/schema',
-  customParams?: TParams
+  customParams: TParams
 ): Promise<AssetSchemaItem[]>;
 async function callAPI<
   TParams extends {
@@ -664,32 +732,128 @@ async function callAPI<
   }
 >(
   endpoint: 'assets/history/asset',
-  customParams?: TParams
+  customParams: TParams
 ): Promise<AssetHistoryEvent[]>;
+async function callAPI<
+  TParams extends {
+    pin: string;
+    name?: string;
+    format?: string;
+    json?: AssetSchemaItem[];
+  }
+>(
+  endpoint: 'assets/create/asset',
+  customParams: TParams
+): Promise<OperationResultWithAddress>;
+async function callAPI<
+  TParams extends {
+    pin: string;
+    address: string;
+    [field: string]: string | number | boolean;
+  }
+>(
+  endpoint: 'assets/update/asset',
+  customParams: TParams
+): Promise<OperationResult>;
+async function callAPI<
+  TParams extends {
+    pin: string;
+    address: string;
+    destination?: string;
+    username?: string;
+  }
+>(
+  endpoint: 'assets/transfer/asset',
+  customParams: TParams
+): Promise<OperationResult>;
+async function callAPI<
+  TParams extends {
+    pin: string;
+    address: string;
+    token: string;
+  }
+>(
+  endpoint: 'assets/tokenize/asset',
+  customParams: TParams
+): Promise<OperationResult>;
 
-async function callAPI(
-  endpoint: string,
-  customParams?: Record<string, any>
-): Promise<unknown>;
+async function callAPI<
+  TParams extends {
+    pin: string;
+    token: string;
+  }
+>(
+  endpoint: 'tokens/create/account',
+  customParams: TParams
+): Promise<OperationResultWithAddress>;
+
+async function callAPI<TParams extends QueryParams>(
+  endpoint: 'names/list/names',
+  customParams?: TParams
+): Promise<NameRecord[]>;
+async function callAPI<TParams extends QueryParams>(
+  endpoint: 'names/list/inactive',
+  customParams?: TParams
+): Promise<NameRecord[]>;
+async function callAPI<TParams extends QueryParams>(
+  endpoint: 'names/list/namespaces',
+  customParams?: TParams
+): Promise<Namespace[]>;
+async function callAPI<TParams extends QueryParams>(
+  endpoint: 'assets/list/assets',
+  customParams?: TParams
+): Promise<Asset[]>;
+async function callAPI<TParams extends QueryParams>(
+  endpoint: 'assets/list/partial',
+  customParams?: TParams
+): Promise<PartialAsset[]>;
 
 /**
  * callAPI Implementation
- * Send a Tritium API request in POST method
+ * Send a Tritium API request in POST method.
+ *
+ * Endpoint names are constrained by the overload list above (no `string`
+ * escape hatch). The main-process Core RPC registry enforces the same set at
+ * runtime.
  */
-async function callAPI(endpoint: string, customParams?: Record<string, any>) {
+async function callAPI(
+  endpoint: string,
+  customParams?: Record<string, unknown> | null
+) {
   const sessionId = store.get(activeSessionIdAtom);
   const coreInfo = store.get(coreInfoQuery.valueAtom);
 
-  //TODO: There is a bug in the core and where HAS to be the last param. Remove when fixed.
-  if (customParams?.['where']) {
-    const tempWhere = customParams['where'];
-    delete customParams['where'];
-    customParams['where'] = tempWhere;
+  const normalizedParams =
+    customParams && typeof customParams === 'object' && !Array.isArray(customParams)
+      ? { ...customParams }
+      : undefined;
+
+  // Multi-user session attachment policy:
+  // - Default: inject the active store session after caller params so callers
+  //   cannot silently retarget another user's session.
+  // - Session-management endpoints may pass an explicit `session`.
+  let params = normalizedParams;
+  if (coreInfo?.multiuser) {
+    const explicitSession =
+      normalizedParams &&
+      typeof normalizedParams.session === 'string' &&
+      normalizedParams.session &&
+      SESSION_OVERRIDE_ENDPOINTS.has(endpoint)
+        ? normalizedParams.session
+        : undefined;
+    const effectiveSession = explicitSession || sessionId || undefined;
+    if (effectiveSession) {
+      params = { ...normalizedParams, session: effectiveSession };
+    }
   }
 
-  const params = coreInfo?.multiuser
-    ? { session: sessionId, ...customParams }
-    : customParams;
+  // TODO: There is a bug in Core and `where` has to be serialized last.
+  if (params && 'where' in params) {
+    const where = params['where'];
+    delete params['where'];
+    params['where'] = where;
+  }
+
   return window.nexusElectron.coreRpc.call({ endpoint, params });
 }
 export { callAPI };
@@ -736,22 +900,35 @@ async function listAll<TParams extends QueryParams>(
   customParams?: TParams
 ): Promise<PartialAsset[]>;
 
-async function listAll(
-  endpoint: string,
-  customParams?: Record<string, any>
-): Promise<any>;
+type ListAllEndpoint =
+  | 'finance/transactions/any'
+  | 'finance/list/tokens'
+  | 'names/list/names'
+  | 'names/list/inactive'
+  | 'names/list/namespaces'
+  | 'assets/list/assets'
+  | 'assets/list/partial';
 
-async function listAll(endpoint: string, customParams?: Record<string, any>) {
-  let list: any[] = [];
-  let results = null;
+async function listAll(
+  endpoint: ListAllEndpoint,
+  customParams?: Record<string, unknown>
+): Promise<unknown[]>;
+
+async function listAll(
+  endpoint: ListAllEndpoint,
+  customParams?: Record<string, unknown>
+) {
+  let list: unknown[] = [];
+  let results: unknown[] | null = null;
   let page = 0;
-  const limit = customParams?.['limit'] || 100;
+  const limit =
+    typeof customParams?.['limit'] === 'number' ? customParams['limit'] : 100;
   do {
-    results = await callAPI(endpoint, {
+    results = (await callAPI(endpoint as 'finance/list/tokens', {
       limit,
       ...customParams,
       page: page++,
-    });
+    })) as unknown[] | null;
     if (!results) break;
     if (Array.isArray(results)) {
       list = list.concat(results);

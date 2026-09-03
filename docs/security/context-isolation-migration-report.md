@@ -61,19 +61,24 @@ Both capabilities are now named IPC operations:
 
 ### 3. Deeper Core RPC authorization
 
-`core-rpc:call` and `core-rpc:call-by-url` now require an allowlisted Core API
-namespace in addition to path-shape validation.
+Structured `core-rpc:call` now requires a **concrete registered endpoint** and
+endpoint-specific request schema (see `src/main/ipc/coreRpcRegistry.js` and
+`docs/security/core-rpc-endpoint-registry.md`). Namespace-only policy is no
+longer sufficient for ordinary wallet/module API calls.
 
-Allowed namespaces:
+Terminal URL syntax uses the separately constrained console capability
+`core-rpc:call-by-url`, which still applies the namespace allowlist:
 
 `assets`, `finance`, `ledger`, `market`, `names`, `network`, `objects`,
 `profiles`, `register`, `sessions`, `supply`, `system`, `tokens`, `users`
 
 Rejected examples:
 
+- unregistered structured endpoints (`system/eval/code`)
+- unknown parameters on registered endpoints
 - `evil/get/info`
 - absolute URLs
-- query/hash suffixes on `callByUrl`
+- nested URL/query traversal on `callByUrl`
 - traversal segments
 
 ### 4. Static renderer-boundary guard
@@ -144,6 +149,7 @@ Security tests now include:
 - `test/security/startup.test.js`
 - `test/security/ipc-handlers.test.js`
 - `test/security/contracts.test.js`
+- `test/security/core-rpc-registry.test.js`
 - `test/security/core-transport.test.js`
 - `test/security/network-policy.test.js`
 - `test/security/archive-safety.test.js`
