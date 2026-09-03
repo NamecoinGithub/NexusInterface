@@ -650,11 +650,17 @@ function validateCoreConsoleRpcUrl(value) {
   }
   if (queryParts[0] !== undefined) {
     // Allow console-style query strings, but reject nested URLs or traversal.
+    let decodedQuery;
+    try {
+      decodedQuery = decodeURIComponent(queryParts[0]);
+    } catch {
+      fail('Core RPC URL query is invalid');
+    }
     if (
-      queryParts[0].includes('://') ||
-      queryParts[0].includes('\\') ||
-      queryParts[0].includes('/../') ||
-      queryParts[0].includes('%2e%2e')
+      decodedQuery.includes('://') ||
+      decodedQuery.includes('\\') ||
+      /(^|[=&/])\.\.([/&]|$)/.test(decodedQuery) ||
+      decodedQuery.includes('\0')
     ) {
       fail('Core RPC URL query is invalid');
     }

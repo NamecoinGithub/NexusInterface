@@ -75,6 +75,14 @@ function assertSafeKey(key, label = 'Parameter') {
   return key;
 }
 
+function assertSafeAdditionalKey(key, label = 'Parameter') {
+  assertString(key, `${label} name`, { min: 1, max: 64 });
+  if (key === '__proto__' || key === 'constructor' || key === 'prototype') {
+    fail(`${label} name is not allowed`);
+  }
+  return key;
+}
+
 function assertString(value, name, { min = 0, max = 4096, pattern } = {}) {
   if (typeof value !== 'string' || value.length < min || value.length > max) {
     fail(`${name} must be a string between ${min} and ${max} characters`);
@@ -601,18 +609,20 @@ function validateCoreRpcParamsForEndpoint(endpoint, params) {
   const knownFields = schema.fields;
 
   for (const key of Object.keys(params)) {
-    assertSafeKey(key, 'Core RPC parameter');
     const fieldSchema = knownFields[key];
     if (!fieldSchema) {
       if (!schema.allowAdditionalPrimitives) {
+        assertSafeKey(key, 'Core RPC parameter');
         fail(`Unknown Core RPC parameter: ${key}`);
       }
+      assertSafeAdditionalKey(key, 'Core RPC parameter');
       validated[key] = validateField(params[key], key, {
         type: 'primitive',
         max: 4096,
       });
       continue;
     }
+    assertSafeKey(key, 'Core RPC parameter');
     const nextValue = validateField(params[key], key, fieldSchema);
     if (nextValue !== undefined) {
       validated[key] = nextValue;

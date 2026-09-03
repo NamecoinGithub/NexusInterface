@@ -7,6 +7,7 @@ import installExtension, {
 
 // Internal
 import { isTrustedWindowUrl } from './ipc/navigationPolicy';
+import { hardenModuleWebviews } from './webviewSecurity';
 import { assetsDir } from './paths';
 import { updateSettingsFile } from './settings';
 import { debounced } from 'utils/universal';
@@ -92,6 +93,7 @@ export async function createWindow(settings) {
   mainWindow.webContents.on('will-navigate', preventUntrustedNavigation);
   mainWindow.webContents.on('will-redirect', preventUntrustedNavigation);
   mainWindow.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
+  hardenModuleWebviews(mainWindow);
 
   // Load the index.html into the new browser window
   mainWindow.loadURL(htmlPath);

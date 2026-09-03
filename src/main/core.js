@@ -237,7 +237,7 @@ function parseWindowsProcessCsv(stdout) {
       const pid = Number(fields[0]);
       const command = fields[1] || '';
       if (!pid || Number.isNaN(pid) || pid < 2) return null;
-      return { pid, command };
+      return { pid, command, commandKnown: !!command };
     })
     .filter(Boolean);
 }
@@ -267,6 +267,7 @@ function findCoreProcessesInProcessList(
       return {
         pid: Number(match[1]),
         command: match[2],
+        commandKnown: true,
       };
     })
     .filter(
@@ -383,7 +384,11 @@ async function listCoreProcesses() {
             return null;
           }
           // No argv available — callers that require -datadir= will skip these.
-          return { pid, command: resolvedCoreBinaryName };
+          return {
+            pid,
+            command: resolvedCoreBinaryName,
+            commandKnown: false,
+          };
         })
         .filter(Boolean);
     }
@@ -415,7 +420,7 @@ async function listCoreProcesses() {
  *
  * @param {string|null} dataDir
  * @param {number|null} trackedPid
- * @returns {Promise<{ running: boolean, managedPid: number|null, trackedPidRunning: boolean }>}
+ * @returns {Promise<{ running: boolean, managedPid: number|null, ownershipUnknown: boolean, trackedPidRunning: boolean }>}
  * @memberof Core
  */
 async function getCoreProcessState(dataDir = null, trackedPid = null) {
@@ -433,6 +438,9 @@ async function getCoreProcessState(dataDir = null, trackedPid = null) {
   return {
     running: runningProcesses.length > 0,
     managedPid: match?.pid || null,
+    ownershipUnknown:
+      !!dataDir &&
+      runningProcesses.some((processInfo) => processInfo.commandKnown === false),
     trackedPidRunning:
       trackedPid !== null &&
       runningProcesses.some((processInfo) => processInfo.pid === trackedPid),
@@ -619,7 +627,7 @@ export async function stopEmbeddedCore() {
 
   let processState = await getCoreProcessState(settings.coreDataDir);
   if (!processState.managedPid) {
-    return processState.running
+    return processState.ownershipUnknown
       ? { stopped: false, reason: 'ownership-unconfirmed' }
       : { stopped: true, reason: 'not-running' };
   }
@@ -827,7 +835,7 @@ export async function resyncLiteDatabase() {
   }
 
   const processState = await getCoreProcessState(settings.coreDataDir);
-  if (processState.running && !processState.managedPid) {
+  if (processState.ownershipUnknown && !processState.managedPid) {
     throw new Error(
       'Lite database resync refused because a wallet-managed Core shutdown cannot be confirmed'
     );

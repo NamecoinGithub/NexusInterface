@@ -121,6 +121,8 @@ test('Core RPC URL validation enforces relative paths and console namespaces', (
     'System/get/info',
     'system/get/info#frag',
     'system/get/info?redirect=https://evil.example',
+    'system/get/info?redirect=https%3A%2F%2Fevil.example',
+    'system/get/info?path=%2E%2E%2Fsecret',
     '',
   ]) {
     assert.throws(() => validateCoreRpcUrl(value), TypeError);

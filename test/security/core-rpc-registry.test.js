@@ -368,3 +368,39 @@ test('bounded numeric strings from form controls are normalized', () => {
     );
   }
 });
+
+test('asset updates accept bounded prototype-safe schema field names', () => {
+  assert.deepEqual(
+    validateCoreRpcRequest({
+      endpoint: 'assets/update/asset',
+      params: {
+        pin: '1234',
+        address: 'address01',
+        'serial-number': 'A-1',
+        'display name': 'Example',
+      },
+    }).params,
+    {
+      pin: '1234',
+      address: 'address01',
+      'serial-number': 'A-1',
+      'display name': 'Example',
+    }
+  );
+
+  for (const key of ['__proto__', 'constructor', 'prototype', 'x'.repeat(65)]) {
+    const params = { pin: '1234', address: 'address01' };
+    Object.defineProperty(params, key, {
+      value: 'unsafe',
+      enumerable: true,
+    });
+    assert.throws(
+      () =>
+        validateCoreRpcRequest({
+          endpoint: 'assets/update/asset',
+          params,
+        }),
+      TypeError
+    );
+  }
+});

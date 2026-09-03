@@ -19,7 +19,7 @@ import {
 import { getDomain, serveModuleFiles } from './fileServer';
 import { createWindow, getMainWindowUrl } from './renderer';
 import { isTrustedWindowUrl } from './ipc/navigationPolicy';
-import { authorizeModuleEntry, hardenModuleWebviews } from './webviewSecurity';
+import { authorizeModuleEntry } from './webviewSecurity';
 import {
   registerModuleBrokerHandlers,
   pushContextToGuest,
@@ -1201,7 +1201,6 @@ if (!gotTheLock) {
     const settings = loadSettingsFromFile();
     initializeUpdater(settings);
     global.mainWindow = mainWindow = await createWindow(settings);
-    hardenModuleWebviews(mainWindow);
     mainWindow.on('close', () => {
       mainWindow.webContents.send('window-close');
     });

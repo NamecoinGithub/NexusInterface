@@ -1,6 +1,8 @@
 'use strict';
 
 const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const os = require('node:os');
 const path = require('node:path');
 const { pathToFileURL } = require('node:url');
 const test = require('node:test');
@@ -37,8 +39,13 @@ test('production module sessions can request only their local module assets', ()
   }
 });
 
-test('development module sessions can request only files under their root', () => {
-  const root = path.resolve('/tmp/nexus-dev-module');
+test('development module sessions can request only files under their root', (t) => {
+  const temporaryRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'nexus-module-'));
+  t.after(() => fs.rmSync(temporaryRoot, { recursive: true, force: true }));
+  const root = path.join(temporaryRoot, 'module');
+  fs.mkdirSync(path.join(root, 'assets'), { recursive: true });
+  fs.writeFileSync(path.join(root, 'index.html'), '');
+  fs.writeFileSync(path.join(root, 'assets', 'app.js'), '');
   const policy = { moduleName: 'demo', development: true, root };
 
   assert.equal(
@@ -67,6 +74,30 @@ test('development module sessions can request only files under their root', () =
   );
   assert.equal(
     isAllowedModuleRequest('https://example.com/collect', policy, domain),
+    false
+  );
+});
+
+test('development module requests cannot escape through symlinks', (t) => {
+  const temporaryRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'nexus-module-'));
+  t.after(() => fs.rmSync(temporaryRoot, { recursive: true, force: true }));
+  const root = path.join(temporaryRoot, 'module');
+  const outside = path.join(temporaryRoot, 'outside');
+  fs.mkdirSync(root);
+  fs.mkdirSync(outside);
+  fs.writeFileSync(path.join(outside, 'secret'), 'secret');
+  fs.symlinkSync(
+    outside,
+    path.join(root, 'link'),
+    process.platform === 'win32' ? 'junction' : 'dir'
+  );
+
+  assert.equal(
+    isAllowedModuleRequest(
+      pathToFileURL(path.join(root, 'link', 'secret')).toString(),
+      { moduleName: 'demo', development: true, root },
+      domain
+    ),
     false
   );
 });

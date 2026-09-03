@@ -1,5 +1,6 @@
 'use strict';
 
+const fs = require('fs');
 const path = require('path');
 const { fileURLToPath } = require('url');
 
@@ -34,7 +35,10 @@ function isAllowedModuleRequest(url, policy, fileServerDomain) {
   if (policy.development) {
     if (target.protocol !== 'file:') return false;
     try {
-      return isPathInside(policy.root, fileURLToPath(target));
+      return isPathInside(
+        fs.realpathSync(policy.root),
+        fs.realpathSync(fileURLToPath(target))
+      );
     } catch {
       return false;
     }

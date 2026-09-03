@@ -41,6 +41,10 @@ test('window startup configuration keeps wallet and keyboard renderers isolated'
   assert.match(renderer, /will-navigate/);
   assert.match(renderer, /will-redirect/);
   assert.doesNotMatch(renderer, /await mainWindow\.loadURL/);
+  assert.ok(
+    renderer.indexOf('hardenModuleWebviews(mainWindow)') <
+      renderer.indexOf('mainWindow.loadURL(htmlPath)')
+  );
   assert.match(main, /event\.senderFrame === windowContents\.mainFrame/);
   assert.match(main, /isTrustedWindowUrl\(event\.senderFrame\?\.url/);
   const appSettings = read('src', 'App', 'Settings', 'App', 'index.tsx');
