@@ -501,7 +501,7 @@ async function callAPI<
   TParams extends {
     password: string;
     pin: string;
-    recovery: string;
+    recovery?: string;
     new_recovery: string;
   }
 >(

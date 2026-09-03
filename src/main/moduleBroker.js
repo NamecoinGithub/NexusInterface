@@ -285,7 +285,7 @@ async function confirmModuleSideEffect(guest, method, payload) {
       cancelId: 0,
       noLink: true,
       title: 'Module permission request',
-      message: `${guest.displayName} requests permission to ${
+      message: `${guest.moduleName} requests permission to ${
         opensLink ? 'open an external link' : 'replace clipboard contents'
       }.`,
       detail,

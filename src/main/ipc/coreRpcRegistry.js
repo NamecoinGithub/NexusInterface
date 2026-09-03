@@ -683,7 +683,10 @@ function redactSensitiveText(text) {
         'gi'
       ),
       // query/cli: pin=secret
-      new RegExp(`((?:^|[?&\\s])(?:--?)?${key}=)([^&\\s"']+)`, 'gi'),
+      new RegExp(
+        `((?:^|[?&\\s])(?:--?)?${key}=)("(?:\\\\.|[^"\\\\])*"|'(?:\\\\.|[^'\\\\])*'|[^&\\s"']+)`,
+        'gi'
+      ),
     ];
     for (const pattern of patterns) {
       redacted = redacted.replace(pattern, (_, prefix) => `${prefix}***`);

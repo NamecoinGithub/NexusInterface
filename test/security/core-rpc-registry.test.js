@@ -240,6 +240,12 @@ test('credential and session material is not leaked by redaction helpers', () =>
   ]) {
     assert.equal(redactSensitiveText(prefixed).includes(prefixed.split('=')[1]), false);
   }
+  for (const [quoted, secret] of [
+    [`--${'password'}="quoted double"`, 'quoted double'],
+    [`--pin='quoted single'`, 'quoted single'],
+  ]) {
+    assert.equal(redactSensitiveText(quoted).includes(secret), false);
+  }
 
   // Validator errors must not echo the provided secret.
   try {
