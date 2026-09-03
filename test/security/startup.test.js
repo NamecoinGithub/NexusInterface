@@ -99,6 +99,18 @@ test('embedded Core start always supplies API auth and probes already-running Co
   // Main process must stop Core on quit/exit so orphans are not left behind.
   assert.match(main, /stopEmbeddedCore|ensureEmbeddedCoreStopped|shutdownEmbeddedCoreAndAllowQuit/);
   assert.match(main, /before-quit/);
+  assert.doesNotMatch(
+    main,
+    /shutdownEmbeddedCoreAndAllowQuit\(\)\.finally\([\s\S]*app\.exit\(0\)/
+  );
+  assert.match(
+    main,
+    /shutdownEmbeddedCoreAndAllowQuit\(\)[\s\S]*\.then\(\(\) => app\.exit\(0\)\)[\s\S]*\.catch/
+  );
+  assert.doesNotMatch(
+    read('src', 'main', 'core.js'),
+    /executeCommand[\s\S]*console\.error\(err\)/
+  );
   // Menu/IPC quit must hard-exit: window close is always preventDefault'd so
   // app.quit() alone cannot terminate after allowingFinalQuit is set.
   assert.match(

@@ -1187,9 +1187,13 @@ if (!gotTheLock) {
       return;
     }
     event.preventDefault();
-    shutdownEmbeddedCoreAndAllowQuit().finally(() => {
-      app.exit(0);
-    });
+    shutdownEmbeddedCoreAndAllowQuit()
+      .then(() => app.exit(0))
+      .catch((error) => {
+        log.error('Core Manager: app quit cancelled', {
+          error: redactSensitiveText(error?.message || String(error)),
+        });
+      });
   });
 
   // Application Startup

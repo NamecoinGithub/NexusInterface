@@ -413,11 +413,12 @@ async function listCoreProcesses() {
  * When `dataDir` is omitted, the first matching binary is returned. That mode is
  * detection-only (e.g. isCoreRunning) and must not be used to decide what to kill.
  *
- * @param {{ dataDir?: string|null }} [options]
- * @returns {Promise<{ running: boolean, managedPid: number|null }>}
+ * @param {string|null} dataDir
+ * @param {number|null} trackedPid
+ * @returns {Promise<{ running: boolean, managedPid: number|null, trackedPidRunning: boolean }>}
  * @memberof Core
  */
-async function getCoreProcessState(dataDir = null) {
+async function getCoreProcessState(dataDir = null, trackedPid = null) {
   const processes = await listCoreProcesses();
   const runningProcesses = processes.filter(
     (processInfo) =>
@@ -432,6 +433,9 @@ async function getCoreProcessState(dataDir = null) {
   return {
     running: runningProcesses.length > 0,
     managedPid: match?.pid || null,
+    trackedPidRunning:
+      trackedPid !== null &&
+      runningProcesses.some((processInfo) => processInfo.pid === trackedPid),
   };
 }
 
@@ -619,6 +623,7 @@ export async function stopEmbeddedCore() {
       ? { stopped: false, reason: 'ownership-unconfirmed' }
       : { stopped: true, reason: 'not-running' };
   }
+  const managedPid = processState.managedPid;
 
   try {
     // Keep quit-path latency bounded; force-kill handles a stuck Core.
@@ -632,13 +637,10 @@ export async function stopEmbeddedCore() {
   }
 
   for (let attempt = 0; attempt < CORE_STOP_GRACE_ATTEMPTS; attempt += 1) {
-    processState = await getCoreProcessState(settings.coreDataDir);
-    if (!processState.running) {
+    processState = await getCoreProcessState(settings.coreDataDir, managedPid);
+    if (!processState.trackedPidRunning) {
       log.info('Core Manager: Core stopped gracefully');
       return { stopped: true, reason: 'graceful' };
-    }
-    if (!processState.managedPid) {
-      return { stopped: false, reason: 'ownership-unconfirmed' };
     }
     await new Promise((resolve) =>
       setTimeout(resolve, CORE_STOP_GRACE_DELAY_MS)
@@ -647,7 +649,7 @@ export async function stopEmbeddedCore() {
 
   for (let attempt = 1; attempt <= CORE_KILL_RETRIES; attempt += 1) {
     try {
-      await killCoreProcess();
+      await killCorePid(managedPid);
     } catch (error) {
       log.warn('core.kill.failed', {
         attempt,
@@ -660,13 +662,10 @@ export async function stopEmbeddedCore() {
       check < CORE_KILL_CONFIRM_ATTEMPTS;
       check += 1
     ) {
-      processState = await getCoreProcessState(settings.coreDataDir);
-      if (!processState.running) {
+      processState = await getCoreProcessState(settings.coreDataDir, managedPid);
+      if (!processState.trackedPidRunning) {
         log.info('core.stop.confirmed', { reason: 'killed', attempt });
         return { stopped: true, reason: 'killed' };
-      }
-      if (!processState.managedPid) {
-        return { stopped: false, reason: 'ownership-unconfirmed' };
       }
       await new Promise((resolve) =>
         setTimeout(resolve, CORE_KILL_CONFIRM_DELAY_MS)
@@ -837,11 +836,7 @@ export async function resyncLiteDatabase() {
   const shouldRestartCore = !!processState.managedPid;
   if (shouldRestartCore) {
     const stopResult = await stopEmbeddedCore();
-    const stoppedState = await getCoreProcessState(settings.coreDataDir);
-    if (
-      !stopResult?.stopped ||
-      stoppedState.running
-    ) {
+    if (!stopResult?.stopped) {
       throw new Error(
         'Lite database resync refused because Core shutdown was not confirmed'
       );
@@ -885,6 +880,16 @@ export async function resyncLiteDatabase() {
  * unrelated user-managed Core sharing the same binary is left alone.
  * @memberof Core
  */
+async function killCorePid(corePID) {
+  log.info('Core Manager: Killing process ' + corePID);
+  if (process.platform == 'win32') {
+    await execFile('taskkill', ['/F', '/PID', String(corePID)]);
+  } else {
+    process.kill(corePID, 'SIGKILL');
+  }
+  return true;
+}
+
 export async function killCoreProcess() {
   const settings = loadSettingsFromFile();
   const corePID = await getCorePID({ dataDir: settings.coreDataDir });
@@ -894,14 +899,7 @@ export async function killCoreProcess() {
     );
     return false;
   }
-
-  log.info('Core Manager: Killing process ' + corePID);
-  if (process.platform == 'win32') {
-    await execFile('taskkill', ['/F', '/PID', String(corePID)]);
-  } else {
-    process.kill(corePID, 'SIGKILL');
-  }
-  return true;
+  return killCorePid(corePID);
 }
 
 /**
@@ -912,13 +910,7 @@ export async function killCoreProcess() {
  */
 export async function executeCommand(command) {
   const { path: coreBinaryPath } = getExecutableCoreBinary();
-  try {
-    const args = splitCommandParts(command);
-    if (!args.length) throw new Error('Core console command is empty');
-    const result = await execFile(coreBinaryPath, ['-noapiauth', ...args]);
-    return result;
-  } catch (err) {
-    console.error(err);
-    throw err;
-  }
+  const args = splitCommandParts(command);
+  if (!args.length) throw new Error('Core console command is empty');
+  return execFile(coreBinaryPath, ['-noapiauth', ...args]);
 }

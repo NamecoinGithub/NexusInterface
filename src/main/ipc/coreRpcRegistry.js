@@ -241,6 +241,9 @@ function validateAssetJsonField(value, index) {
 }
 
 function validateField(value, name, schema) {
+  if (value === '' && schema.emptyAsUndefined) {
+    return undefined;
+  }
   if (value === undefined) {
     if (schema.optional) return undefined;
     fail(`${name} is required`);
@@ -401,7 +404,7 @@ const CORE_RPC_ENDPOINT_REGISTRY = Object.freeze({
   'profiles/update/recovery': defineEndpoint({
     password: { type: 'password' },
     pin: { type: 'pin' },
-    recovery: { type: 'password' },
+    recovery: { type: 'password', optional: true },
     new_recovery: { type: 'password' },
   }),
 
@@ -439,7 +442,7 @@ const CORE_RPC_ENDPOINT_REGISTRY = Object.freeze({
   }),
   'finance/create/account': defineEndpoint({
     pin: { type: 'pin' },
-    name: { type: 'name', optional: true },
+    name: { type: 'name', optional: true, emptyAsUndefined: true },
   }),
   'finance/create/token': defineEndpoint({
     pin: { type: 'pin' },
@@ -490,7 +493,7 @@ const CORE_RPC_ENDPOINT_REGISTRY = Object.freeze({
     name: { type: 'name' },
     global: { type: 'boolean', optional: true },
     namespace: { type: 'name', optional: true },
-    register: { type: 'address', optional: true },
+    register: { type: 'address', optional: true, emptyAsUndefined: true },
   }),
   'names/create/namespace': defineEndpoint({
     pin: { type: 'pin' },
@@ -670,7 +673,7 @@ function redactSensitiveText(text) {
         'gi'
       ),
       // query/cli: pin=secret
-      new RegExp(`([?&\\s]${key}=)([^&\\s"']+)`, 'gi'),
+      new RegExp(`((?:^|[?&\\s])(?:--?)?${key}=)([^&\\s"']+)`, 'gi'),
     ];
     for (const pattern of patterns) {
       redacted = redacted.replace(pattern, (_, prefix) => `${prefix}***`);

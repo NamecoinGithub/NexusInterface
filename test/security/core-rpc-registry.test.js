@@ -233,6 +233,13 @@ test('credential and session material is not leaked by redaction helpers', () =>
   assert.equal(cleaned.includes('4321'), false);
   assert.match(cleaned, /pin=\*\*\*/i);
   assert.equal(contractsRedact(dirtyText).includes('hunter2'), false);
+  for (const prefixed of [
+    'pin=at-start',
+    '-******',
+    '--session=double-dash',
+  ]) {
+    assert.equal(redactSensitiveText(prefixed).includes(prefixed.split('=')[1]), false);
+  }
 
   // Validator errors must not echo the provided secret.
   try {
@@ -274,6 +281,35 @@ test('Terminal callByUrl remains a namespace-constrained console exception', () 
 });
 
 test('happy-path structured requests still validate', () => {
+  assert.deepEqual(
+    validateCoreRpcRequest({
+      endpoint: 'profiles/update/recovery',
+      params: {
+        password: 'correct-horse',
+        pin: '1234',
+        new_recovery: 'new phrase',
+      },
+    }).params,
+    {
+      password: 'correct-horse',
+      pin: '1234',
+      new_recovery: 'new phrase',
+    }
+  );
+  assert.deepEqual(
+    validateCoreRpcRequest({
+      endpoint: 'finance/create/account',
+      params: { pin: '1234', name: '' },
+    }).params,
+    { pin: '1234' }
+  );
+  assert.deepEqual(
+    validateCoreRpcRequest({
+      endpoint: 'names/create/name',
+      params: { pin: '1234', name: 'example', register: '' },
+    }).params,
+    { pin: '1234', name: 'example' }
+  );
   assert.deepEqual(
     validateCoreRpcRequest({
       endpoint: 'system/validate/address',
