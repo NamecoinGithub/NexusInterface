@@ -173,14 +173,20 @@ async function resolveOpenedPath(handle, openPath) {
     ) {
       // Prefer handle identity via /dev/fd rather than the mutable open path.
       try {
-        return await fsp.realpath(`/dev/fd/${handle.fd}`);
-      } catch {
-        try {
-          const fdPath = await fsp.readlink(`/dev/fd/${handle.fd}`);
-          return path.resolve(fdPath);
-        } catch {
-          // Fall through.
+        const fdRealPath = await fsp.realpath(`/dev/fd/${handle.fd}`);
+        if (!fdRealPath.startsWith('/dev/fd/')) {
+          return fdRealPath;
         }
+      } catch {
+        // Fall through.
+      }
+      try {
+        const fdPath = await fsp.readlink(`/dev/fd/${handle.fd}`);
+        if (!fdPath.startsWith('/dev/fd/')) {
+          return path.resolve(fdPath);
+        }
+      } catch {
+        // Fall through.
       }
     }
   }
@@ -360,10 +366,28 @@ async function openRegularFileNoFollowFdRelative(
         fs.constants.O_NOFOLLOW |
         (isLast ? 0 : fs.constants.O_DIRECTORY);
       const childPath = path.join(directoryFdPath(dirHandle.fd), segment);
+      let openedPath = childPath;
       let nextHandle;
       try {
         nextHandle = await fsp.open(childPath, flags);
       } catch (err) {
+        if (
+          err?.code === 'ENOENT' &&
+          process.platform !== 'linux' &&
+          process.platform !== 'win32'
+        ) {
+          const resolvedParent = await resolveOpenedPath(
+            dirHandle,
+            directoryFdPath(dirHandle.fd)
+          );
+          const fallbackChildPath = path.join(resolvedParent, segment);
+          try {
+            nextHandle = await fsp.open(fallbackChildPath, flags);
+            openedPath = fallbackChildPath;
+          } catch (fallbackErr) {
+            err = fallbackErr;
+          }
+        }
         if (
           err?.code === 'ELOOP' ||
           err?.code === 'EMLINK' ||
@@ -390,7 +414,7 @@ async function openRegularFileNoFollowFdRelative(
       if (isLast) {
         const { stat } = await assertOpenedFileInsideRoot(
           dirHandle,
-          childPath,
+          openedPath,
           resolvedRoot,
           label
         );
