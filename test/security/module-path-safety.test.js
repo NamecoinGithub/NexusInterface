@@ -204,7 +204,9 @@ test('safeCopy rejects leaf symlinks, intermediate directory symlinks, and escap
     // Restore assets as a real directory for a successful copy.
     await fsp.rm(path.join(moduleRoot, 'assets'), { recursive: true, force: true });
 
-    await copyModuleFiles(['index.html', 'data.bin'], moduleRoot, destRoot);
+    await copyModuleFiles(['index.html', 'data.bin'], moduleRoot, destRoot, {
+      trustedSource: true,
+    });
     assert.equal(
       await fsp.readFile(path.join(destRoot, 'index.html'), 'utf8'),
       '<html>ok</html>'
@@ -222,7 +224,8 @@ test('safeCopy rejects leaf symlinks, intermediate directory symlinks, and escap
         copyModuleFiles(
           ['index.html', path.join('evil-dir', 'secret.txt')],
           moduleRoot,
-          destRoot
+          destRoot,
+          { trustedSource: true }
         ),
       /symbolic link|escapes module root/
     );
@@ -259,11 +262,9 @@ test('installModuleDirectory stages then renames a complete module tree', async 
     });
     await fsp.mkdir(modulesHome, { recursive: true });
 
-    await installModuleDirectory(
-      ['index.html'],
-      sourceRoot,
-      destRoot
-    );
+    await installModuleDirectory(['index.html'], sourceRoot, destRoot, {
+      trustedSource: true,
+    });
 
     assert.equal(
       await fsp.readFile(path.join(destRoot, 'index.html'), 'utf8'),
@@ -283,7 +284,10 @@ test('installModuleDirectory stages then renames a complete module tree', async 
     await fsp.rm(destRoot, { recursive: true, force: true });
     await fsp.symlink(path.join(tempRoot, 'missing-target'), path.join(sourceRoot, 'bad'));
     await assert.rejects(
-      () => installModuleDirectory(['index.html', 'bad'], sourceRoot, destRoot),
+      () =>
+        installModuleDirectory(['index.html', 'bad'], sourceRoot, destRoot, {
+          trustedSource: true,
+        }),
       /symbolic link|regular non-symlink|not found/
     );
     assert.equal(fs.existsSync(destRoot), false);
@@ -297,6 +301,7 @@ test('installModuleDirectory stages then renames a complete module tree', async 
     await assert.rejects(
       () =>
         installModuleDirectory(['index.html'], sourceRoot, destRoot, {
+          trustedSource: true,
           verifyStaging: async () => {
             throw new Error('staging validation failed');
           },
@@ -322,6 +327,7 @@ test('installModuleDirectory stages then renames a complete module tree', async 
     await assert.rejects(
       () =>
         installModuleDirectory(['index.html'], sourceRoot, destRoot, {
+          trustedSource: true,
           verifyStaging: async () => {
             throw new Error('overwrite staging failed');
           },
@@ -338,7 +344,9 @@ test('installModuleDirectory stages then renames a complete module tree', async 
     );
     assert.deepEqual(replacedLeftovers, []);
 
-    await installModuleDirectory(['index.html'], sourceRoot, destRoot);
+    await installModuleDirectory(['index.html'], sourceRoot, destRoot, {
+      trustedSource: true,
+    });
     assert.equal(
       await fsp.readFile(path.join(destRoot, 'index.html'), 'utf8'),
       '<html>replacement</html>'
@@ -374,6 +382,7 @@ test('installModuleDirectory serializes same-destination publishes when overwrit
 
     const firstInstall = installModuleDirectory(['index.html'], sourceA, destRoot, {
       overwrite: false,
+      trustedSource: true,
       verifyStaging: async () => {
         firstReachedVerify.resolve();
         await allowFirstPublish.promise;
@@ -383,6 +392,7 @@ test('installModuleDirectory serializes same-destination publishes when overwrit
 
     const secondInstall = installModuleDirectory(['index.html'], sourceB, destRoot, {
       overwrite: false,
+      trustedSource: true,
     });
 
     allowFirstPublish.resolve();
@@ -436,6 +446,7 @@ test('installModuleDirectory preserves parallelism for different destination nam
 
     const firstInstall = installModuleDirectory(['index.html'], sourceA, destA, {
       overwrite: false,
+      trustedSource: true,
       verifyStaging: async () => {
         firstReachedVerify.resolve();
         await allowFirstPublish.promise;
@@ -445,6 +456,7 @@ test('installModuleDirectory preserves parallelism for different destination nam
 
     await installModuleDirectory(['index.html'], sourceB, destB, {
       overwrite: false,
+      trustedSource: true,
     });
     assert.equal(
       await fsp.readFile(path.join(destB, 'index.html'), 'utf8'),
@@ -502,6 +514,7 @@ test(
       () =>
         installModuleDirectory(['index.html'], sourceRoot, destRoot, {
           overwrite: true,
+          trustedSource: true,
           verifyStaging: async () => {
             verifyCount += 1;
           },
@@ -516,6 +529,7 @@ test(
     fsp.rename = originalRename;
     await installModuleDirectory(['index.html'], sourceRoot, destRoot, {
       overwrite: true,
+      trustedSource: true,
       verifyStaging: async () => {
         verifyCount += 1;
       },
@@ -553,6 +567,7 @@ test('installModuleDirectory releases its destination lock after a failed instal
       () =>
         installModuleDirectory(['index.html'], failingSource, destRoot, {
           overwrite: false,
+          trustedSource: true,
           verifyStaging: async () => {
             throw new Error('staging validation failed');
           },
@@ -562,6 +577,7 @@ test('installModuleDirectory releases its destination lock after a failed instal
 
     await installModuleDirectory(['index.html'], goodSource, destRoot, {
       overwrite: false,
+      trustedSource: true,
     });
     assert.equal(
       await fsp.readFile(path.join(destRoot, 'index.html'), 'utf8'),
@@ -648,7 +664,8 @@ test('copyModuleFiles deduplicates declared paths and copies sequentially', asyn
     await copyModuleFiles(
       ['index.html', 'index.html', 'assets/a.txt', 'assets/a.txt'],
       moduleRoot,
-      destRoot
+      destRoot,
+      { trustedSource: true }
     );
 
     assert.equal(
@@ -787,6 +804,7 @@ test(
 
     await installModuleDirectory(['index.html'], sourceRoot, destRoot, {
       overwrite: true,
+      trustedSource: true,
     });
     assert.equal(
       await fsp.readFile(path.join(destRoot, 'index.html'), 'utf8'),
@@ -999,6 +1017,7 @@ test('in-flight install staging survives concurrent inventory cleanup', async ()
       destRoot,
       {
         overwrite: false,
+        trustedSource: true,
         verifyStaging: async (stagingPath) => {
           assert.equal(isActiveInternalPath(stagingPath), true);
           sawActiveStaging = true;
