@@ -143,7 +143,7 @@ export const restartCore = async () => {
     store.set(coreInfoPausedAtom, false);
     setCoreConnectionError(error);
     console.error('core.restart.failed', error);
-    return false;
+    throw error;
   }
 };
 

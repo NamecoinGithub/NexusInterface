@@ -94,19 +94,24 @@ function assertBoolean(value, name) {
 }
 
 function assertFiniteNumber(value, name, { min, max, integer = false } = {}) {
-  if (typeof value !== 'number' || !Number.isFinite(value)) {
+  const normalizedValue =
+    typeof value === 'string' &&
+    /^[+-]?(?:\d+\.?\d*|\.\d+)$/.test(value)
+      ? Number(value)
+      : value;
+  if (typeof normalizedValue !== 'number' || !Number.isFinite(normalizedValue)) {
     fail(`${name} must be a finite number`);
   }
-  if (integer && !Number.isInteger(value)) {
+  if (integer && !Number.isInteger(normalizedValue)) {
     fail(`${name} must be an integer`);
   }
-  if (min !== undefined && value < min) {
+  if (min !== undefined && normalizedValue < min) {
     fail(`${name} is out of range`);
   }
-  if (max !== undefined && value > max) {
+  if (max !== undefined && normalizedValue > max) {
     fail(`${name} is out of range`);
   }
-  return value;
+  return normalizedValue;
 }
 
 function validatePin(value, name = 'pin') {
@@ -332,7 +337,6 @@ function withQuery(fields = {}, options = {}) {
 const CORE_RPC_ENDPOINT_REGISTRY = Object.freeze({
   // system
   'system/get/info': defineEndpoint(),
-  'system/stop': defineEndpoint(),
   'system/list/peers': defineEndpoint(),
   'system/validate/address': defineEndpoint({
     address: { type: 'address' },

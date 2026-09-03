@@ -39,6 +39,7 @@ test('registry includes the concrete wallet endpoints used by callAPI/listAll', 
 
 test('unregistered endpoints are rejected even under allowed namespaces', () => {
   for (const request of [
+    { endpoint: 'system/stop' },
     { endpoint: 'system/eval/code' },
     { endpoint: 'finance/raw/execute' },
     { endpoint: 'sessions/impersonate/local' },
@@ -273,10 +274,6 @@ test('Terminal callByUrl remains a namespace-constrained console exception', () 
 });
 
 test('happy-path structured requests still validate', () => {
-  assert.deepEqual(validateCoreRpcRequest({ endpoint: 'system/stop' }), {
-    endpoint: 'system/stop',
-    params: undefined,
-  });
   assert.deepEqual(
     validateCoreRpcRequest({
       endpoint: 'system/validate/address',
@@ -298,4 +295,40 @@ test('happy-path structured requests still validate', () => {
     }).endpoint,
     'sessions/create/local'
   );
+});
+
+test('bounded numeric strings from form controls are normalized', () => {
+  assert.deepEqual(
+    validateCoreRpcRequest({
+      endpoint: 'finance/create/token',
+      params: {
+        pin: '1234',
+        supply: '1000.5',
+        decimals: '2',
+      },
+    }).params,
+    { pin: '1234', supply: 1000.5, decimals: 2 }
+  );
+  assert.deepEqual(
+    validateCoreRpcRequest({
+      endpoint: 'assets/create/asset',
+      params: {
+        pin: '1234',
+        json: [
+          { name: 'label', type: 'string', mutable: true, value: '', maxlength: '64' },
+        ],
+      },
+    }).params.json[0].maxlength,
+    64
+  );
+  for (const amount of ['1e3', ' 1', 'Infinity', '0x10']) {
+    assert.throws(
+      () =>
+        validateCoreRpcRequest({
+          endpoint: 'finance/set/stake',
+          params: { pin: '1234', amount },
+        }),
+      TypeError
+    );
+  }
 });

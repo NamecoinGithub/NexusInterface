@@ -55,9 +55,9 @@ test('module paths reject traversal and platform-specific absolute paths', () =>
 });
 
 test('IPC request validators reject malformed and unexpected requests', () => {
-  assert.deepEqual(
-    validateCoreRpcRequest({ endpoint: 'system/stop', params: {} }),
-    { endpoint: 'system/stop', params: {} }
+  assert.throws(
+    () => validateCoreRpcRequest({ endpoint: 'system/stop', params: {} }),
+    TypeError
   );
   assert.deepEqual(
     validateModuleDownloadRequest({
@@ -180,6 +180,7 @@ test('settings updates reject dangerous Core overrides and relative paths', () =
     { walletClean: 1 },
     { revertBlocks: -1 },
     { embeddedCoreBinaryPath: 'nexus' },
+    { devMode: true },
   ]) {
     assert.throws(() => validateSettingsUpdate(updates), TypeError);
   }

@@ -94,7 +94,7 @@ export async function createWindow(settings) {
   mainWindow.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
 
   // Load the index.html into the new browser window
-  await mainWindow.loadURL(htmlPath);
+  mainWindow.loadURL(htmlPath);
 
   // Show the window only once the contents finish loading, then check for updates
   mainWindow.webContents.on('did-finish-load', function () {

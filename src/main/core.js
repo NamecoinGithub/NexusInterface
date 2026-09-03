@@ -403,7 +403,7 @@ async function listCoreProcesses() {
 }
 
 /**
- * Get Process ID of core process if core is running.
+ * Get the running and wallet-managed state of Core processes.
  *
  * When `dataDir` is provided, only a process whose command line includes
  * `-datadir=<dataDir>` is returned. Kill/restart paths MUST pass dataDir so an
@@ -414,21 +414,30 @@ async function listCoreProcesses() {
  * detection-only (e.g. isCoreRunning) and must not be used to decide what to kill.
  *
  * @param {{ dataDir?: string|null }} [options]
- * @returns {Promise<number|null>} PID
+ * @returns {Promise<{ running: boolean, managedPid: number|null }>}
  * @memberof Core
  */
-async function getCorePID({ dataDir = null } = {}) {
+async function getCoreProcessState(dataDir = null) {
   const processes = await listCoreProcesses();
+  const runningProcesses = processes.filter(
+    (processInfo) =>
+      processInfo.pid && !Number.isNaN(processInfo.pid) && processInfo.pid >= 2
+  );
   const match = dataDir
-    ? processes.find((processInfo) =>
+    ? runningProcesses.find((processInfo) =>
         commandUsesDataDir(processInfo.command, dataDir)
       )
-    : processes[0];
+    : runningProcesses[0];
 
-  if (!match || !match.pid || Number.isNaN(match.pid) || match.pid < 2) {
-    return null;
-  }
-  return match.pid;
+  return {
+    running: runningProcesses.length > 0,
+    managedPid: match?.pid || null,
+  };
+}
+
+async function getCorePID({ dataDir = null } = {}) {
+  const state = await getCoreProcessState(dataDir);
+  return state.managedPid;
 }
 
 /**
@@ -604,8 +613,11 @@ export async function stopEmbeddedCore() {
     return { stopped: false, reason: 'manual-daemon' };
   }
 
-  if (!(await getCorePID({ dataDir: settings.coreDataDir }))) {
-    return { stopped: true, reason: 'not-running' };
+  let processState = await getCoreProcessState(settings.coreDataDir);
+  if (!processState.managedPid) {
+    return processState.running
+      ? { stopped: false, reason: 'ownership-unconfirmed' }
+      : { stopped: true, reason: 'not-running' };
   }
 
   try {
@@ -620,9 +632,13 @@ export async function stopEmbeddedCore() {
   }
 
   for (let attempt = 0; attempt < CORE_STOP_GRACE_ATTEMPTS; attempt += 1) {
-    if (!(await getCorePID({ dataDir: settings.coreDataDir }))) {
+    processState = await getCoreProcessState(settings.coreDataDir);
+    if (!processState.running) {
       log.info('Core Manager: Core stopped gracefully');
       return { stopped: true, reason: 'graceful' };
+    }
+    if (!processState.managedPid) {
+      return { stopped: false, reason: 'ownership-unconfirmed' };
     }
     await new Promise((resolve) =>
       setTimeout(resolve, CORE_STOP_GRACE_DELAY_MS)
@@ -644,9 +660,13 @@ export async function stopEmbeddedCore() {
       check < CORE_KILL_CONFIRM_ATTEMPTS;
       check += 1
     ) {
-      if (!(await getCorePID({ dataDir: settings.coreDataDir }))) {
+      processState = await getCoreProcessState(settings.coreDataDir);
+      if (!processState.running) {
         log.info('core.stop.confirmed', { reason: 'killed', attempt });
         return { stopped: true, reason: 'killed' };
+      }
+      if (!processState.managedPid) {
+        return { stopped: false, reason: 'ownership-unconfirmed' };
       }
       await new Promise((resolve) =>
         setTimeout(resolve, CORE_KILL_CONFIRM_DELAY_MS)
@@ -807,20 +827,20 @@ export async function resyncLiteDatabase() {
     throw new Error('Lite database resync is only available for embedded lite mode');
   }
 
-  const anyCoreRunning = await isCoreRunning();
-  const managedPid = await getCorePID({ dataDir: settings.coreDataDir });
-  if (anyCoreRunning && !managedPid) {
+  const processState = await getCoreProcessState(settings.coreDataDir);
+  if (processState.running && !processState.managedPid) {
     throw new Error(
       'Lite database resync refused because a wallet-managed Core shutdown cannot be confirmed'
     );
   }
 
-  const shouldRestartCore = !!managedPid;
+  const shouldRestartCore = !!processState.managedPid;
   if (shouldRestartCore) {
     const stopResult = await stopEmbeddedCore();
+    const stoppedState = await getCoreProcessState(settings.coreDataDir);
     if (
       !stopResult?.stopped ||
-      (await getCorePID({ dataDir: settings.coreDataDir }))
+      stoppedState.running
     ) {
       throw new Error(
         'Lite database resync refused because Core shutdown was not confirmed'

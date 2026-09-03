@@ -91,6 +91,7 @@ test('Core datadir matching handles quoted values and Windows case differences',
 
 test('all destructive Core operations use the lifecycle coordinator', () => {
   const main = read('src', 'main', 'main.js');
+  const coreRpcRegistry = read('src', 'main', 'ipc', 'coreRpcRegistry.js');
   const rendererCore = read('src', 'shared', 'lib', 'core.ts');
   const coreSettings = read(
     'src',
@@ -119,6 +120,7 @@ test('all destructive Core operations use the lifecycle coordinator', () => {
     /resyncLiteCore[\s\S]*coreInfoPausedAtom,\s*true[\s\S]*resyncLiteDatabase\(\)[\s\S]*coreInfoPausedAtom,\s*false/
   );
   assert.doesNotMatch(rendererCore, /callAPI\(['"]system\/stop['"]/);
+  assert.doesNotMatch(coreRpcRegistry, /'system\/stop':\s*defineEndpoint/);
   assert.doesNotMatch(
     coreSettings,
     /stopCore\(\)[\s\S]*resyncLiteDatabase\(\)[\s\S]*startCore\(\)/
@@ -153,4 +155,5 @@ test('Windows Core discovery falls back from CIM to legacy WMI before tasklist',
   assert.ok(tasklist > wmi);
   assert.match(core, /core\.processes\.cim\.failed/);
   assert.match(core, /core\.processes\.wmi\.failed/);
+  assert.match(core, /ownership-unconfirmed/);
 });

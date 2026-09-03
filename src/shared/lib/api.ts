@@ -367,7 +367,6 @@ export type OperationResultWithAddress =
  */
 
 async function callAPI(endpoint: 'system/get/info'): Promise<CoreInfo>;
-async function callAPI(endpoint: 'system/stop'): Promise<void>;
 async function callAPI(endpoint: 'system/list/peers'): Promise<Array<PeerInfo>>;
 async function callAPI<TParams extends { address: string }>(
   endpoint: 'system/validate/address',
@@ -842,8 +841,11 @@ async function callAPI(
         ? normalizedParams.session
         : undefined;
     const effectiveSession = explicitSession || sessionId || undefined;
+    if (params && 'session' in params) {
+      delete params.session;
+    }
     if (effectiveSession) {
-      params = { ...normalizedParams, session: effectiveSession };
+      params = { ...params, session: effectiveSession };
     }
   }
 

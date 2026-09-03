@@ -40,8 +40,11 @@ test('window startup configuration keeps wallet and keyboard renderers isolated'
   assert.match(renderer, /setWindowOpenHandler\(\(\) => \(\{ action: 'deny' \}\)\)/);
   assert.match(renderer, /will-navigate/);
   assert.match(renderer, /will-redirect/);
+  assert.doesNotMatch(renderer, /await mainWindow\.loadURL/);
   assert.match(main, /event\.senderFrame === windowContents\.mainFrame/);
   assert.match(main, /isTrustedWindowUrl\(event\.senderFrame\?\.url/);
+  const appSettings = read('src', 'App', 'Settings', 'App', 'index.tsx');
+  assert.doesNotMatch(appSettings, /updateHandlers\(['"]devMode['"]\)/);
 });
 
 test('renderer build fails rather than externalizing Node or Electron imports', () => {
@@ -172,6 +175,10 @@ test('main process emits structured Core lifecycle diagnostics', () => {
   assert.match(main, /ipc\.core\.enter/);
   assert.match(main, /ipc\.core\.exit/);
   assert.match(main, /CORE_TRACE_CHANNELS/);
+  assert.match(
+    main,
+    /const message = redactSensitiveText\([\s\S]*log\.warn\('ipc\.core\.exit'/
+  );
 });
 
 test('default backup directory uses os.homedir instead of HOME-only env', () => {

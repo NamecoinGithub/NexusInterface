@@ -189,7 +189,6 @@ const ALLOWED_SETTINGS_FIELDS = new Set([
   'fiatCurrency',
   'minConfirmations',
   'backupDirectory',
-  'devMode',
   'verifyModuleSource',
   'fakeTransactions',
   'overviewDisplay',

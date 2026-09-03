@@ -137,7 +137,12 @@ async function ensureEmbeddedCoreStopped() {
 
 async function shutdownEmbeddedCoreAndAllowQuit() {
   global.forceQuit = true;
-  await ensureEmbeddedCoreStopped();
+  const result = await ensureEmbeddedCoreStopped();
+  if (!result?.stopped && result?.reason !== 'manual-daemon') {
+    global.forceQuit = false;
+    embeddedCoreShutdownPromise = null;
+    throw new Error('Nexus Core shutdown could not be confirmed');
+  }
   allowingFinalQuit = true;
 }
 
@@ -533,10 +538,13 @@ function registerOperation(channel, validateRequest, operation) {
       return ipcResult(value);
     } catch (err) {
       if (traceCore) {
+        const message = redactSensitiveText(
+          err instanceof Error ? err.message : String(err)
+        );
         log.warn('ipc.core.exit', {
           channel,
           ok: false,
-          message: err instanceof Error ? err.message : String(err),
+          message,
         });
       }
       return operationError(err);
