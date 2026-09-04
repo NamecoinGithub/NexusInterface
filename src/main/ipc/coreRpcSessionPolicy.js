@@ -22,6 +22,7 @@ function isSessionSelectionRequest(request) {
 function createCoreRpcSessionPolicy() {
   let activeSession = null;
   let latestSessionSelection = 0;
+  let latestSessionSelectionTarget = null;
   let sessionRevision = 0;
   const sessionSelectionRequests = new WeakMap();
   const pendingSessionSelections = new Set();
@@ -36,6 +37,7 @@ function createCoreRpcSessionPolicy() {
     reset() {
       activeSession = null;
       latestSessionSelection += 1;
+      latestSessionSelectionTarget = null;
       sessionRevision += 1;
       pendingSessionSelections.clear();
     },
@@ -50,6 +52,8 @@ function createCoreRpcSessionPolicy() {
             authorizedRequest,
             latestSessionSelection
           );
+          latestSessionSelectionTarget =
+            authorizedRequest.params?.session || null;
           pendingSessionSelections.clear();
           pendingSessionSelections.add(latestSessionSelection);
         } else if (request.endpoint === 'sessions/terminate/local') {
@@ -133,19 +137,23 @@ function createCoreRpcSessionPolicy() {
         (!explicitSession || explicitSession === activeSession)
       ) {
         activeSession = null;
-        if (
+        const invalidatesLatestSelection =
           terminationSelection === undefined ||
-          latestSessionSelection <= terminationSelection
-        ) {
+          latestSessionSelection <= terminationSelection ||
+          (explicitSession &&
+            explicitSession === latestSessionSelectionTarget);
+        if (invalidatesLatestSelection) {
           latestSessionSelection += 1;
+          latestSessionSelectionTarget = null;
         }
         sessionRevision += 1;
-        for (const selection of pendingSessionSelections) {
-          if (
-            terminationSelection === undefined ||
-            selection <= terminationSelection
-          ) {
-            pendingSessionSelections.delete(selection);
+        if (invalidatesLatestSelection) {
+          pendingSessionSelections.clear();
+        } else {
+          for (const selection of pendingSessionSelections) {
+            if (selection <= terminationSelection) {
+              pendingSessionSelections.delete(selection);
+            }
           }
         }
       }
