@@ -120,10 +120,17 @@ export async function getModuleEntry(name, fileServerDomain) {
 export async function validateModuleFiles(name, files) {
   const { root, development } = await resolveModuleRoot(name);
   const allowSymlink = development && developmentAllowsSymlinks();
+  const moduleFiles = development
+    ? (await readJson(path.join(root, 'nxs_package.dev.json')))?.files
+    : files;
+  if (!Array.isArray(moduleFiles) || moduleFiles.length === 0) {
+    throw new Error('Module files must be a non-empty array');
+  }
+  const realRoot = await fs.realpath(root);
   return Promise.all(
-    files.map(async (file) => {
+    moduleFiles.map(async (file) => {
       const absolutePath = await resolveModuleFile(root, file, { allowSymlink });
-      return { path: file, absolutePath, root };
+      return { path: file, absolutePath, root: realRoot };
     })
   );
 }

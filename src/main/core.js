@@ -14,7 +14,7 @@ import {
 } from './coreRpc';
 import { assertAdvancedCoreParams } from './ipc/contracts';
 import {
-  commandUsesDataDir,
+  argvUsesDataDir,
   normalizeProcessPath,
   splitCommandParts,
 } from './coreProcessPolicy';
@@ -397,7 +397,7 @@ async function listCoreProcesses() {
     }
   }
 
-  return findCoreProcessesInProcessList(
+  const processes = findCoreProcessesInProcessList(
     await execFile(
       'ps',
       process.platform == 'darwin'
@@ -407,6 +407,28 @@ async function listCoreProcesses() {
     ),
     coreBinaryPath,
     resolvedCoreBinaryName
+  );
+  if (process.platform !== 'linux') return processes;
+
+  return Promise.all(
+    processes.map(async (processInfo) => {
+      try {
+        const commandLine = await fs.promises.readFile(
+          `/proc/${processInfo.pid}/cmdline`
+        );
+        const argv = commandLine
+          .toString()
+          .split('\0')
+          .filter((argument) => argument.length > 0);
+        if (!argv.length) return processInfo;
+        return {
+          ...processInfo,
+          argv,
+        };
+      } catch {
+        return processInfo;
+      }
+    })
   );
 }
 
@@ -440,13 +462,12 @@ async function getCoreProcessState(dataDir = null, trackedPid = null) {
           (processInfo) => processInfo.pid === walletManagedCorePid
         )
       : undefined;
-  const requiresTrackedPid = !!dataDir && /\s/.test(dataDir);
   const match = dataDir
     ? trackedManagedProcess ||
-      (!requiresTrackedPid &&
-        runningProcesses.find((processInfo) =>
-          commandUsesDataDir(processInfo.command, dataDir)
-        ))
+      runningProcesses.find(
+        (processInfo) =>
+          processInfo.argv && argvUsesDataDir(processInfo.argv, dataDir)
+      )
     : runningProcesses[0];
 
   return {
@@ -455,10 +476,7 @@ async function getCoreProcessState(dataDir = null, trackedPid = null) {
     ownershipUnknown:
       !!dataDir &&
       !match &&
-      runningProcesses.some(
-        (processInfo) =>
-          requiresTrackedPid || processInfo.commandKnown === false
-      ),
+      runningProcesses.some((processInfo) => !processInfo.argv),
     trackedPidRunning:
       trackedPid !== null &&
       runningProcesses.some((processInfo) => processInfo.pid === trackedPid),

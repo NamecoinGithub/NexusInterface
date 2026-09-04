@@ -91,6 +91,16 @@ test('module asset and entry resolvers reject symlinks and realpath escapes', ()
   assert.match(moduleFiles, /allowSymlink/);
   assert.match(moduleFiles, /developmentAllowsSymlinks|allowSymLink/);
   assert.match(
+    read('src', 'main', 'modules.js'),
+    /nxsPackageDevSchema[\s\S]*files:\s*z\.array/,
+    'development manifests must declare a validated file list'
+  );
+  assert.match(
+    moduleFiles,
+    /root:\s*realRoot/,
+    'authorized files must return the same canonical root as their real paths'
+  );
+  assert.match(
     moduleFiles,
     /Module root must not be a symlink/,
     'installed module roots must reject directory symlinks'

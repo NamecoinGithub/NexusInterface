@@ -89,7 +89,22 @@ function commandUsesDataDir(command, dataDir, platform = process.platform) {
   return false;
 }
 
+function argvUsesDataDir(argv, dataDir, platform = process.platform) {
+  const normalizedDataDir = normalizeProcessPath(dataDir, platform);
+  return Boolean(
+    normalizedDataDir &&
+      Array.isArray(argv) &&
+      argv.some((argument) => {
+        const match = String(argument).match(/^[-/]datadir=(.*)$/i);
+        return (
+          match && normalizeProcessPath(match[1], platform) === normalizedDataDir
+        );
+      })
+  );
+}
+
 module.exports = {
+  argvUsesDataDir,
   commandUsesDataDir,
   normalizeProcessPath,
   splitCommandParts,

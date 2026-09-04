@@ -127,6 +127,7 @@ const nxsPackageDevSchema = z.object({
       wrapInPanel: z.boolean().optional(),
     })
     .optional(),
+  files: z.array(z.string().regex(/^(.(?<!\.\.\/|\.\.\\))+$/)),
 });
 
 const repositorySchema = z.object({

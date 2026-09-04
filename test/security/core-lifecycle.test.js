@@ -9,6 +9,7 @@ const {
   createCoreLifecycleCoordinator,
 } = require('../../src/main/coreLifecycle');
 const {
+  argvUsesDataDir,
   commandUsesDataDir,
   splitCommandParts,
 } = require('../../src/main/coreProcessPolicy');
@@ -126,6 +127,17 @@ test('Core datadir matching handles quoted values and Windows case differences',
     ),
     false
   );
+  assert.equal(
+    argvUsesDataDir(
+      ['nexus', '-datadir=/wallet/data -other'],
+      '/wallet/data'
+    ),
+    false
+  );
+  assert.equal(
+    argvUsesDataDir(['nexus', '-datadir=/wallet/data', '-other'], '/wallet/data'),
+    true
+  );
 });
 
 test('all destructive Core operations use the lifecycle coordinator', () => {
@@ -225,6 +237,8 @@ test('Windows Core discovery falls back from CIM to legacy WMI before tasklist',
   assert.match(core, /ownership-unconfirmed/);
   assert.match(core, /ownershipUnknown/);
   assert.match(core, /commandKnown:\s*false/);
+  assert.match(core, /\/proc\/\$\{processInfo\.pid\}\/cmdline/);
+  assert.match(core, /argvUsesDataDir\(processInfo\.argv, dataDir\)/);
   assert.match(
     core,
     /return processState\.ownershipUnknown\s*\?\s*\{ stopped: false, reason: 'ownership-unconfirmed' \}/
