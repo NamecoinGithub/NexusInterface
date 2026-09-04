@@ -202,13 +202,16 @@ export default function SettingsCore() {
         initialValues={getInitialValues(settings)}
         keepDirtyOnReinitialize={false}
         onSubmit={formSubmit({
-          submit: (updatedSettings) => {
-            Object.keys(updatedSettings).forEach((key) => {
-              const value = updatedSettings[key as SettingKeys];
-              if (value !== settings[key as SettingKeys]) {
-                updateSettings({ [key]: value });
-              }
-            });
+          submit: async (updatedSettings) => {
+            const updates = Object.fromEntries(
+              Object.entries(updatedSettings).filter(
+                ([key, value]) => value !== settings[key as SettingKeys]
+              )
+            );
+            if (Object.keys(updates).length) {
+              updateSettings(updates);
+              await window.nexusElectron.settings.update(updates);
+            }
           },
           onSuccess: () => {
             showNotification(__('Core settings saved'), 'success');

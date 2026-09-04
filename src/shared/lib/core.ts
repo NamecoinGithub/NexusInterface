@@ -135,12 +135,20 @@ export const stopCore = async (forRestart?: boolean) => {
  */
 export const restartCore = async () => {
   try {
-    await window.nexusElectron.core.restart();
+    const restartResult =
+      (await window.nexusElectron.core.restart()) as CoreStartResult;
     store.set(
       coreConfigAtom,
       await window.nexusElectron.core.getConfiguration()
     );
-    clearCoreConnectionError();
+    if (restartResult?.apiReachable === false) {
+      setCoreConnectionError(
+        restartResult.apiError ||
+          'Nexus Core started but the API is not reachable yet'
+      );
+    } else {
+      clearCoreConnectionError();
+    }
     store.set(coreInfoPausedAtom, false);
     return true;
   } catch (error) {

@@ -58,17 +58,23 @@ test('renderer build fails rather than externalizing Node or Electron imports', 
     'configs',
     'webpack.config.base.renderer.babel.js'
   );
+  const dllConfig = read('configs', 'webpack.config.dll.dev.babel.js');
+  const bootstrap = read('assets', 'static', 'app-bootstrap.js');
 
   assert.match(webpackConfig, /node:\s*false/);
   assert.match(webpackConfig, /electron:\s*false/);
   assert.match(webpackConfig, /electronRenderer:\s*false/);
   assert.match(webpackConfig, /conditionNames:.*browser/);
+  assert.match(bootstrap, /renderer\.dev\.dll\.js/);
+  assert.match(dllConfig, /devtool:\s*['"]cheap-module-source-map['"]/);
+  assert.doesNotMatch(dllConfig, /devtool:\s*['"]eval/);
 });
 
 test('embedded Core start always supplies API auth and probes already-running Core', () => {
   const core = read('src', 'main', 'core.js');
   const coreRpc = read('src', 'main', 'coreRpc.js');
   const rendererCore = read('src', 'shared', 'lib', 'core.ts');
+  const coreSettings = read('src', 'App', 'Settings', 'Core', 'index.tsx');
   const main = read('src', 'main', 'main.js');
   const coreConf = read('src', 'main', 'ipc', 'coreConf.js');
   const wallet = read('src', 'shared', 'lib', 'wallet.ts');
@@ -142,6 +148,14 @@ test('embedded Core start always supplies API auth and probes already-running Co
   assert.match(core, /apiError:\s*ready\.ok \? undefined : ready\.error/);
   assert.match(core, /core\.api\.wait\.timeout|core\.api\.wait\.ready/);
   assert.match(rendererCore, /setCoreConnectionError|apiReachable === false/);
+  assert.match(
+    rendererCore,
+    /restartResult\?\.apiReachable === false[\s\S]*setCoreConnectionError/
+  );
+  assert.match(
+    coreSettings,
+    /submit:\s*async[\s\S]*await window\.nexusElectron\.settings\.update\(updates\)[\s\S]*onSuccess:[\s\S]*restartCore\(\)/
+  );
 });
 
 test('renderer surfaces Core connection failures instead of silent spinner', () => {
