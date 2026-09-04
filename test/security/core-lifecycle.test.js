@@ -161,7 +161,15 @@ test('all destructive Core operations use the lifecycle coordinator', () => {
   );
   assert.match(
     core,
-    /!restartResult\?\.started && !restartResult\?\.apiReachable/
+    /restartResult\?\.apiReachable === false/
+  );
+  assert.match(
+    main,
+    /'embeddedCoreBinaryPath'[\s\S]*coreTargetChanged[\s\S]*stopEmbeddedCore\(\)/
+  );
+  assert.match(
+    main,
+    /coreLifecycle\.run\('start',[\s\S]*startConfiguredCore\(\)[\s\S]*if \(result\?\.started\) coreRpcSessionPolicy\.reset\(\)/
   );
 });
 

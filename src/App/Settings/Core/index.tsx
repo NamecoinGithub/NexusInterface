@@ -144,10 +144,10 @@ async function turnOffRemoteCore(restartForm: () => void) {
     note: __('(This will restart your Core)'),
   });
   if (confirmed) {
-    restartForm();
-    updateSettings({ manualDaemon: false });
     try {
       await window.nexusElectron.settings.update({ manualDaemon: false });
+      updateSettings({ manualDaemon: false });
+      restartForm();
       await startCore();
       coreInfoQuery.refetch();
     } catch (error) {
@@ -209,8 +209,8 @@ export default function SettingsCore() {
               )
             );
             if (Object.keys(updates).length) {
-              updateSettings(updates);
               await window.nexusElectron.settings.update(updates);
+              updateSettings(updates);
             }
           },
           onSuccess: () => {

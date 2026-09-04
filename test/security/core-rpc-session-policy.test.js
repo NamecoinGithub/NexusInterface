@@ -29,12 +29,15 @@ test('ordinary Core RPC calls use only the main-owned active session', () => {
 
 test('explicit sessions remain limited to session-management endpoints', () => {
   const policy = createCoreRpcSessionPolicy();
-  const request = {
+  const request = policy.authorize({
     endpoint: 'sessions/status/local',
     params: { session: 'selected-session-01' },
-  };
+  });
 
-  assert.deepEqual(policy.authorize(request), request);
+  assert.deepEqual(request, {
+    endpoint: 'sessions/status/local',
+    params: { session: 'selected-session-01' },
+  });
   policy.observe(request, { username: 'alice' });
   assert.deepEqual(
     policy.authorize({ endpoint: 'profiles/status/master' }),
@@ -42,6 +45,26 @@ test('explicit sessions remain limited to session-management endpoints', () => {
       endpoint: 'profiles/status/master',
       params: { session: 'selected-session-01' },
     }
+  );
+});
+
+test('stale session selection responses cannot replace a newer session', () => {
+  const policy = createCoreRpcSessionPolicy();
+  const olderRequest = policy.authorize({
+    endpoint: 'sessions/status/local',
+    params: { session: 'older-session-01' },
+  });
+  const newerRequest = policy.authorize({
+    endpoint: 'sessions/status/local',
+    params: { session: 'newer-session-01' },
+  });
+
+  policy.observe(newerRequest, { username: 'bob' });
+  policy.observe(olderRequest, { username: 'alice' });
+
+  assert.equal(
+    policy.authorize({ endpoint: 'finance/get/balances' }).params.session,
+    'newer-session-01'
   );
 });
 

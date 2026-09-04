@@ -8,16 +8,30 @@ const SESSION_OVERRIDE_ENDPOINTS = new Set([
 
 function createCoreRpcSessionPolicy() {
   let activeSession = null;
+  let latestSessionSelection = 0;
+  const sessionSelectionRequests = new WeakMap();
 
   return {
     reset() {
       activeSession = null;
+      latestSessionSelection += 1;
     },
 
     authorize(request) {
       const params = request.params ? { ...request.params } : undefined;
       if (SESSION_OVERRIDE_ENDPOINTS.has(request.endpoint)) {
-        return { ...request, params };
+        const authorizedRequest = { ...request, params };
+        if (
+          request.endpoint === 'sessions/status/local' ||
+          request.endpoint === 'sessions/unlock/local'
+        ) {
+          latestSessionSelection += 1;
+          sessionSelectionRequests.set(
+            authorizedRequest,
+            latestSessionSelection
+          );
+        }
+        return authorizedRequest;
       }
 
       if (params) delete params.session;
@@ -37,7 +51,9 @@ function createCoreRpcSessionPolicy() {
       } else if (
         (request.endpoint === 'sessions/status/local' ||
           request.endpoint === 'sessions/unlock/local') &&
-        explicitSession
+        explicitSession &&
+        (sessionSelectionRequests.get(request) === undefined ||
+          sessionSelectionRequests.get(request) === latestSessionSelection)
       ) {
         activeSession = explicitSession;
       } else if (

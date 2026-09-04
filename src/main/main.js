@@ -113,6 +113,7 @@ const coreLifecycle = createCoreLifecycleCoordinator();
 const coreRpcSessionPolicy = createCoreRpcSessionPolicy();
 const CORE_TARGET_SETTINGS = new Set([
   'coreDataDir',
+  'embeddedCoreBinaryPath',
   'embeddedCoreUseNonSSL',
   'embeddedCoreApiPort',
   'embeddedCoreApiPortSSL',
@@ -876,7 +877,12 @@ registerOperation(
     }
     return undefined;
   },
-  async () => coreLifecycle.run('start', () => startConfiguredCore())
+  async () =>
+    coreLifecycle.run('start', async () => {
+      const result = await startConfiguredCore();
+      if (result?.started) coreRpcSessionPolicy.reset();
+      return result;
+    })
 );
 registerOperation(CHANNELS.core.restart, undefined, async () =>
   coreLifecycle.run('restart', async () => {

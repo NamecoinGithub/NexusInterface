@@ -862,9 +862,12 @@ export async function resyncLiteDatabase() {
   let restartResult;
   try {
     restartResult = await startConfiguredCore();
-    if (!restartResult?.started && !restartResult?.apiReachable) {
+    if (
+      restartResult?.apiReachable === false ||
+      (!restartResult?.started && !restartResult?.apiReachable)
+    ) {
       throw new Error(
-        `Lite database resync could not restart Core (${restartResult?.reason || 'unknown reason'})`
+        `Lite database resync could not restart Core (${restartResult?.apiError || restartResult?.reason || 'unknown reason'})`
       );
     }
   } catch (error) {
