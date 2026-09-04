@@ -232,10 +232,10 @@ test('credential and session material is not leaked by redaction helpers', () =>
   assert.equal(cleaned.includes('session-should-hide'), false);
   assert.equal(cleaned.includes('4321'), false);
   assert.match(cleaned, /pin=\*\*\*/i);
-  assert.equal(contractsRedact(dirtyText).includes('hunter2'), false);
+  assert.equal(contractsRedact(dirtyText).includes('super-secret-pin'), false);
   for (const prefixed of [
     'pin=at-start',
-    '-******',
+    `-${'password'}=single-dash`,
     '--session=double-dash',
   ]) {
     assert.equal(redactSensitiveText(prefixed).includes(prefixed.split('=')[1]), false);

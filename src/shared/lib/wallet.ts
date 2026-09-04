@@ -12,6 +12,9 @@ import { coreInfoPausedAtom, coreConnectedAtom } from 'lib/coreInfo';
 import { logOut, loggedInAtom } from 'lib/session';
 import { settingsAtom } from 'lib/settings';
 import nexusEnv from 'lib/nexusEnv';
+import { openErrorDialog } from 'lib/dialog';
+
+__ = __context('Wallet');
 
 let _navigate: NavigateFunction | null = null;
 export function navigate(to: To, options?: NavigateOptions) {
@@ -46,7 +49,16 @@ export const closeWallet = async (beforeExit?: () => void) => {
   }
 
   beforeExit?.();
-  await window.nexusElectron.app.exit();
+  try {
+    await window.nexusElectron.app.exit();
+  } catch (error) {
+    store.set(walletClosingAtom, false);
+    store.set(coreInfoPausedAtom, false);
+    openErrorDialog({
+      message: __('Unable to close Nexus Wallet'),
+      note: `${(error as Error)?.message || error}. ${__('Please try again.')}`,
+    });
+  }
 };
 
 export function prepareWallet() {

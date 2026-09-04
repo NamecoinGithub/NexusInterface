@@ -165,6 +165,10 @@ test('embedded Core start always supplies API auth and probes already-running Co
   // Wallet close relies on main-process exit to stop Core (no double wait).
   assert.match(wallet, /app\.exit\(\)/);
   assert.doesNotMatch(wallet, /await stopCore\(\)/);
+  assert.match(
+    wallet,
+    /catch \(error\)[\s\S]*walletClosingAtom,\s*false[\s\S]*coreInfoPausedAtom,\s*false[\s\S]*Unable to close Nexus Wallet[\s\S]*Please try again/
+  );
   // Renderer must not short-circuit before main can probe/restart a mismatched Core.
   assert.match(rendererCore, /window\.nexusElectron\.core\.start\(\)/);
   assert.doesNotMatch(

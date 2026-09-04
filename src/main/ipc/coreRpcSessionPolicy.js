@@ -70,7 +70,7 @@ function createCoreRpcSessionPolicy() {
       if (params) delete params.session;
       const authorizedRequest = {
         ...request,
-        params: activeSession ? { ...params, session: activeSession } : params,
+        params: activeSession ? { session: activeSession, ...params } : params,
       };
       if (isSessionSelectionRequest(authorizedRequest)) {
         latestSessionSelection += 1;

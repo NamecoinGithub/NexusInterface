@@ -18,12 +18,21 @@ test('ordinary Core RPC calls use only the main-owned active session', () => {
   assert.deepEqual(
     policy.authorize({
       endpoint: 'finance/get/balances',
-      params: { session: 'victim-session-01' },
+      params: { session: 'victim-session-01', where: 'field=balance' },
     }),
     {
       endpoint: 'finance/get/balances',
-      params: { session: 'active-session-01' },
+      params: { session: 'active-session-01', where: 'field=balance' },
     }
+  );
+  assert.deepEqual(
+    Object.keys(
+      policy.authorize({
+        endpoint: 'finance/get/balances',
+        params: { where: 'field=balance' },
+      }).params
+    ),
+    ['session', 'where']
   );
 });
 
