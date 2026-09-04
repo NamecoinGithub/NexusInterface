@@ -261,6 +261,10 @@ test('main process emits structured Core lifecycle diagnostics', () => {
   );
   assert.match(
     main,
+    /endpoint = validateCoreConsoleRpcUrl\(request\)\.split\(\/\[\/\?\]\//
+  );
+  assert.match(
+    main,
     /const message = redactSensitiveText\([\s\S]*log\.warn\('ipc\.core\.exit'/
   );
 });

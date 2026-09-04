@@ -538,7 +538,11 @@ function registerOperation(channel, validateRequest, operation) {
           endpoint = undefined;
         }
       } else if (typeof request === 'string') {
-        endpoint = request.split('?')[0];
+        try {
+          endpoint = validateCoreConsoleRpcUrl(request).split(/[/?]/)[0];
+        } catch {
+          endpoint = undefined;
+        }
       }
       log.info('ipc.core.enter', {
         channel,
