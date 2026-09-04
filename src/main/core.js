@@ -15,6 +15,7 @@ import {
 import { assertAdvancedCoreParams } from './ipc/contracts';
 import {
   commandUsesDataDir,
+  normalizeProcessPath,
   splitCommandParts,
 } from './coreProcessPolicy';
 
@@ -31,6 +32,8 @@ const CORE_STOP_GRACE_DELAY_MS = 1000;
 const CORE_KILL_RETRIES = 3;
 const CORE_KILL_CONFIRM_ATTEMPTS = 10;
 const CORE_KILL_CONFIRM_DELAY_MS = 250;
+let walletManagedCorePid = null;
+let walletManagedCoreDataDir = null;
 
 const coreBinaryName = `nexus-${process.platform}-${process.arch}${
   process.platform === 'win32' ? '.exe' : ''
@@ -429,10 +432,21 @@ async function getCoreProcessState(dataDir = null, trackedPid = null) {
     (processInfo) =>
       processInfo.pid && !Number.isNaN(processInfo.pid) && processInfo.pid >= 2
   );
+  const trackedManagedProcess =
+    dataDir &&
+    normalizeProcessPath(walletManagedCoreDataDir) ===
+      normalizeProcessPath(dataDir)
+      ? runningProcesses.find(
+          (processInfo) => processInfo.pid === walletManagedCorePid
+        )
+      : undefined;
+  const requiresTrackedPid = !!dataDir && /\s/.test(dataDir);
   const match = dataDir
-    ? runningProcesses.find((processInfo) =>
-        commandUsesDataDir(processInfo.command, dataDir)
-      )
+    ? trackedManagedProcess ||
+      (!requiresTrackedPid &&
+        runningProcesses.find((processInfo) =>
+          commandUsesDataDir(processInfo.command, dataDir)
+        ))
     : runningProcesses[0];
 
   return {
@@ -440,7 +454,11 @@ async function getCoreProcessState(dataDir = null, trackedPid = null) {
     managedPid: match?.pid || null,
     ownershipUnknown:
       !!dataDir &&
-      runningProcesses.some((processInfo) => processInfo.commandKnown === false),
+      !match &&
+      runningProcesses.some(
+        (processInfo) =>
+          requiresTrackedPid || processInfo.commandKnown === false
+      ),
     trackedPidRunning:
       trackedPid !== null &&
       runningProcesses.some((processInfo) => processInfo.pid === trackedPid),
@@ -485,6 +503,19 @@ export function startCore(params) {
       stdio: ['ignore', 'ignore', 'ignore'],
     });
     if (coreProcess) {
+      const dataDirParam = (params || []).find((param) =>
+        /^[-/]datadir=/i.test(param)
+      );
+      walletManagedCorePid = coreProcess.pid;
+      walletManagedCoreDataDir = dataDirParam
+        ? dataDirParam.slice(dataDirParam.indexOf('=') + 1)
+        : null;
+      coreProcess.once('exit', () => {
+        if (walletManagedCorePid === coreProcess.pid) {
+          walletManagedCorePid = null;
+          walletManagedCoreDataDir = null;
+        }
+      });
       // Detach fully so the wallet can exit without waiting on Core.
       coreProcess.unref();
       log.info(

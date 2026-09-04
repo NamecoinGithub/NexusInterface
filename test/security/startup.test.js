@@ -115,6 +115,11 @@ test('embedded Core start always supplies API auth and probes already-running Co
   assert.match(core, /stopEmbeddedCore/);
   // Never kill an unrelated Core that merely shares the binary name/path.
   assert.match(core, /commandUsesDataDir/);
+  assert.match(core, /let walletManagedCorePid = null/);
+  assert.match(core, /let walletManagedCoreDataDir = null/);
+  assert.match(core, /requiresTrackedPid = !!dataDir && \/\\s\/\.test\(dataDir\)/);
+  assert.match(core, /walletManagedCorePid = coreProcess\.pid/);
+  assert.match(core, /walletManagedCoreDataDir = dataDirParam/);
   assert.match(core, /unmanaged-core-api-unreachable/);
   assert.match(core, /getCorePID\(\{\s*dataDir:\s*settings\.coreDataDir\s*\}\)/);
   assert.match(coreRpc, /probeCoreApi/);
