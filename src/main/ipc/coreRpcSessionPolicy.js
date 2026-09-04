@@ -26,6 +26,7 @@ function createCoreRpcSessionPolicy() {
   const sessionSelectionRequests = new WeakMap();
   const pendingSessionSelections = new Set();
   const sessionListRequests = new WeakMap();
+  const sessionTerminationRequests = new WeakMap();
 
   function settleSessionSelection(request) {
     pendingSessionSelections.delete(sessionSelectionRequests.get(request));
@@ -51,6 +52,11 @@ function createCoreRpcSessionPolicy() {
           );
           pendingSessionSelections.clear();
           pendingSessionSelections.add(latestSessionSelection);
+        } else if (request.endpoint === 'sessions/terminate/local') {
+          sessionTerminationRequests.set(
+            authorizedRequest,
+            latestSessionSelection
+          );
         }
         return authorizedRequest;
       }
@@ -77,6 +83,7 @@ function createCoreRpcSessionPolicy() {
     observe(request, result) {
       const sessionSelection = sessionSelectionRequests.get(request);
       const sessionList = sessionListRequests.get(request);
+      const terminationSelection = sessionTerminationRequests.get(request);
       settleSessionSelection(request);
       if (
         sessionSelection !== undefined &&
@@ -126,9 +133,21 @@ function createCoreRpcSessionPolicy() {
         (!explicitSession || explicitSession === activeSession)
       ) {
         activeSession = null;
-        latestSessionSelection += 1;
+        if (
+          terminationSelection === undefined ||
+          latestSessionSelection <= terminationSelection
+        ) {
+          latestSessionSelection += 1;
+        }
         sessionRevision += 1;
-        pendingSessionSelections.clear();
+        for (const selection of pendingSessionSelections) {
+          if (
+            terminationSelection === undefined ||
+            selection <= terminationSelection
+          ) {
+            pendingSessionSelections.delete(selection);
+          }
+        }
       }
     },
 

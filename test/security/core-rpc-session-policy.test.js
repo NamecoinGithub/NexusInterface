@@ -122,6 +122,33 @@ test('termination prevents in-flight selection responses from restoring a sessio
   });
 });
 
+test('termination preserves session selections authorized after logout', () => {
+  const policy = createCoreRpcSessionPolicy();
+  policy.observe(
+    {
+      endpoint: 'sessions/create/local',
+      params: { username: 'alice', password: 'secret', pin: '1234' },
+    },
+    { session: 'active-session-01' }
+  );
+  const terminationRequest = policy.authorize({
+    endpoint: 'sessions/terminate/local',
+    params: { session: 'active-session-01' },
+  });
+  const newerRequest = policy.authorize({
+    endpoint: 'sessions/status/local',
+    params: { session: 'newer-session-01' },
+  });
+
+  policy.observe(terminationRequest, {});
+  policy.observe(newerRequest, { username: 'bob' });
+
+  assert.equal(
+    policy.authorize({ endpoint: 'finance/get/balances' }).params.session,
+    'newer-session-01'
+  );
+});
+
 test('a stale status response cannot replace a newly created session', () => {
   const policy = createCoreRpcSessionPolicy();
   const statusRequest = policy.authorize({
