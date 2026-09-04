@@ -73,6 +73,10 @@ function createCoreRpcSessionPolicy() {
       if (isSessionSelectionRequest(authorizedRequest)) {
         latestSessionSelection += 1;
         sessionSelectionRequests.set(authorizedRequest, latestSessionSelection);
+        latestSessionSelectionTarget =
+          authorizedRequest.endpoint === 'sessions/create/local'
+            ? null
+            : authorizedRequest.params?.session || null;
         pendingSessionSelections.clear();
         pendingSessionSelections.add(latestSessionSelection);
       } else if (request.endpoint === 'sessions/list/local') {

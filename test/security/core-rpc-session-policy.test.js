@@ -149,6 +149,33 @@ test('termination preserves session selections authorized after logout', () => {
   );
 });
 
+test('termination preserves logins authorized after logout', () => {
+  const policy = createCoreRpcSessionPolicy();
+  policy.observe(
+    {
+      endpoint: 'sessions/create/local',
+      params: { username: 'alice', password: 'secret', pin: '1234' },
+    },
+    { session: 'active-session-01' }
+  );
+  const terminationRequest = policy.authorize({
+    endpoint: 'sessions/terminate/local',
+    params: { session: 'active-session-01' },
+  });
+  const createRequest = policy.authorize({
+    endpoint: 'sessions/create/local',
+    params: { username: 'bob', password: 'secret', pin: '5678' },
+  });
+
+  policy.observe(terminationRequest, {});
+  policy.observe(createRequest, { session: 'new-session-01' });
+
+  assert.equal(
+    policy.authorize({ endpoint: 'finance/get/balances' }).params.session,
+    'new-session-01'
+  );
+});
+
 test('termination invalidates newer selections of the terminated session', () => {
   const policy = createCoreRpcSessionPolicy();
   policy.observe(
