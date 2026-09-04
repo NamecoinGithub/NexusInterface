@@ -173,7 +173,7 @@ async function turnOnRemoteCore(restartForm: () => void) {
     restartForm();
     try {
       await stopCore();
-      updateSettings({ manualDaemon: true });
+      await updateSettings({ manualDaemon: true });
       coreInfoQuery.refetch();
     } catch (error) {
       showNotification(

@@ -681,7 +681,7 @@ function redactSensitiveText(text) {
     const patterns = [
       // JSON-ish: "pin":"secret"
       new RegExp(
-        `("${key}"\\s*:\\s*)("(?:\\\\.|[^"\\\\])*"|'(?:\\\\.|[^'\\\\])*'|[A-Za-z0-9+/=_-]+)`,
+        `((?:^|[,{\\s])(?:"${key}"|'${key}'|${key})\\s*:\\s*)("(?:\\\\.|[^"\\\\])*"|'(?:\\\\.|[^'\\\\])*'|[A-Za-z0-9+/=_-]+)`,
         'gi'
       ),
       // query/cli: pin=secret

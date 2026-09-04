@@ -7,7 +7,8 @@ const SESSION_OVERRIDE_ENDPOINTS = new Set([
 ]);
 const SESSION_SELECTION_ENDPOINTS = new Set([
   'sessions/create/local',
-  ...SESSION_OVERRIDE_ENDPOINTS,
+  'sessions/unlock/local',
+  'sessions/status/local',
 ]);
 
 function isSessionSelectionRequest(request) {

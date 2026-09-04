@@ -243,6 +243,9 @@ test('credential and session material is not leaked by redaction helpers', () =>
   for (const [quoted, secret] of [
     [`--${'password'}="quoted double"`, 'quoted double'],
     [`--pin='quoted single'`, 'quoted single'],
+    [`password: 'hunter2'`, 'hunter2'],
+    [`{ pin: "1234" }`, '1234'],
+    [`{'session': 'session-secret'}`, 'session-secret'],
   ]) {
     assert.equal(redactSensitiveText(quoted).includes(secret), false);
   }

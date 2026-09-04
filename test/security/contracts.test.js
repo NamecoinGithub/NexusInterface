@@ -157,6 +157,31 @@ test('settings updates reject dangerous Core overrides and relative paths', () =
     assertAdvancedCoreParams('-mining=1 -stake=1'),
     '-mining=1 -stake=1'
   );
+  const coreSettingsBatch = {
+    liteMode: true,
+    safeMode: true,
+    enableMining: true,
+    ipMineWhitelist: '127.0.0.1',
+    enableStaking: true,
+    pooledStaking: true,
+    multiUser: true,
+    verboseLevel: 3,
+    testnetIteration: 0,
+    privateTestnet: false,
+    avatarMode: true,
+    allowAdvancedCoreOptions: false,
+    advancedCoreParams: '',
+    manualDaemonIP: 'localhost',
+    manualDaemonApiSSL: false,
+    manualDaemonApiPort: '8080',
+    manualDaemonApiPortSSL: '8443',
+    manualDaemonApiUser: 'user',
+    manualDaemonApiPassword: 'password',
+    embeddedCoreUseNonSSL: false,
+    embeddedCoreApiPort: '9336',
+    embeddedCoreApiPortSSL: '9337',
+  };
+  assert.deepEqual(validateSettingsUpdate(coreSettingsBatch), coreSettingsBatch);
 
   for (const updates of [
     { coreDataDir: 'relative/path' },

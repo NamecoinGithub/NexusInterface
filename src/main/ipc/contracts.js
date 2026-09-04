@@ -452,8 +452,8 @@ function assertAdvancedCoreParams(value) {
 function validateSettingsUpdate(value) {
   const updates = assertRecord(value, 'Settings update');
   const entries = Object.entries(updates);
-  if (!entries.length || entries.length > 16) {
-    fail('Settings update must contain between 1 and 16 fields');
+  if (!entries.length || entries.length > ALLOWED_SETTINGS_FIELDS.size) {
+    fail('Settings update contains an invalid number of fields');
   }
   const validated = {};
   for (const [key, fieldValue] of entries) {

@@ -68,6 +68,33 @@ test('stale session selection responses cannot replace a newer session', () => {
   );
 });
 
+test('concurrent terminations independently clear the active session', () => {
+  const policy = createCoreRpcSessionPolicy();
+  policy.observe(
+    {
+      endpoint: 'sessions/create/local',
+      params: { username: 'alice', password: 'secret', pin: '1234' },
+    },
+    { session: 'active-session-01' }
+  );
+  const activeTermination = policy.authorize({
+    endpoint: 'sessions/terminate/local',
+    params: { session: 'active-session-01' },
+  });
+  const otherTermination = policy.authorize({
+    endpoint: 'sessions/terminate/local',
+    params: { session: 'other-session-01' },
+  });
+
+  policy.observe(activeTermination, {});
+  policy.observe(otherTermination, {});
+
+  assert.deepEqual(policy.authorize({ endpoint: 'finance/get/balances' }), {
+    endpoint: 'finance/get/balances',
+    params: undefined,
+  });
+});
+
 test('a stale status response cannot replace a newly created session', () => {
   const policy = createCoreRpcSessionPolicy();
   const statusRequest = policy.authorize({

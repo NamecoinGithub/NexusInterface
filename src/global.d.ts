@@ -21,7 +21,6 @@ type NexusPlatform =
 
 interface NexusEnvironment {
   NODE_ENV: string;
-  PORT: string;
   platform: NexusPlatform;
   arch: string;
 }
