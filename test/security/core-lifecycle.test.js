@@ -139,6 +139,10 @@ test('all destructive Core operations use the lifecycle coordinator', () => {
     );
   }
   assert.match(main, /coreLifecycle\s*\.shutdown\(/);
+  assert.match(
+    main,
+    /coreLifecycle\.run\('update-settings',[\s\S]*stopEmbeddedCore\(\)[\s\S]*updateSettingsFile\(updates\)/
+  );
   assert.match(rendererCore, /nexusElectron\.core\.stop\(\)/);
   assert.match(rendererCore, /nexusElectron\.core\.restart\(\)/);
   assert.match(

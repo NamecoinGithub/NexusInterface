@@ -384,6 +384,7 @@ test('asset updates accept bounded prototype-safe schema field names', () => {
         address: 'address01',
         'serial-number': 'A-1',
         'display name': 'Example',
+        toString: 'Custom label',
       },
     }).params,
     {
@@ -391,6 +392,7 @@ test('asset updates accept bounded prototype-safe schema field names', () => {
       address: 'address01',
       'serial-number': 'A-1',
       'display name': 'Example',
+      toString: 'Custom label',
     }
   );
 

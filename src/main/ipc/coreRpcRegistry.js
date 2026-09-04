@@ -609,7 +609,9 @@ function validateCoreRpcParamsForEndpoint(endpoint, params) {
   const knownFields = schema.fields;
 
   for (const key of Object.keys(params)) {
-    const fieldSchema = knownFields[key];
+    const fieldSchema = Object.prototype.hasOwnProperty.call(knownFields, key)
+      ? knownFields[key]
+      : undefined;
     if (!fieldSchema) {
       if (!schema.allowAdditionalPrimitives) {
         assertSafeKey(key, 'Core RPC parameter');

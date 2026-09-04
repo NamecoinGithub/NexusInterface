@@ -807,15 +807,26 @@ registerOperation(
     return validated;
   },
   async (updates) => {
-    const previousSettings = loadSettingsFromFile();
-    const coreTargetChanged = Object.keys(updates).some(
-      (key) =>
-        CORE_TARGET_SETTINGS.has(key) && updates[key] !== previousSettings[key]
-    );
-    updateSettingsFile(updates);
-    clearCoreConfigCache();
-    if (coreTargetChanged) coreRpcSessionPolicy.reset();
-    return getRendererSettings();
+    return coreLifecycle.run('update-settings', async () => {
+      const previousSettings = loadSettingsFromFile();
+      const coreTargetChanged = Object.keys(updates).some(
+        (key) =>
+          CORE_TARGET_SETTINGS.has(key) &&
+          updates[key] !== previousSettings[key]
+      );
+      if (coreTargetChanged) {
+        const stopResult = await stopEmbeddedCore();
+        if (!stopResult?.stopped && stopResult?.reason !== 'manual-daemon') {
+          throw new Error(
+            'Core settings cannot change until Nexus Core shutdown is confirmed'
+          );
+        }
+      }
+      updateSettingsFile(updates);
+      clearCoreConfigCache();
+      if (coreTargetChanged) coreRpcSessionPolicy.reset();
+      return getRendererSettings();
+    });
   }
 );
 registerOperation(

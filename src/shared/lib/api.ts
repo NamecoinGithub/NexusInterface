@@ -871,6 +871,15 @@ export { callAPI };
  * =============================================================================
  */
 
+type ListAllEndpoint =
+  | 'finance/transactions/any'
+  | 'finance/list/tokens'
+  | 'names/list/names'
+  | 'names/list/inactive'
+  | 'names/list/namespaces'
+  | 'assets/list/assets'
+  | 'assets/list/partial';
+
 async function listAll<
   TParams extends QueryParams & {
     verbose?: string;
@@ -906,15 +915,6 @@ async function listAll<TParams extends QueryParams>(
   endpoint: 'assets/list/partial',
   customParams?: TParams
 ): Promise<PartialAsset[]>;
-
-type ListAllEndpoint =
-  | 'finance/transactions/any'
-  | 'finance/list/tokens'
-  | 'names/list/names'
-  | 'names/list/inactive'
-  | 'names/list/namespaces'
-  | 'assets/list/assets'
-  | 'assets/list/partial';
 
 async function listAll(
   endpoint: ListAllEndpoint,
