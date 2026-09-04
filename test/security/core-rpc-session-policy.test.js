@@ -176,6 +176,33 @@ test('termination invalidates newer selections of the terminated session', () =>
   });
 });
 
+test('terminating another session invalidates only selections of that session', () => {
+  const policy = createCoreRpcSessionPolicy();
+  policy.observe(
+    {
+      endpoint: 'sessions/create/local',
+      params: { username: 'bob', password: 'secret', pin: '1234' },
+    },
+    { session: 'active-session-01' }
+  );
+  const terminationRequest = policy.authorize({
+    endpoint: 'sessions/terminate/local',
+    params: { session: 'other-session-01' },
+  });
+  const statusRequest = policy.authorize({
+    endpoint: 'sessions/status/local',
+    params: { session: 'other-session-01' },
+  });
+
+  policy.observe(terminationRequest, {});
+  policy.observe(statusRequest, { username: 'alice' });
+
+  assert.equal(
+    policy.authorize({ endpoint: 'finance/get/balances' }).params.session,
+    'active-session-01'
+  );
+});
+
 test('a stale status response cannot replace a newly created session', () => {
   const policy = createCoreRpcSessionPolicy();
   const statusRequest = policy.authorize({

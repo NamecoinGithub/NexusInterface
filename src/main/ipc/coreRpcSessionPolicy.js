@@ -132,29 +132,23 @@ function createCoreRpcSessionPolicy() {
           );
           activeSession = latest?.session || null;
         }
-      } else if (
-        request.endpoint === 'sessions/terminate/local' &&
-        (!explicitSession || explicitSession === activeSession)
-      ) {
-        activeSession = null;
+      } else if (request.endpoint === 'sessions/terminate/local') {
+        const clearsActiveSession =
+          !explicitSession || explicitSession === activeSession;
         const invalidatesLatestSelection =
-          terminationSelection === undefined ||
-          latestSessionSelection <= terminationSelection ||
+          (clearsActiveSession &&
+            (terminationSelection === undefined ||
+              latestSessionSelection <= terminationSelection)) ||
           (explicitSession &&
             explicitSession === latestSessionSelectionTarget);
+        if (clearsActiveSession) {
+          activeSession = null;
+          sessionRevision += 1;
+        }
         if (invalidatesLatestSelection) {
           latestSessionSelection += 1;
           latestSessionSelectionTarget = null;
-        }
-        sessionRevision += 1;
-        if (invalidatesLatestSelection) {
           pendingSessionSelections.clear();
-        } else {
-          for (const selection of pendingSessionSelections) {
-            if (selection <= terminationSelection) {
-              pendingSessionSelections.delete(selection);
-            }
-          }
         }
       }
     },
