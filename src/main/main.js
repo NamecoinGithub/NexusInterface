@@ -1071,8 +1071,8 @@ registerOperation(
       files: validateModuleFilePaths(value.files),
     };
   },
-  async ({ moduleName, files }) => {
-    const validFiles = await validateModuleFiles(moduleName, files);
+  async ({ moduleName }) => {
+    const validFiles = await validateModuleFiles(moduleName);
     return serveModuleFiles(moduleName, validFiles);
   }
 );

@@ -117,12 +117,11 @@ export async function getModuleEntry(name, fileServerDomain) {
   return `${fileServerDomain}/modules/${encodeURIComponent(name)}/${encodedEntry}`;
 }
 
-export async function validateModuleFiles(name, files) {
+export async function validateModuleFiles(name) {
   const { root, development } = await resolveModuleRoot(name);
   const allowSymlink = development && developmentAllowsSymlinks();
-  const moduleFiles = development
-    ? (await readJson(path.join(root, 'nxs_package.dev.json')))?.files
-    : files;
+  const manifest = development ? 'nxs_package.dev.json' : 'nxs_package.json';
+  const moduleFiles = (await readJson(path.join(root, manifest)))?.files;
   if (!Array.isArray(moduleFiles) || moduleFiles.length === 0) {
     throw new Error('Module files must be a non-empty array');
   }

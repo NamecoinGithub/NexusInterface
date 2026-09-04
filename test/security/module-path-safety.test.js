@@ -91,6 +91,11 @@ test('module asset and entry resolvers reject symlinks and realpath escapes', ()
   assert.match(moduleFiles, /allowSymlink/);
   assert.match(moduleFiles, /developmentAllowsSymlinks|allowSymLink/);
   assert.match(
+    moduleFiles,
+    /development \? 'nxs_package\.dev\.json' : 'nxs_package\.json'/,
+    'authorized files must come from the on-disk manifest in both modes'
+  );
+  assert.match(
     read('src', 'main', 'modules.js'),
     /nxsPackageDevSchema[\s\S]*files:\s*z\.array/,
     'development manifests must declare a validated file list'
