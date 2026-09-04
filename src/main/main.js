@@ -954,9 +954,14 @@ registerOperation(
   validateCoreRpcRequest,
   async (request) => {
     const authorizedRequest = coreRpcSessionPolicy.authorize(request);
-    const result = await callCoreRpc(authorizedRequest);
-    coreRpcSessionPolicy.observe(authorizedRequest, result);
-    return result;
+    try {
+      const result = await callCoreRpc(authorizedRequest);
+      coreRpcSessionPolicy.observe(authorizedRequest, result);
+      return result;
+    } catch (error) {
+      coreRpcSessionPolicy.cancel(authorizedRequest);
+      throw error;
+    }
   }
 );
 // Terminal / Nexus API console capability. Broader than structured call():

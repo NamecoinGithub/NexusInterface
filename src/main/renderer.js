@@ -13,9 +13,11 @@ import { updateSettingsFile } from './settings';
 import { debounced } from 'utils/universal';
 
 const port = process.env.PORT || 1212;
+const isDevelopment =
+  !app.isPackaged && process.env.NODE_ENV === 'development';
 
 export function getMainWindowUrl() {
-  return process.env.NODE_ENV === 'development'
+  return isDevelopment
     ? `http://localhost:${port}/assets/app.html`
     : pathToFileURL(path.resolve(__dirname, 'app.html')).toString();
 }
@@ -52,8 +54,7 @@ export function createWindow(settings) {
   const height = Math.min(settings.windowHeight, display.height);
   const allowSandboxOverride =
     !app.isPackaged &&
-    (process.env.NODE_ENV === 'development' ||
-      process.env.DEBUG_PROD === 'true');
+    (isDevelopment || process.env.DEBUG_PROD === 'true');
 
   // Create the main browser window
   const mainWindow = new BrowserWindow({
@@ -68,9 +69,13 @@ export function createWindow(settings) {
     show: false,
     webPreferences: {
       preload:
-        process.env.NODE_ENV === 'development'
+        isDevelopment
           ? path.resolve(process.cwd(), 'build', 'main_preload.dev.js')
           : path.resolve(__dirname, 'main_preload.prod.js'),
+      additionalArguments: [
+        `--nexus-development=${isDevelopment ? '1' : '0'}`,
+        `--nexus-renderer-port=${isDevelopment ? port : ''}`,
+      ],
       nodeIntegration: false,
       contextIsolation: true,
       // Diagnostic-only: NEXUS_DISABLE_SANDBOX=1 may disable sandbox but only
@@ -149,9 +154,9 @@ export function createWindow(settings) {
   });
 
   if (
-    process.env.NODE_ENV === 'development' ||
-    process.env.DEBUG_PROD === 'true' ||
-    settings.devMode
+    isDevelopment ||
+    (!app.isPackaged &&
+      (process.env.DEBUG_PROD === 'true' || settings.devMode))
   ) {
     installExtensions().catch((err) => {
       console.error('Failed to install extensions', err);

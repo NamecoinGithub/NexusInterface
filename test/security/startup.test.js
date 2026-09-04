@@ -17,6 +17,12 @@ test('window startup configuration keeps wallet and keyboard renderers isolated'
 
   assert.match(renderer, /nodeIntegration:\s*false/);
   assert.match(renderer, /contextIsolation:\s*true/);
+  assert.match(
+    renderer,
+    /const isDevelopment =\s*!app\.isPackaged && process\.env\.NODE_ENV === 'development'/
+  );
+  assert.doesNotMatch(preload, /NODE_ENV:\s*process\.env\.NODE_ENV/);
+  assert.match(preload, /nexus-development/);
   // Default remains sandboxed; the override is unavailable to packaged apps.
   assert.match(renderer, /const allowSandboxOverride =\s*!app\.isPackaged/);
   assert.match(
@@ -42,6 +48,7 @@ test('window startup configuration keeps wallet and keyboard renderers isolated'
   assert.match(renderer, /will-redirect/);
   assert.doesNotMatch(renderer, /await mainWindow\.loadURL/);
   assert.doesNotMatch(renderer, /await installExtensions/);
+  assert.match(renderer, /additionalArguments:[\s\S]*--nexus-development/);
   assert.match(main, /mainWindow = createWindow\(settings\)/);
   assert.ok(
     renderer.indexOf('hardenModuleWebviews(mainWindow)') <
@@ -75,6 +82,15 @@ test('embedded Core start always supplies API auth and probes already-running Co
   const coreRpc = read('src', 'main', 'coreRpc.js');
   const rendererCore = read('src', 'shared', 'lib', 'core.ts');
   const coreSettings = read('src', 'App', 'Settings', 'Core', 'index.tsx');
+  const embeddedCoreSettings = read(
+    'src',
+    'App',
+    'Settings',
+    'Core',
+    'EmbeddedCoreSettings.tsx'
+  );
+  const liteModeNotice = read('src', 'App', 'Overlays', 'LiteModeNotice.tsx');
+  const staking = read('src', 'App', 'UserPage', 'Staking.tsx');
   const main = read('src', 'main', 'main.js');
   const coreConf = read('src', 'main', 'ipc', 'coreConf.js');
   const wallet = read('src', 'shared', 'lib', 'wallet.ts');
@@ -155,6 +171,22 @@ test('embedded Core start always supplies API auth and probes already-running Co
   assert.match(
     coreSettings,
     /submit:\s*async[\s\S]*await window\.nexusElectron\.settings\.update\(updates\)[\s\S]*onSuccess:[\s\S]*restartCore\(\)/
+  );
+  assert.match(
+    embeddedCoreSettings,
+    /await updateSettings\(\{ clearPeers: true \}\);[\s\S]*await restartCore\(\)/
+  );
+  assert.match(
+    embeddedCoreSettings,
+    /await updateSettings\(\{ clearPeers: true \}\);[\s\S]*await resyncLiteCore\(\)/
+  );
+  assert.match(
+    liteModeNotice,
+    /await updateSettings\([\s\S]*await restartCore\(\)/
+  );
+  assert.match(
+    staking,
+    /await updateSettings\([\s\S]*await restartCore\(\)/
   );
 });
 

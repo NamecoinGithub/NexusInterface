@@ -135,13 +135,13 @@ export default function Staking() {
           labelNo: __('Cancel'),
         });
         if (confirmed) {
-          updateSettings({
+          await updateSettings({
             enableStaking: true,
             liteMode: false,
             multiUser: false,
           });
           UT.StartStake();
-          restartCore();
+          await restartCore();
           showNotification(__('Restarting Core'));
         } else {
           return;
@@ -174,10 +174,10 @@ export default function Staking() {
   };
 
   const stopStaking = async () => {
-    const doStop = () => {
-      updateSettings({ enableStaking: false });
+    const doStop = async () => {
+      await updateSettings({ enableStaking: false });
       UT.StopStake();
-      restartCore();
+      await restartCore();
       showNotification(__('Restarting Core'));
     };
     let confirmed = false;
@@ -187,7 +187,7 @@ export default function Staking() {
         question: __('Stop staking?'),
       });
       if (confirmed) {
-        doStop();
+        await doStop();
       }
     } else {
       const modalId = openModal(ConfirmDialog, {

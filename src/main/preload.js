@@ -77,9 +77,19 @@ function exposeInMainWorld(name, api) {
   }
 }
 
+function getAdditionalArgument(name) {
+  const prefix = `--${name}=`;
+  let value = '';
+  for (const argument of process.argv) {
+    if (argument.startsWith(prefix)) value = argument.slice(prefix.length);
+  }
+  return value;
+}
+
+const isDevelopment = getAdditionalArgument('nexus-development') === '1';
 const environment = Object.freeze({
-  NODE_ENV: process.env.NODE_ENV || 'production',
-  PORT: process.env.PORT || '',
+  NODE_ENV: isDevelopment ? 'development' : 'production',
+  PORT: isDevelopment ? getAdditionalArgument('nexus-renderer-port') : '',
   platform: process.platform,
   arch: process.arch,
 });

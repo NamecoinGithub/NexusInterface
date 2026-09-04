@@ -88,6 +88,94 @@ test('a stale status response cannot replace a newly created session', () => {
   );
 });
 
+test('sessionless status polling cannot supersede an explicit selection', () => {
+  const policy = createCoreRpcSessionPolicy();
+  const unlockRequest = policy.authorize({
+    endpoint: 'sessions/unlock/local',
+    params: { session: 'selected-session-01', pin: '1234' },
+  });
+  const statusRequest = policy.authorize({
+    endpoint: 'sessions/status/local',
+  });
+
+  policy.observe(statusRequest, { username: 'alice' });
+  policy.observe(unlockRequest, { username: 'alice' });
+
+  assert.equal(
+    policy.authorize({ endpoint: 'finance/get/balances' }).params.session,
+    'selected-session-01'
+  );
+});
+
+test('session polling cannot replace an in-flight newly created session', () => {
+  const policy = createCoreRpcSessionPolicy();
+  const createRequest = policy.authorize({
+    endpoint: 'sessions/create/local',
+    params: { username: 'bob', password: 'secret', pin: '1234' },
+  });
+  const listRequest = policy.authorize({
+    endpoint: 'sessions/list/local',
+  });
+
+  policy.observe(listRequest, []);
+  assert.deepEqual(policy.authorize({ endpoint: 'finance/get/balances' }), {
+    endpoint: 'finance/get/balances',
+    params: undefined,
+  });
+
+  policy.observe(createRequest, { session: 'created-session-01' });
+  assert.equal(
+    policy.authorize({ endpoint: 'finance/get/balances' }).params.session,
+    'created-session-01'
+  );
+});
+
+test('session polling resumes after an explicit selection fails', () => {
+  const policy = createCoreRpcSessionPolicy();
+  const createRequest = policy.authorize({
+    endpoint: 'sessions/create/local',
+    params: { username: 'bob', password: 'secret', pin: '1234' },
+  });
+  policy.cancel(createRequest);
+  const listRequest = policy.authorize({
+    endpoint: 'sessions/list/local',
+  });
+
+  policy.observe(listRequest, [
+    { session: 'listed-session-01', accessed: 10 },
+  ]);
+
+  assert.equal(
+    policy.authorize({ endpoint: 'finance/get/balances' }).params.session,
+    'listed-session-01'
+  );
+});
+
+test('superseded selections do not block polling after the latest one fails', () => {
+  const policy = createCoreRpcSessionPolicy();
+  policy.authorize({
+    endpoint: 'sessions/status/local',
+    params: { session: 'older-session-01' },
+  });
+  const latestRequest = policy.authorize({
+    endpoint: 'sessions/status/local',
+    params: { session: 'latest-session-01' },
+  });
+  policy.cancel(latestRequest);
+  const listRequest = policy.authorize({
+    endpoint: 'sessions/list/local',
+  });
+
+  policy.observe(listRequest, [
+    { session: 'listed-session-01', accessed: 10 },
+  ]);
+
+  assert.equal(
+    policy.authorize({ endpoint: 'finance/get/balances' }).params.session,
+    'listed-session-01'
+  );
+});
+
 test('session lists initialize the main-owned session deterministically', () => {
   const policy = createCoreRpcSessionPolicy();
   policy.observe(

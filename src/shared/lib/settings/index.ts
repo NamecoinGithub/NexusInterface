@@ -18,17 +18,32 @@ export const settingsAtom = atom((get) => ({
 }));
 
 let timerId: ReturnType<typeof setTimeout> | undefined;
-subscribeWithPrevious(userSettingsAtom, (settings, previousSettings) => {
+let persistedSettings = initialUserSettings;
+let pendingPersistenceWaiters: Array<{
+  resolve: () => void;
+  reject: (error: unknown) => void;
+}> = [];
+subscribeWithPrevious(userSettingsAtom, (settings) => {
   clearTimeout(timerId);
-  timerId = setTimeout(() => {
+  timerId = setTimeout(async () => {
+    const waiters = pendingPersistenceWaiters;
+    pendingPersistenceWaiters = [];
     const updates = Object.fromEntries(
       Object.entries(settings).filter(
-        ([key, value]) => previousSettings?.[key as SettingsKey] !== value
+        ([key, value]) => persistedSettings?.[key as SettingsKey] !== value
       )
     ) as PartialSettings;
     if (Object.keys(updates).length) {
-      window.nexusElectron.settings.update(updates).catch(console.error);
+      try {
+        await window.nexusElectron.settings.update(updates);
+        persistedSettings = { ...persistedSettings, ...updates };
+      } catch (error) {
+        console.error(error);
+        waiters.forEach(({ reject }) => reject(error));
+        return;
+      }
     }
+    waiters.forEach(({ resolve }) => resolve());
   }, 0);
 });
 
@@ -55,11 +70,16 @@ export const settingAtoms = Object.fromEntries(
 ) as unknown as SettingAtoms;
 
 export function updateSettings(updates: PartialSettings) {
+  const persisted = new Promise<void>((resolve, reject) => {
+    pendingPersistenceWaiters.push({ resolve, reject });
+  });
+  persisted.catch(() => {});
   const userSettings = store.get(userSettingsAtom);
   store.set(userSettingsAtom, {
     ...userSettings,
     ...updates,
   });
+  return persisted;
 }
 
 export type { Settings, SettingsKey as SettingKeys, PartialSettings };
