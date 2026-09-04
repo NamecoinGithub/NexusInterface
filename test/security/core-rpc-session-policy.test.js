@@ -68,6 +68,26 @@ test('stale session selection responses cannot replace a newer session', () => {
   );
 });
 
+test('a stale status response cannot replace a newly created session', () => {
+  const policy = createCoreRpcSessionPolicy();
+  const statusRequest = policy.authorize({
+    endpoint: 'sessions/status/local',
+    params: { session: 'older-session-01' },
+  });
+  const createRequest = policy.authorize({
+    endpoint: 'sessions/create/local',
+    params: { username: 'bob', password: 'secret', pin: '1234' },
+  });
+
+  policy.observe(createRequest, { session: 'created-session-01' });
+  policy.observe(statusRequest, { username: 'alice' });
+
+  assert.equal(
+    policy.authorize({ endpoint: 'finance/get/balances' }).params.session,
+    'created-session-01'
+  );
+});
+
 test('session lists initialize the main-owned session deterministically', () => {
   const policy = createCoreRpcSessionPolicy();
   policy.observe(

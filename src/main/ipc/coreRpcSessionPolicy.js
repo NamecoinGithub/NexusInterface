@@ -5,6 +5,11 @@ const SESSION_OVERRIDE_ENDPOINTS = new Set([
   'sessions/unlock/local',
   'sessions/status/local',
 ]);
+const SESSION_SELECTION_ENDPOINTS = new Set([
+  'sessions/create/local',
+  'sessions/list/local',
+  ...SESSION_OVERRIDE_ENDPOINTS,
+]);
 
 function createCoreRpcSessionPolicy() {
   let activeSession = null;
@@ -21,10 +26,7 @@ function createCoreRpcSessionPolicy() {
       const params = request.params ? { ...request.params } : undefined;
       if (SESSION_OVERRIDE_ENDPOINTS.has(request.endpoint)) {
         const authorizedRequest = { ...request, params };
-        if (
-          request.endpoint === 'sessions/status/local' ||
-          request.endpoint === 'sessions/unlock/local'
-        ) {
+        if (SESSION_SELECTION_ENDPOINTS.has(request.endpoint)) {
           latestSessionSelection += 1;
           sessionSelectionRequests.set(
             authorizedRequest,
@@ -35,13 +37,25 @@ function createCoreRpcSessionPolicy() {
       }
 
       if (params) delete params.session;
-      return {
+      const authorizedRequest = {
         ...request,
         params: activeSession ? { ...params, session: activeSession } : params,
       };
+      if (SESSION_SELECTION_ENDPOINTS.has(request.endpoint)) {
+        latestSessionSelection += 1;
+        sessionSelectionRequests.set(authorizedRequest, latestSessionSelection);
+      }
+      return authorizedRequest;
     },
 
     observe(request, result) {
+      const sessionSelection = sessionSelectionRequests.get(request);
+      if (
+        sessionSelection !== undefined &&
+        sessionSelection !== latestSessionSelection
+      ) {
+        return;
+      }
       const explicitSession = request.params?.session;
       if (
         request.endpoint === 'sessions/create/local' &&
@@ -51,9 +65,7 @@ function createCoreRpcSessionPolicy() {
       } else if (
         (request.endpoint === 'sessions/status/local' ||
           request.endpoint === 'sessions/unlock/local') &&
-        explicitSession &&
-        (sessionSelectionRequests.get(request) === undefined ||
-          sessionSelectionRequests.get(request) === latestSessionSelection)
+        explicitSession
       ) {
         activeSession = explicitSession;
       } else if (
