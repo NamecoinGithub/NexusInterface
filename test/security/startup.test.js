@@ -12,15 +12,20 @@ const read = (...segments) =>
 test('window startup configuration keeps wallet and keyboard renderers isolated', () => {
   const renderer = read('src', 'main', 'renderer.js');
   const keyboard = read('src', 'main', 'keyboard.js');
+  const paths = read('src', 'main', 'paths.js');
   const preload = read('src', 'main', 'preload.js');
   const main = read('src', 'main', 'main.js');
 
   assert.match(renderer, /nodeIntegration:\s*false/);
   assert.match(renderer, /contextIsolation:\s*true/);
   assert.match(
-    renderer,
-    /const isDevelopment =\s*!app\.isPackaged && process\.env\.NODE_ENV === 'development'/
+    paths,
+    /export const isDevelopment =\s*!app\.isPackaged && process\.env\.NODE_ENV === 'development'/
   );
+  assert.match(renderer, /import \{ assetsDir, isDevelopment \} from '.\/paths'/);
+  assert.match(keyboard, /import \{ isDevelopment \} from '.\/paths'/);
+  assert.doesNotMatch(paths, /process\.env\.NODE_ENV === 'development'\s*\?/);
+  assert.doesNotMatch(keyboard, /process\.env\.NODE_ENV === 'development'/);
   assert.doesNotMatch(preload, /NODE_ENV:\s*process\.env\.NODE_ENV/);
   assert.match(preload, /nexus-development/);
   // Default remains sandboxed; the override is unavailable to packaged apps.
@@ -267,6 +272,16 @@ test('language selection persists locale once before reload', () => {
     /await window\.nexusElectron\.settings\.update\(\{\s*locale:\s*selection\s*\}\)/
   );
   assert.doesNotMatch(selectLanguage, /updateSettings\(\{\s*locale:/);
+});
+
+test('renderer settings persistence serializes and rechecks queued changes', () => {
+  const settings = read('src', 'shared', 'lib', 'settings', 'index.ts');
+
+  assert.match(settings, /let persistenceQueue = Promise\.resolve\(\)/);
+  assert.match(
+    settings,
+    /persistenceQueue = persistenceQueue[\s\S]*store\.get\(userSettingsAtom\)[\s\S]*await window\.nexusElectron\.settings\.update\(updates\)[\s\S]*persistedSettings =/
+  );
 });
 
 test('updater GitHub release version variable is spelled correctly', () => {

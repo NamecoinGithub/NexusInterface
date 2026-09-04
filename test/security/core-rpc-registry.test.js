@@ -415,3 +415,19 @@ test('asset updates accept bounded prototype-safe schema field names', () => {
     );
   }
 });
+
+test('asset creation rejects mutable field names that updates cannot accept', () => {
+  for (const name of ['__proto__', 'constructor', 'prototype']) {
+    assert.throws(
+      () =>
+        validateCoreRpcRequest({
+          endpoint: 'assets/create/asset',
+          params: {
+            pin: '1234',
+            json: [{ name, type: 'string', mutable: true, value: '' }],
+          },
+        }),
+      TypeError
+    );
+  }
+});

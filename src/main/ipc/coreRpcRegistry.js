@@ -221,7 +221,7 @@ function validateAssetJsonField(value, index) {
     }
   }
   const field = {
-    name: assertString(value.name, `json[${index}].name`, { min: 1, max: 64 }),
+    name: assertSafeAdditionalKey(value.name, `json[${index}]`),
     type: assertString(value.type, `json[${index}].type`, { min: 1, max: 32 }),
     mutable: assertBoolean(value.mutable, `json[${index}].mutable`),
   };

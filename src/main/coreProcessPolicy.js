@@ -54,13 +54,31 @@ function commandUsesDataDir(command, dataDir, platform = process.platform) {
   const normalizedDataDir = normalizeProcessPath(dataDir, platform);
   if (!command || !normalizedDataDir) return false;
 
-  return splitCommandParts(command).some((part) => {
-    const match = /^[-/]datadir=(.+)$/i.exec(part);
-    return (
-      !!match &&
-      normalizeProcessPath(match[1], platform) === normalizedDataDir
-    );
-  });
+  const rawCommand = String(command);
+  const dataDirFlag = /(?:^|\s)(["']?)[-/]datadir=/gi;
+  let match;
+  while ((match = dataDirFlag.exec(rawCommand))) {
+    const valueStart = match.index + match[0].length;
+    for (
+      let valueEnd = valueStart + 1;
+      valueEnd <= rawCommand.length;
+      valueEnd++
+    ) {
+      if (
+        valueEnd === rawCommand.length ||
+        /\s/.test(rawCommand[valueEnd])
+      ) {
+        let value = rawCommand.slice(valueStart, valueEnd);
+        if (match[1] && value.endsWith(match[1])) {
+          value = value.slice(0, -1);
+        }
+        if (normalizeProcessPath(value, platform) === normalizedDataDir) {
+          return true;
+        }
+      }
+    }
+  }
+  return false;
 }
 
 module.exports = {

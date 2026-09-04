@@ -8,13 +8,11 @@ import installExtension, {
 // Internal
 import { isTrustedWindowUrl } from './ipc/navigationPolicy';
 import { hardenModuleWebviews } from './webviewSecurity';
-import { assetsDir } from './paths';
+import { assetsDir, isDevelopment } from './paths';
 import { updateSettingsFile } from './settings';
 import { debounced } from 'utils/universal';
 
 const port = process.env.PORT || 1212;
-const isDevelopment =
-  !app.isPackaged && process.env.NODE_ENV === 'development';
 
 export function getMainWindowUrl() {
   return isDevelopment

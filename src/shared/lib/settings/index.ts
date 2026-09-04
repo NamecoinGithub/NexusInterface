@@ -19,29 +19,40 @@ export const settingsAtom = atom((get) => ({
 
 let timerId: ReturnType<typeof setTimeout> | undefined;
 let persistedSettings = initialUserSettings;
+let persistenceQueue = Promise.resolve();
 let pendingPersistenceWaiters: Array<{
   resolve: () => void;
   reject: (error: unknown) => void;
 }> = [];
-subscribeWithPrevious(userSettingsAtom, (settings) => {
+subscribeWithPrevious(userSettingsAtom, () => {
   clearTimeout(timerId);
   timerId = setTimeout(async () => {
     const waiters = pendingPersistenceWaiters;
     pendingPersistenceWaiters = [];
-    const updates = Object.fromEntries(
-      Object.entries(settings).filter(
-        ([key, value]) => persistedSettings?.[key as SettingsKey] !== value
-      )
-    ) as PartialSettings;
-    if (Object.keys(updates).length) {
-      try {
-        await window.nexusElectron.settings.update(updates);
-        persistedSettings = { ...persistedSettings, ...updates };
-      } catch (error) {
-        console.error(error);
-        waiters.forEach(({ reject }) => reject(error));
-        return;
-      }
+    persistenceQueue = persistenceQueue
+      .catch(() => {})
+      .then(async () => {
+        let updates: PartialSettings;
+        do {
+          const latestSettings = store.get(userSettingsAtom);
+          updates = Object.fromEntries(
+            Object.entries(latestSettings).filter(
+              ([key, value]) =>
+                persistedSettings?.[key as SettingsKey] !== value
+            )
+          ) as PartialSettings;
+          if (!Object.keys(updates).length) break;
+
+          await window.nexusElectron.settings.update(updates);
+          persistedSettings = { ...persistedSettings, ...updates };
+        } while (Object.keys(updates).length);
+      });
+    try {
+      await persistenceQueue;
+    } catch (error) {
+      console.error(error);
+      waiters.forEach(({ reject }) => reject(error));
+      return;
     }
     waiters.forEach(({ resolve }) => resolve());
   }, 0);
