@@ -40,7 +40,7 @@ the isolated NEXUS v2 preload (`contextIsolation: true`, `nodeIntegration: false
 | User approval confusion (spend) | `wallet.requestSend` only navigates to wallet-owned Send review; no silent sign/broadcast |
 | Generic proxy SSRF / redirects | `proxyRequest` disabled; no generic network API in v2 |
 | External URL / clipboard abuse | Capabilities are opt-in, each action uses a wallet-owned confirmation, requests are rate-limited, and URL schemes are constrained |
-| Direct module network egress | Per-module session request denial and blackhole proxy; production can load only its loopback asset prefix, development only its authorized `file:` root; WebRTC is disabled |
+| Direct module network egress | Per-module session request denial and blackhole proxy; production and development guests load only their module-scoped loopback asset prefix; `file:` requests are rejected; WebRTC disabling is requested (packaged peer-connection/STUN/TURN denial is a manual release gate) |
 
 ## NEXUS API inventory (v1 → v2)
 
@@ -109,7 +109,7 @@ manifest I/O on the critical path), so the guest's first
 - `sandbox: true` (always; not overridable via environment)
 - `webSecurity: true`
 - popups denied; permission requests denied
-- navigation limited to module origin / dev module root
+- navigation limited to the module-scoped loopback asset prefix
 - direct network requests denied per unique module session
 - external traffic blackholed by the module-session proxy
 - WebRTC disabling requested for module guests; packaged-Electron peer-connection
@@ -153,7 +153,10 @@ outcome, reason, timestamp. No PINs, credentials, or raw secret payloads.
 - `src/main/ipc/moduleApiV2.js` — runtime contract
 - `src/shared/modules/nexusApiV2.ts` — TypeScript contract
 - `src/main/webviewSecurity.js` — attach hardening
+- `src/main/ipc/moduleNetworkPolicy.js` — loopback-prefix request/proxy policy
 - `src/main/fileServer.js` — static module assets
 - `src/shared/lib/modules/webview.tsx` — host UI relay
 - `fixtures/modules/*` — smoke + malicious fixtures
 - `test/security/module-webview-isolation.test.js`
+- `test/security/module-network-policy.test.js`
+- Diagrams: `docs/security/Diagrams/`

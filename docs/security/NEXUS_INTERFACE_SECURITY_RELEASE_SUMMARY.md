@@ -33,7 +33,7 @@ hardening work together with the critical post-review follow-ups.
 - **Network exposure reduction**
   - The private module asset server binds to loopback (`127.0.0.1`) instead of broader interfaces.
   - Every module receives a unique session partition with deny-by-default request filtering and a blackhole proxy.
-  - Production modules can load only their assigned loopback asset prefix; development modules can load only their authorized local root.
+  - Production and development modules can load only their assigned module-scoped loopback asset prefix; `file:` navigation and requests are rejected.
   - WebRTC disabling is requested for module guests; packaged-Electron
     peer-connection and STUN/TURN denial remains a manual release gate.
 
@@ -94,7 +94,7 @@ This tradeoff is intentional: Windows directory installs are rejected rather tha
   - trusted main-window navigation, popup, CSP, and IPC sender policy,
   - Core endpoint/parameter allowlisting and Developer-mode Terminal policy,
   - lifecycle serialization, rejection recovery, and Windows process matching,
-  - module capability defaults, confirmation/rate-limit policy, and network denial,
+  - module capability defaults, confirmation/rate-limit policy, and network denial for HTTP(S)/WebSocket/loopback-prefix policy (`file:` rejected; WebRTC remains a manual gate),
   - same-name concurrent installs,
   - different-name concurrent installs,
   - overwrite rollback,

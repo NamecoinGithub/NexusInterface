@@ -122,8 +122,9 @@ If omitted, the default set grants `wallet.context`, `ui.notify`, `ui.confirm`,
 capabilities are rejected.
 
 Module WebViews cannot access the Internet directly. Both production and
-development module sessions are restricted to their authorized local assets;
-network access must use a separately reviewed broker capability.
+development module sessions load only through their module-scoped loopback
+asset prefix (`file:` requests are rejected); network access must use a
+separately reviewed broker capability.
 
 ## Bundling your own UI
 

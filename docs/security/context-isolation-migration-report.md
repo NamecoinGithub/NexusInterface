@@ -127,10 +127,12 @@ Core RPC, generic networking, raw Electron, or Node access.
 External-link opening and clipboard writes are opt-in manifest capabilities.
 Each action receives a wallet-owned confirmation and a per-module-session rate
 limit. Unique module session partitions deny non-local requests, use a
-blackhole proxy for external traffic, and disable WebRTC; production modules
-can load only their assigned loopback asset path, and development modules only
-their authorized local root. Packaged-Electron WebRTC denial remains a manual
-release gate until the module-partition control is validated end to end.
+blackhole proxy for external traffic, and request WebRTC disabling; production
+and development modules load only through their assigned module-scoped loopback
+asset prefix (`getModuleEntry` returns the loopback file-server URL in both
+modes), and the network policy rejects `file:` requests. Packaged-Electron
+WebRTC denial remains a manual release gate until the module-partition control
+is validated end to end.
 
 ### 8. Core lifecycle and bootstrap made data-safe
 
@@ -213,4 +215,4 @@ Security tests now include:
 - Bootstrap reports its disabled status without modifying Core data
 - Production and development NEXUS v2 module install/launch
 - Module external-link/clipboard confirmation and rate-limit behavior
-- Module network denial for HTTP(S), WebSocket, and WebRTC paths
+- Module network denial for HTTP(S) and WebSocket paths (packaged-Electron WebRTC/STUN/TURN denial remains a manual release gate)

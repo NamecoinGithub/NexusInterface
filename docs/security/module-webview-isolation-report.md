@@ -43,7 +43,8 @@ Automated (see `npm run test:security`):
 - Preload bridge shape (no React/ipc export to page)
 - File server allowlisting / path rules (static review)
 - Per-session network denial / proxy policy for production and development
-  modules
+  modules (shared module-scoped loopback asset prefix; `file:` rejected).
+  Packaged-Electron WebRTC/STUN/TURN denial remains a manual release gate.
 - Renderer boundary still forbids Node imports outside main/preload
 - Malicious fixture static checks
 
