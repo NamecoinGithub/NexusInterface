@@ -187,7 +187,6 @@ test('module webview hardening enforces isolation preferences', () => {
   assert.match(security, /setPermissionCheckHandler/);
   assert.match(security, /webRequest\.onBeforeRequest/);
   assert.match(security, /setProxy/);
-  assert.match(security, /disableBlinkFeatures\s*=\s*['"]WebRTC['"]/);
   assert.doesNotMatch(security, /contextIsolation\s*=\s*false/);
   // Guest identity is loaded during entry authorization; registration is sync.
   assert.match(broker, /export async function loadModuleGuestIdentity/);

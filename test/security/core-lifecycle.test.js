@@ -60,6 +60,29 @@ test('Core lifecycle coordinator serializes operations and releases after failur
   assert.equal(coordinator.getActiveOperation(), null);
 });
 
+test('Core lifecycle shutdown rejects operations queued after shutdown', async () => {
+  const coordinator = createCoreLifecycleCoordinator();
+  const events = [];
+  let releaseFirst;
+  const firstGate = new Promise((resolve) => {
+    releaseFirst = resolve;
+  });
+
+  const first = coordinator.run('start', () => firstGate);
+  const shutdown = coordinator.shutdown(async () => {
+    events.push('shutdown');
+  });
+  await assert.rejects(
+    coordinator.run('restart', () => events.push('restart')),
+    /shutting down/
+  );
+
+  releaseFirst();
+  await first;
+  await shutdown;
+  assert.deepEqual(events, ['shutdown']);
+});
+
 test('Core datadir matching handles quoted values and Windows case differences', () => {
   assert.deepEqual(
     splitCommandParts(
@@ -91,6 +114,7 @@ test('Core datadir matching handles quoted values and Windows case differences',
 
 test('all destructive Core operations use the lifecycle coordinator', () => {
   const main = read('src', 'main', 'main.js');
+  const core = read('src', 'main', 'core.js');
   const coreRpcRegistry = read('src', 'main', 'ipc', 'coreRpcRegistry.js');
   const rendererCore = read('src', 'shared', 'lib', 'core.ts');
   const coreSettings = read(
@@ -108,13 +132,13 @@ test('all destructive Core operations use the lifecycle coordinator', () => {
     'kill',
     'resync-lite',
     'bootstrap',
-    'shutdown',
   ]) {
     assert.match(
       main,
       new RegExp(`coreLifecycle\\s*\\.run\\(\\s*['"]${label}['"]`)
     );
   }
+  assert.match(main, /coreLifecycle\s*\.shutdown\(/);
   assert.match(rendererCore, /nexusElectron\.core\.stop\(\)/);
   assert.match(rendererCore, /nexusElectron\.core\.restart\(\)/);
   assert.match(
@@ -126,6 +150,10 @@ test('all destructive Core operations use the lifecycle coordinator', () => {
   assert.doesNotMatch(
     coreSettings,
     /stopCore\(\)[\s\S]*resyncLiteDatabase\(\)[\s\S]*startCore\(\)/
+  );
+  assert.match(
+    core,
+    /const stopResult = await stopEmbeddedCore\(\)[\s\S]*await startConfiguredCore\(\)/
   );
 });
 

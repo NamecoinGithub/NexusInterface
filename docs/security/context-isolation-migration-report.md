@@ -129,7 +129,8 @@ Each action receives a wallet-owned confirmation and a per-module-session rate
 limit. Unique module session partitions deny non-local requests, use a
 blackhole proxy for external traffic, and disable WebRTC; production modules
 can load only their assigned loopback asset path, and development modules only
-their authorized local root.
+their authorized local root. Packaged-Electron WebRTC denial remains a manual
+release gate until the module-partition control is validated end to end.
 
 ### 8. Core lifecycle and bootstrap made data-safe
 
@@ -175,6 +176,7 @@ remain a manual release gate.
 | Terminal URL/CLI console | Advanced Developer-mode exception | Main-process policy requires persisted Developer mode; ordinary UI uses registered endpoints |
 | Interactive packaged GUI/Core matrix | Manual release gate | CI verifies unpacked packaging, but display and controlled Core fixtures are still required |
 | Real-module compatibility | Manual release gate | At least one production NEXUS v2 module must be exercised before a release claim |
+| Module WebRTC denial | Manual release gate | Verify a module guest cannot create a peer connection or emit STUN/TURN traffic without changing the trusted renderer |
 
 ## Test evidence
 

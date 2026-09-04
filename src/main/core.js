@@ -841,14 +841,11 @@ export async function resyncLiteDatabase() {
     );
   }
 
-  const shouldRestartCore = !!processState.managedPid;
-  if (shouldRestartCore) {
-    const stopResult = await stopEmbeddedCore();
-    if (!stopResult?.stopped) {
-      throw new Error(
-        'Lite database resync refused because Core shutdown was not confirmed'
-      );
-    }
+  const stopResult = await stopEmbeddedCore();
+  if (!stopResult?.stopped) {
+    throw new Error(
+      'Lite database resync refused because Core shutdown was not confirmed'
+    );
   }
 
   let dataError;
@@ -862,12 +859,10 @@ export async function resyncLiteDatabase() {
   }
 
   let restartError;
-  if (shouldRestartCore) {
-    try {
-      await startConfiguredCore();
-    } catch (error) {
-      restartError = error;
-    }
+  try {
+    await startConfiguredCore();
+  } catch (error) {
+    restartError = error;
   }
 
   if (dataError) {
@@ -879,7 +874,7 @@ export async function resyncLiteDatabase() {
     throw dataError;
   }
   if (restartError) throw restartError;
-  return { removed: true, restarted: shouldRestartCore };
+  return { removed: true, restarted: true };
 }
 
 /**

@@ -190,7 +190,11 @@ test('main process emits structured Core lifecycle diagnostics', () => {
   assert.match(core, /core\.api\.ready|core\.api\.wait\.timeout/);
   assert.match(coreRpc, /core\.probe\.begin|core\.probe\.failed|core\.probe\.ok/);
   assert.match(coreRpc, /summarizeConfig/);
-  assert.match(coreRpc, /endpoint:\s*redactSensitiveText\(endpoint\)/);
+  assert.match(
+    coreRpc,
+    /endpoint:\s*redactSensitiveText\(endpoint\.split\('\?'\)\[0\]\)/
+  );
+  assert.match(coreRpc, /message:\s*redactSensitiveText\(message\)/);
   assert.match(main, /ipc\.core\.enter/);
   assert.match(main, /ipc\.core\.exit/);
   assert.match(main, /CORE_TRACE_CHANNELS/);

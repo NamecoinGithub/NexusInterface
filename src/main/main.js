@@ -76,6 +76,7 @@ import {
   getRendererSettings,
   getManagedPath,
   loadTheme,
+  loadSettingsFromFile,
   readAddressBook,
   saveTheme,
   updateSettingsFile,
@@ -111,6 +112,20 @@ let mainWindow;
 global.forceQuit = false;
 const coreLifecycle = createCoreLifecycleCoordinator();
 const coreRpcSessionPolicy = createCoreRpcSessionPolicy();
+const CORE_TARGET_SETTINGS = new Set([
+  'coreDataDir',
+  'embeddedCoreUseNonSSL',
+  'embeddedCoreApiPort',
+  'embeddedCoreApiPortSSL',
+  'manualDaemon',
+  'manualDaemonIP',
+  'manualDaemonApiIP',
+  'manualDaemonApiSSL',
+  'manualDaemonApiUser',
+  'manualDaemonApiPassword',
+  'manualDaemonApiPort',
+  'manualDaemonApiPortSSL',
+]);
 // Guards against re-entrant Core shutdown during quit/exit (IPC + before-quit).
 let embeddedCoreShutdownPromise = null;
 // Once Core cleanup finished, allow Electron to complete quit/exit/install.
@@ -124,7 +139,7 @@ log.initialize();
 async function ensureEmbeddedCoreStopped() {
   if (!embeddedCoreShutdownPromise) {
     embeddedCoreShutdownPromise = coreLifecycle
-      .run('shutdown', () => stopEmbeddedCore())
+      .shutdown(() => stopEmbeddedCore())
       .catch((error) => {
         log.warn(
           `Core Manager: shutdown during app quit failed: ${
@@ -143,6 +158,7 @@ async function shutdownEmbeddedCoreAndAllowQuit() {
   if (!result?.stopped && result?.reason !== 'manual-daemon') {
     global.forceQuit = false;
     embeddedCoreShutdownPromise = null;
+    coreLifecycle.cancelShutdown();
     throw new Error('Nexus Core shutdown could not be confirmed');
   }
   allowingFinalQuit = true;
@@ -792,8 +808,14 @@ registerOperation(
     return validated;
   },
   async (updates) => {
+    const previousSettings = loadSettingsFromFile();
+    const coreTargetChanged = Object.keys(updates).some(
+      (key) =>
+        CORE_TARGET_SETTINGS.has(key) && updates[key] !== previousSettings[key]
+    );
     updateSettingsFile(updates);
     clearCoreConfigCache();
+    if (coreTargetChanged) coreRpcSessionPolicy.reset();
     return getRendererSettings();
   }
 );
@@ -852,14 +874,23 @@ registerOperation(CHANNELS.core.restart, undefined, async () =>
     if (!result?.stopped && result?.reason !== 'manual-daemon') {
       throw new Error('Nexus Core shutdown could not be confirmed');
     }
+    if (result?.stopped) coreRpcSessionPolicy.reset();
     return startConfiguredCore();
   })
 );
 registerOperation(CHANNELS.core.stop, undefined, async () =>
-  coreLifecycle.run('stop', () => stopEmbeddedCore())
+  coreLifecycle.run('stop', async () => {
+    const result = await stopEmbeddedCore();
+    if (result?.stopped) coreRpcSessionPolicy.reset();
+    return result;
+  })
 );
 registerOperation(CHANNELS.core.kill, undefined, async () =>
-  coreLifecycle.run('kill', () => killCoreProcess())
+  coreLifecycle.run('kill', async () => {
+    const killed = await killCoreProcess();
+    if (killed) coreRpcSessionPolicy.reset();
+    return killed;
+  })
 );
 registerOperation(
   CHANNELS.core.resyncLiteDatabase,
@@ -869,7 +900,14 @@ registerOperation(
     }
     return undefined;
   },
-  async () => coreLifecycle.run('resync-lite', () => resyncLiteDatabase())
+  async () =>
+    coreLifecycle.run('resync-lite', async () => {
+      try {
+        return await resyncLiteDatabase();
+      } finally {
+        coreRpcSessionPolicy.reset();
+      }
+    })
 );
 registerOperation(
   CHANNELS.core.subscribeOutput,

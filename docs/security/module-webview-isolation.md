@@ -112,7 +112,8 @@ manifest I/O on the critical path), so the guest's first
 - navigation limited to module origin / dev module root
 - direct network requests denied per unique module session
 - external traffic blackholed by the module-session proxy
-- WebRTC disabled for module guests
+- WebRTC disabling requested for module guests; packaged-Electron peer-connection
+  and STUN/TURN denial is a manual release gate
 
 ### File server
 

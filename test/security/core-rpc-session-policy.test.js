@@ -89,3 +89,20 @@ test('session lists reconcile stale main-owned sessions', () => {
     params: undefined,
   });
 });
+
+test('reset clears the main-owned session when the Core instance changes', () => {
+  const policy = createCoreRpcSessionPolicy();
+  policy.observe(
+    {
+      endpoint: 'sessions/create/local',
+      params: { username: 'alice', password: 'secret', pin: '1234' },
+    },
+    { session: 'stale-session-01' }
+  );
+
+  policy.reset();
+  assert.deepEqual(policy.authorize({ endpoint: 'finance/get/balances' }), {
+    endpoint: 'finance/get/balances',
+    params: undefined,
+  });
+});

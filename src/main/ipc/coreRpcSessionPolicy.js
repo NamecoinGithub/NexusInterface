@@ -10,6 +10,10 @@ function createCoreRpcSessionPolicy() {
   let activeSession = null;
 
   return {
+    reset() {
+      activeSession = null;
+    },
+
     authorize(request) {
       const params = request.params ? { ...request.params } : undefined;
       if (SESSION_OVERRIDE_ENDPOINTS.has(request.endpoint)) {

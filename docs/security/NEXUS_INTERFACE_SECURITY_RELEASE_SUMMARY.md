@@ -34,7 +34,8 @@ hardening work together with the critical post-review follow-ups.
   - The private module asset server binds to loopback (`127.0.0.1`) instead of broader interfaces.
   - Every module receives a unique session partition with deny-by-default request filtering and a blackhole proxy.
   - Production modules can load only their assigned loopback asset prefix; development modules can load only their authorized local root.
-  - WebRTC is disabled in module guests.
+  - WebRTC disabling is requested for module guests; packaged-Electron
+    peer-connection and STUN/TURN denial remains a manual release gate.
 
 - **Bootstrap fails closed**
   - Unauthenticated bootstrap download/extraction is disabled.
