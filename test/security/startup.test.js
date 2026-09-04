@@ -52,6 +52,7 @@ test('window startup configuration keeps wallet and keyboard renderers isolated'
   assert.match(renderer, /will-navigate/);
   assert.match(renderer, /will-redirect/);
   assert.doesNotMatch(renderer, /await mainWindow\.loadURL/);
+  assert.match(renderer, /mainWindow\.loadURL\(htmlPath\)\.catch/);
   assert.doesNotMatch(renderer, /await installExtensions/);
   assert.match(renderer, /additionalArguments:[\s\S]*--nexus-development/);
   assert.match(main, /mainWindow = createWindow\(settings\)/);
@@ -254,6 +255,10 @@ test('main process emits structured Core lifecycle diagnostics', () => {
   assert.match(main, /ipc\.core\.enter/);
   assert.match(main, /ipc\.core\.exit/);
   assert.match(main, /CORE_TRACE_CHANNELS/);
+  assert.match(
+    main,
+    /endpoint = assertAllowedCoreRpcEndpoint\(request\.endpoint\)/
+  );
   assert.match(
     main,
     /const message = redactSensitiveText\([\s\S]*log\.warn\('ipc\.core\.exit'/

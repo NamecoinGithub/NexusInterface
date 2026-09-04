@@ -40,6 +40,7 @@ import {
   CHANNELS,
   EVENTS,
   assertBoolean,
+  assertAllowedCoreRpcEndpoint,
   assertExternalUrl,
   assertRecord,
   assertSafeModuleName,
@@ -529,16 +530,19 @@ function registerOperation(channel, validateRequest, operation) {
     if (!isMainWindowSender(event)) return senderError();
     const traceCore = CORE_TRACE_CHANNELS.has(channel);
     if (traceCore) {
+      let endpoint;
+      if (channel === CHANNELS.coreRpc.call && request?.endpoint) {
+        try {
+          endpoint = assertAllowedCoreRpcEndpoint(request.endpoint);
+        } catch {
+          endpoint = undefined;
+        }
+      } else if (typeof request === 'string') {
+        endpoint = request.split('?')[0];
+      }
       log.info('ipc.core.enter', {
         channel,
-        // Never log credentials or full RPC params — endpoint only when present.
-        // For string requests (call-by-url), log only the query-free relative path.
-        endpoint:
-          request && typeof request === 'object'
-            ? request.endpoint
-            : typeof request === 'string'
-            ? request.split('?')[0]
-            : undefined,
+        endpoint,
       });
     }
     try {
@@ -918,11 +922,9 @@ registerOperation(
   },
   async () =>
     coreLifecycle.run('resync-lite', async () => {
-      try {
-        return await resyncLiteDatabase();
-      } finally {
-        coreRpcSessionPolicy.reset();
-      }
+      return resyncLiteDatabase({
+        onCoreStopped: () => coreRpcSessionPolicy.reset(),
+      });
     })
 );
 registerOperation(

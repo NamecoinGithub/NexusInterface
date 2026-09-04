@@ -126,7 +126,9 @@ function createCoreRpcSessionPolicy() {
         (!explicitSession || explicitSession === activeSession)
       ) {
         activeSession = null;
+        latestSessionSelection += 1;
         sessionRevision += 1;
+        pendingSessionSelections.clear();
       }
     },
 

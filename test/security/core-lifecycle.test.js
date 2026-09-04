@@ -187,6 +187,11 @@ test('all destructive Core operations use the lifecycle coordinator', () => {
     main,
     /coreLifecycle\.run\('start',[\s\S]*startConfiguredCore\(\)[\s\S]*if \(result\?\.started\) coreRpcSessionPolicy\.reset\(\)/
   );
+  assert.match(
+    main,
+    /resyncLiteDatabase\(\{\s*onCoreStopped:\s*\(\) => coreRpcSessionPolicy\.reset\(\)/
+  );
+  assert.match(core, /if \(onCoreStopped\) onCoreStopped\(\)/);
 });
 
 test('bootstrap fails closed until signed-manifest verification exists', async () => {

@@ -98,7 +98,9 @@ export function createWindow(settings) {
   hardenModuleWebviews(mainWindow);
 
   // Load the index.html into the new browser window
-  mainWindow.loadURL(htmlPath);
+  mainWindow.loadURL(htmlPath).catch((err) => {
+    console.error('Failed to load main window', err);
+  });
 
   // Show the window only once the contents finish loading, then check for updates
   mainWindow.webContents.on('did-finish-load', function () {

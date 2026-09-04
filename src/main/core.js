@@ -859,7 +859,7 @@ export async function startConfiguredCore() {
   };
 }
 
-export async function resyncLiteDatabase() {
+export async function resyncLiteDatabase({ onCoreStopped } = {}) {
   const settings = loadSettingsFromFile();
   if (settings.manualDaemon || !settings.liteMode) {
     throw new Error('Lite database resync is only available for embedded lite mode');
@@ -878,6 +878,7 @@ export async function resyncLiteDatabase() {
       'Lite database resync refused because Core shutdown was not confirmed'
     );
   }
+  if (onCoreStopped) onCoreStopped();
 
   let dataError;
   try {

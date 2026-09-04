@@ -95,6 +95,33 @@ test('concurrent terminations independently clear the active session', () => {
   });
 });
 
+test('termination prevents in-flight selection responses from restoring a session', () => {
+  const policy = createCoreRpcSessionPolicy();
+  policy.observe(
+    {
+      endpoint: 'sessions/create/local',
+      params: { username: 'alice', password: 'secret', pin: '1234' },
+    },
+    { session: 'active-session-01' }
+  );
+  const statusRequest = policy.authorize({
+    endpoint: 'sessions/status/local',
+    params: { session: 'active-session-01' },
+  });
+  const terminationRequest = policy.authorize({
+    endpoint: 'sessions/terminate/local',
+    params: { session: 'active-session-01' },
+  });
+
+  policy.observe(terminationRequest, {});
+  policy.observe(statusRequest, { username: 'alice' });
+
+  assert.deepEqual(policy.authorize({ endpoint: 'finance/get/balances' }), {
+    endpoint: 'finance/get/balances',
+    params: undefined,
+  });
+});
+
 test('a stale status response cannot replace a newly created session', () => {
   const policy = createCoreRpcSessionPolicy();
   const statusRequest = policy.authorize({
