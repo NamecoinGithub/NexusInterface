@@ -257,6 +257,7 @@ test('file server uses per-module allowlists and security headers', () => {
   assert.match(server, /assertSafeModuleName/);
   assert.match(server, /resolveAssetAbsolute/);
   assert.match(server, /realpathSync/);
+  assert.doesNotMatch(server, /authorizedAssets\.clear\(\)/);
   assert.match(server, /isRateLimited/);
   assert.match(server, /RATE_LIMIT_MAX/);
   // Must not bind all interfaces; module assets are local-only.

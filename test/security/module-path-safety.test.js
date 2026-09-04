@@ -96,8 +96,13 @@ test('module asset and entry resolvers reject symlinks and realpath escapes', ()
     'authorized files must come from the on-disk manifest in both modes'
   );
   assert.match(
+    moduleFiles,
+    /validateModuleFilePaths/,
+    'the authoritative on-disk manifest must enforce the module file limit'
+  );
+  assert.match(
     read('src', 'main', 'modules.js'),
-    /nxsPackageDevSchema[\s\S]*files:\s*z\.array/,
+    /nxsPackageDevSchema[\s\S]*files:\s*z\s*\.array/,
     'development manifests must declare a validated file list'
   );
   assert.match(
@@ -1067,6 +1072,10 @@ test('in-flight install staging survives concurrent inventory cleanup', async ()
 test('readRegularFileNoFollow fails closed without fd-relative or path fallback', async () => {
   const safeCopySource = read('src', 'main', 'ipc', 'safeCopy.js');
   assert.match(safeCopySource, /allowPathFallback/);
+  assert.match(
+    safeCopySource,
+    /concreteChildPath = path\.join\(concreteParentPath, segment\)/
+  );
   assert.match(
     safeCopySource,
     /descriptor-relative opens or an app-owned trusted root/

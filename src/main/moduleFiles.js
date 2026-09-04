@@ -1,7 +1,11 @@
 import fs from 'fs/promises';
 import path from 'path';
 
-import { assertRelativeModulePath, assertSafeModuleName } from './ipc/contracts';
+import {
+  assertRelativeModulePath,
+  assertSafeModuleName,
+  validateModuleFiles as validateModuleFilePaths,
+} from './ipc/contracts';
 import { modulesDir } from './paths';
 import { loadSettingsFromFile } from './settings';
 
@@ -121,10 +125,9 @@ export async function validateModuleFiles(name) {
   const { root, development } = await resolveModuleRoot(name);
   const allowSymlink = development && developmentAllowsSymlinks();
   const manifest = development ? 'nxs_package.dev.json' : 'nxs_package.json';
-  const moduleFiles = (await readJson(path.join(root, manifest)))?.files;
-  if (!Array.isArray(moduleFiles) || moduleFiles.length === 0) {
-    throw new Error('Module files must be a non-empty array');
-  }
+  const moduleFiles = validateModuleFilePaths(
+    (await readJson(path.join(root, manifest)))?.files
+  );
   const realRoot = await fs.realpath(root);
   return Promise.all(
     moduleFiles.map(async (file) => {

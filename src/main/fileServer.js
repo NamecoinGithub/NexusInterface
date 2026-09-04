@@ -140,21 +140,17 @@ export function getDomain() {
  * @param {{ path: string, absolutePath: string, root: string }[]} files
  */
 export function serveModuleFiles(moduleName, files) {
-  /** @type {Map<string, Map<string, string>>} */
-  const next = new Map();
   const safeModuleName = assertSafeModuleName(moduleName);
+  /** @type {Map<string, string>} */
+  const next = new Map();
 
   for (const file of files || []) {
     const relative = normalizeRelativeFile(file.path);
     const absolute = resolveAssetAbsolute(safeModuleName, relative, file);
-    if (!next.has(safeModuleName)) next.set(safeModuleName, new Map());
-    next.get(safeModuleName).set(relative, absolute);
+    next.set(relative, absolute);
   }
 
-  authorizedAssets.clear();
-  for (const [moduleName, map] of next) {
-    authorizedAssets.set(moduleName, map);
-  }
+  authorizedAssets.set(safeModuleName, next);
 }
 
 export function getAllowedModuleFiles(moduleName) {

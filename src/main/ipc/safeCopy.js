@@ -358,6 +358,7 @@ async function openRegularFileNoFollowFdRelative(
     throw err;
   }
   try {
+    let concreteParentPath = resolvedRoot;
     for (let index = 0; index < segments.length; index += 1) {
       const segment = segments[index];
       const isLast = index === segments.length - 1;
@@ -366,7 +367,8 @@ async function openRegularFileNoFollowFdRelative(
         fs.constants.O_NOFOLLOW |
         (isLast ? 0 : fs.constants.O_DIRECTORY);
       const childPath = path.join(directoryFdPath(dirHandle.fd), segment);
-      let openedPath = childPath;
+      const concreteChildPath = path.join(concreteParentPath, segment);
+      let openedPath = concreteChildPath;
       let nextHandle;
       try {
         nextHandle = await fsp.open(childPath, flags);
@@ -378,7 +380,7 @@ async function openRegularFileNoFollowFdRelative(
         ) {
           const resolvedParent = await resolveOpenedPath(
             dirHandle,
-            directoryFdPath(dirHandle.fd)
+            concreteParentPath
           );
           const fallbackChildPath = path.join(resolvedParent, segment);
           try {
@@ -412,6 +414,7 @@ async function openRegularFileNoFollowFdRelative(
       const previousHandle = dirHandle;
       dirHandle = nextHandle;
       await previousHandle.close().catch(() => {});
+      concreteParentPath = openedPath;
 
       if (isLast) {
         const { stat } = await assertOpenedFileInsideRoot(
