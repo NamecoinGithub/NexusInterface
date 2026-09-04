@@ -62,9 +62,10 @@ function isRateLimited(req) {
   return false;
 }
 
-function resolveAssetAbsolute(moduleName, relativeFile) {
-  const moduleRoot = path.resolve(modulesDir, moduleName);
-  const candidate = path.resolve(moduleRoot, relativeFile);
+function resolveAssetAbsolute(moduleName, relativeFile, resolvedFile) {
+  const moduleRoot = resolvedFile?.root || path.resolve(modulesDir, moduleName);
+  const candidate =
+    resolvedFile?.absolutePath || path.resolve(moduleRoot, relativeFile);
   if (candidate !== moduleRoot && !candidate.startsWith(`${moduleRoot}${sep}`)) {
     throw new Error('Module file escapes module root');
   }
@@ -135,21 +136,19 @@ export function getDomain() {
  * Authorize a module's static files for serving.
  * Computes and stores absolute real paths up front so request handlers never
  * build filesystem paths from request input.
- * @param {string[]} files paths like `${moduleName}/${relativeFile}`
+ * @param {string} moduleName validated module name
+ * @param {{ path: string, absolutePath: string, root: string }[]} files
  */
-export function serveModuleFiles(files) {
+export function serveModuleFiles(moduleName, files) {
   /** @type {Map<string, Map<string, string>>} */
   const next = new Map();
+  const safeModuleName = assertSafeModuleName(moduleName);
 
   for (const file of files || []) {
-    const normalized = normalize(String(file)).replace(/\\/g, '/');
-    const parts = normalized.replace(/^\/+/, '').split('/');
-    if (parts.length < 2) continue;
-    const moduleName = assertSafeModuleName(parts[0]);
-    const relative = normalizeRelativeFile(parts.slice(1).join('/'));
-    const absolute = resolveAssetAbsolute(moduleName, relative);
-    if (!next.has(moduleName)) next.set(moduleName, new Map());
-    next.get(moduleName).set(relative, absolute);
+    const relative = normalizeRelativeFile(file.path);
+    const absolute = resolveAssetAbsolute(safeModuleName, relative, file);
+    if (!next.has(safeModuleName)) next.set(safeModuleName, new Map());
+    next.get(safeModuleName).set(relative, absolute);
   }
 
   authorizedAssets.clear();

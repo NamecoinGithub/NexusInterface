@@ -1,10 +1,6 @@
 'use strict';
 
 const assert = require('node:assert/strict');
-const fs = require('node:fs');
-const os = require('node:os');
-const path = require('node:path');
-const { pathToFileURL } = require('node:url');
 const test = require('node:test');
 
 const {
@@ -39,65 +35,18 @@ test('production module sessions can request only their local module assets', ()
   }
 });
 
-test('development module sessions can request only files under their root', (t) => {
-  const temporaryRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'nexus-module-'));
-  t.after(() => fs.rmSync(temporaryRoot, { recursive: true, force: true }));
-  const root = path.join(temporaryRoot, 'module');
-  fs.mkdirSync(path.join(root, 'assets'), { recursive: true });
-  fs.writeFileSync(path.join(root, 'index.html'), '');
-  fs.writeFileSync(path.join(root, 'assets', 'app.js'), '');
-  const policy = { moduleName: 'demo', development: true, root };
-
+test('development module sessions use only their loopback-served assets', () => {
+  const policy = { moduleName: 'demo', development: true };
   assert.equal(
-    isAllowedModuleRequest(
-      pathToFileURL(path.join(root, 'index.html')).toString(),
-      policy,
-      domain
-    ),
+    isAllowedModuleRequest(`${domain}/modules/demo/index.html`, policy, domain),
     true
   );
   assert.equal(
-    isAllowedModuleRequest(
-      pathToFileURL(path.join(root, 'assets', 'app.js')).toString(),
-      policy,
-      domain
-    ),
-    true
-  );
-  assert.equal(
-    isAllowedModuleRequest(
-      pathToFileURL(path.resolve(root, '..', 'other', 'secret')).toString(),
-      policy,
-      domain
-    ),
+    isAllowedModuleRequest('file:///tmp/demo/index.html', policy, domain),
     false
   );
   assert.equal(
-    isAllowedModuleRequest('https://example.com/collect', policy, domain),
-    false
-  );
-});
-
-test('development module requests cannot escape through symlinks', (t) => {
-  const temporaryRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'nexus-module-'));
-  t.after(() => fs.rmSync(temporaryRoot, { recursive: true, force: true }));
-  const root = path.join(temporaryRoot, 'module');
-  const outside = path.join(temporaryRoot, 'outside');
-  fs.mkdirSync(root);
-  fs.mkdirSync(outside);
-  fs.writeFileSync(path.join(outside, 'secret'), 'secret');
-  fs.symlinkSync(
-    outside,
-    path.join(root, 'link'),
-    process.platform === 'win32' ? 'junction' : 'dir'
-  );
-
-  assert.equal(
-    isAllowedModuleRequest(
-      pathToFileURL(path.join(root, 'link', 'secret')).toString(),
-      { moduleName: 'demo', development: true, root },
-      domain
-    ),
+    isAllowedModuleRequest(`${domain}/modules/other/index.html`, policy, domain),
     false
   );
 });
@@ -115,5 +64,5 @@ test('module proxy blackholes external traffic and bypasses only production asse
     { moduleName: 'demo', development: true },
     domain
   );
-  assert.equal(development.proxyBypassRules, '<-loopback>');
+  assert.match(development.proxyBypassRules, /127\.0\.0\.1:43123/);
 });

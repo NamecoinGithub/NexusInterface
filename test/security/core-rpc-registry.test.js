@@ -116,6 +116,55 @@ test('malformed PIN, session, recipient, and query fields are rejected', () => {
     ]),
     [{ address_to: 'address01', amount: 1.5, reference: '42' }]
   );
+  for (const reference of ['abc', '-1', '1.5', '18446744073709551616']) {
+    assert.throws(
+      () =>
+        validateRecipients([
+          { address_to: 'address01', amount: 1, reference },
+        ]),
+      /unsigned 64-bit integer/
+    );
+  }
+  assert.equal(
+    validateRecipients([
+      {
+        address_to: 'address01',
+        amount: 1,
+        reference: '18446744073709551615',
+      },
+    ])[0].reference,
+    '18446744073709551615'
+  );
+  assert.throws(
+    () =>
+      validateRecipients(
+        Array.from({ length: 100 }, () => ({
+          address_to: 'address01',
+          amount: 1,
+        }))
+      ),
+    /between 1 and 99/
+  );
+  for (const endpoint of ['finance/debit/any', 'finance/debit/token']) {
+    const params = {
+      pin: '1234',
+      from: 'address01',
+      recipients: [{ address_to: 'address02', amount: 1 }],
+      reference: '18446744073709551615',
+    };
+    assert.equal(
+      validateCoreRpcRequest({ endpoint, params }).params.reference,
+      params.reference
+    );
+    assert.throws(
+      () =>
+        validateCoreRpcRequest({
+          endpoint,
+          params: { ...params, reference: '18446744073709551616' },
+        }),
+      /unsigned 64-bit integer/
+    );
+  }
 
   assert.throws(
     () =>
@@ -348,12 +397,22 @@ test('bounded numeric strings from form controls are normalized', () => {
       endpoint: 'finance/create/token',
       params: {
         pin: '1234',
-        supply: '1000.5',
+        supply: '1000',
         decimals: '2',
       },
     }).params,
-    { pin: '1234', supply: 1000.5, decimals: 2 }
+    { pin: '1234', supply: 1000, decimals: 2 }
   );
+  for (const supply of [0, '0', 1000.5, '1000.5']) {
+    assert.throws(
+      () =>
+        validateCoreRpcRequest({
+          endpoint: 'finance/create/token',
+          params: { pin: '1234', supply, decimals: 2 },
+        }),
+      TypeError
+    );
+  }
   assert.deepEqual(
     validateCoreRpcRequest({
       endpoint: 'assets/create/asset',

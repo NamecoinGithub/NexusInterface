@@ -175,10 +175,17 @@ export default function Staking() {
 
   const stopStaking = async () => {
     const doStop = async () => {
-      await updateSettings({ enableStaking: false });
-      UT.StopStake();
-      await restartCore();
-      showNotification(__('Restarting Core'));
+      try {
+        await updateSettings({ enableStaking: false });
+        UT.StopStake();
+        await restartCore();
+        showNotification(__('Restarting Core'));
+      } catch (err: any) {
+        openErrorDialog({
+          message: __('Error'),
+          note: err?.message || err,
+        });
+      }
     };
     let confirmed = false;
 

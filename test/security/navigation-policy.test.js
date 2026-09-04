@@ -42,7 +42,8 @@ test('main-window CSP is external-script-only and permits required local assets'
   assert.equal(scriptDirective, "'self'");
   const connectDirective = html.match(/connect-src\s+([^;]+)/)?.[1] || '';
   assert.equal(connectDirective, "'self'");
-  assert.match(html, /frame-src http:\/\/127\.0\.0\.1:\* file:/);
+  assert.match(html, /frame-src http:\/\/127\.0\.0\.1:\*/);
+  assert.doesNotMatch(html, /frame-src[^;]*\bfile:/);
   assert.match(html, /src="\.\/app-bootstrap\.js"/);
   assert.doesNotMatch(html, /<script(?![^>]*\bsrc=)[^>]*>/);
 });

@@ -1,6 +1,5 @@
 import { randomBytes } from 'crypto';
 import { app, session } from 'electron';
-import { fileURLToPath } from 'url';
 
 import { getDomain } from './fileServer';
 import { getModulePreloadPath } from './paths';
@@ -26,14 +25,6 @@ function moduleUrlPrefix(moduleName) {
 function isAllowedNavigation(url, policy) {
   try {
     const target = new URL(url);
-    if (policy.development) {
-      if (target.protocol !== 'file:') return false;
-      const targetPath = fileURLToPath(target);
-      return (
-        targetPath === policy.root ||
-        targetPath.startsWith(`${policy.root}${policy.separator}`)
-      );
-    }
     return target.toString().startsWith(moduleUrlPrefix(policy.moduleName));
   } catch {
     return false;

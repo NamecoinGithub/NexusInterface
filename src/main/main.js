@@ -1073,7 +1073,7 @@ registerOperation(
   },
   async ({ moduleName, files }) => {
     const validFiles = await validateModuleFiles(moduleName, files);
-    return serveModuleFiles(validFiles.map((file) => `${moduleName}/${file}`));
+    return serveModuleFiles(moduleName, validFiles);
   }
 );
 registerOperation(

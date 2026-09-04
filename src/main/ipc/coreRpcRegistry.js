@@ -34,6 +34,7 @@ const SENSITIVE_PARAM_KEYS = Object.freeze([
 
 const SENSITIVE_PARAM_KEY_SET = new Set(SENSITIVE_PARAM_KEYS);
 const MUTABLE_ASSET_RESERVED_NAMES = new Set(['pin', 'address', 'session']);
+const MAX_UINT64 = 18446744073709551615n;
 
 // Multi-user Core installs automatically attach a session id to structured
 // calls. Every registered endpoint therefore accepts an optional session.
@@ -123,6 +124,20 @@ function assertFiniteNumber(value, name, { min, max, integer = false } = {}) {
   return normalizedValue;
 }
 
+function validateUint64(value, name) {
+  if (
+    typeof value !== 'string' &&
+    (typeof value !== 'number' || !Number.isSafeInteger(value))
+  ) {
+    fail(`${name} must be an unsigned 64-bit integer`);
+  }
+  const decimal = String(value);
+  if (!/^\d+$/.test(decimal) || BigInt(decimal) > MAX_UINT64) {
+    fail(`${name} must be an unsigned 64-bit integer`);
+  }
+  return value;
+}
+
 function validatePin(value, name = 'pin') {
   // Core PINs are short secrets. Accept numeric or general strings within bounds
   // without echoing the value back in errors.
@@ -183,19 +198,10 @@ function validateRecipient(value, index) {
     }),
   };
   if (value.reference !== undefined) {
-    if (typeof value.reference === 'number') {
-      recipient.reference = assertFiniteNumber(
-        value.reference,
-        `recipients[${index}].reference`,
-        { integer: true, min: 0 }
-      );
-    } else {
-      recipient.reference = assertString(
-        value.reference,
-        `recipients[${index}].reference`,
-        { min: 0, max: 128 }
-      );
-    }
+    recipient.reference = validateUint64(
+      value.reference,
+      `recipients[${index}].reference`
+    );
   }
   return recipient;
 }
@@ -204,8 +210,8 @@ function validateRecipients(value, name = 'recipients') {
   // Wallet send UI uses an array; older docs/types sometimes show a single
   // object. Accept either and normalize to an array.
   const list = Array.isArray(value) ? value : [value];
-  if (!list.length || list.length > 100) {
-    fail(`${name} must contain between 1 and 100 recipients`);
+  if (!list.length || list.length > 99) {
+    fail(`${name} must contain between 1 and 99 recipients`);
   }
   return list.map((entry, index) => validateRecipient(entry, index));
 }
@@ -285,6 +291,8 @@ function validateField(value, name, schema) {
       return assertFiniteNumber(value, name, schema);
     case 'integer':
       return assertFiniteNumber(value, name, { ...schema, integer: true });
+    case 'uint64':
+      return validateUint64(value, name);
     case 'queryLimit':
       return assertFiniteNumber(value, name, {
         integer: true,
@@ -425,14 +433,14 @@ const CORE_RPC_ENDPOINT_REGISTRY = Object.freeze({
     pin: { type: 'pin' },
     from: { type: 'address' },
     recipients: { type: 'recipients' },
-    reference: { type: 'integer', optional: true, min: 0 },
+    reference: { type: 'uint64', optional: true },
     expires: { type: 'integer', optional: true, min: 0 },
   }),
   'finance/debit/token': defineEndpoint({
     pin: { type: 'pin' },
     from: { type: 'address' },
     recipients: { type: 'recipients' },
-    reference: { type: 'integer', optional: true, min: 0 },
+    reference: { type: 'uint64', optional: true },
     expires: { type: 'integer', optional: true, min: 0 },
   }),
   'finance/get/any': defineEndpoint({
@@ -460,7 +468,7 @@ const CORE_RPC_ENDPOINT_REGISTRY = Object.freeze({
     pin: { type: 'pin' },
     name: { type: 'name', optional: true },
     data: { type: 'primitive', optional: true, max: 4096 },
-    supply: { type: 'number', min: 0 },
+    supply: { type: 'integer', min: 1 },
     decimals: { type: 'integer', min: 0, max: 8 },
   }),
   'finance/get/stakeinfo': defineEndpoint(),

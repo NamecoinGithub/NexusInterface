@@ -1,6 +1,5 @@
 import fs from 'fs/promises';
 import path from 'path';
-import { pathToFileURL } from 'url';
 
 import { assertRelativeModulePath, assertSafeModuleName } from './ipc/contracts';
 import { modulesDir } from './paths';
@@ -110,9 +109,7 @@ export async function getModuleEntry(name, fileServerDomain) {
   const info = await readJson(packageFile);
   const entry = info?.entry || 'index.html';
   const allowSymlink = development && developmentAllowsSymlinks();
-  const entryPath = await resolveModuleFile(root, entry, { allowSymlink });
-
-  if (development) return pathToFileURL(entryPath).toString();
+  await resolveModuleFile(root, entry, { allowSymlink });
   const encodedEntry = entry
     .split(/[\\/]/)
     .map((part) => encodeURIComponent(part))
@@ -125,8 +122,8 @@ export async function validateModuleFiles(name, files) {
   const allowSymlink = development && developmentAllowsSymlinks();
   return Promise.all(
     files.map(async (file) => {
-      await resolveModuleFile(root, file, { allowSymlink });
-      return file;
+      const absolutePath = await resolveModuleFile(root, file, { allowSymlink });
+      return { path: file, absolutePath, root };
     })
   );
 }

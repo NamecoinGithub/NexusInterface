@@ -67,6 +67,12 @@ function createCoreRpcSessionPolicy() {
         return authorizedRequest;
       }
 
+      if (
+        pendingSessionSelections.size > 0 &&
+        !request.endpoint.startsWith('sessions/')
+      ) {
+        throw new Error('Core RPC blocked while session selection is pending');
+      }
       if (params) delete params.session;
       const authorizedRequest = {
         ...request,

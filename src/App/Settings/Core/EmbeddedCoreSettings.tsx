@@ -438,8 +438,12 @@ async function clearPeerConnections() {
     note: 'Nexus Core will be restarted. After that, all stored peer connections will be reset.',
   });
   if (confirmed) {
-    await updateSettings({ clearPeers: true });
-    await restartCore();
+    try {
+      await updateSettings({ clearPeers: true });
+      await restartCore();
+    } catch (err: any) {
+      openErrorDialog({ message: err && err.message });
+    }
   }
 }
 
@@ -454,8 +458,8 @@ async function resyncLiteMode() {
     ),
   });
   if (confirmed) {
-    await updateSettings({ clearPeers: true });
     try {
+      await updateSettings({ clearPeers: true });
       await resyncLiteCore();
     } catch (err: any) {
       openErrorDialog({ message: err && err.message });

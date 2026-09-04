@@ -1,8 +1,6 @@
 'use strict';
 
-const fs = require('fs');
 const path = require('path');
-const { fileURLToPath } = require('url');
 
 function isPathInside(root, candidate) {
   const relative = path.relative(path.resolve(root), path.resolve(candidate));
@@ -32,18 +30,6 @@ function isAllowedModuleRequest(url, policy, fileServerDomain) {
     return target.href === 'about:blank';
   }
 
-  if (policy.development) {
-    if (target.protocol !== 'file:') return false;
-    try {
-      return isPathInside(
-        fs.realpathSync(policy.root),
-        fs.realpathSync(fileURLToPath(target))
-      );
-    } catch {
-      return false;
-    }
-  }
-
   if (target.protocol !== 'http:') return false;
   const prefix = getProductionPrefix(policy.moduleName, fileServerDomain);
   return (
@@ -53,9 +39,7 @@ function isAllowedModuleRequest(url, policy, fileServerDomain) {
 
 function getModuleProxyConfig(policy, fileServerDomain) {
   const bypassRules = ['<-loopback>'];
-  if (!policy.development) {
-    bypassRules.push(new URL(fileServerDomain).host);
-  }
+  bypassRules.push(new URL(fileServerDomain).host);
   return {
     mode: 'fixed_servers',
     proxyRules: 'http=127.0.0.1:9;https=127.0.0.1:9',

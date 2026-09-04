@@ -63,6 +63,7 @@ test('stale session selection responses cannot replace a newer session', () => {
     endpoint: 'sessions/status/local',
     params: { session: 'older-session-01' },
   });
+
   const newerRequest = policy.authorize({
     endpoint: 'sessions/status/local',
     params: { session: 'newer-session-01' },
@@ -74,6 +75,24 @@ test('stale session selection responses cannot replace a newer session', () => {
   assert.equal(
     policy.authorize({ endpoint: 'finance/get/balances' }).params.session,
     'newer-session-01'
+  );
+});
+
+test('ordinary Core RPC calls fail closed while session selection is pending', () => {
+  const policy = createCoreRpcSessionPolicy();
+  const request = policy.authorize({
+    endpoint: 'sessions/status/local',
+    params: { session: 'selected-session-01' },
+  });
+
+  assert.throws(
+    () => policy.authorize({ endpoint: 'finance/get/balances' }),
+    /session selection is pending/
+  );
+  policy.observe(request, { username: 'alice' });
+  assert.equal(
+    policy.authorize({ endpoint: 'finance/get/balances' }).params.session,
+    'selected-session-01'
   );
 });
 
@@ -315,10 +334,10 @@ test('session polling cannot replace an in-flight newly created session', () => 
   });
 
   policy.observe(listRequest, []);
-  assert.deepEqual(policy.authorize({ endpoint: 'finance/get/balances' }), {
-    endpoint: 'finance/get/balances',
-    params: undefined,
-  });
+  assert.throws(
+    () => policy.authorize({ endpoint: 'finance/get/balances' }),
+    /session selection is pending/
+  );
 
   policy.observe(createRequest, { session: 'created-session-01' });
   assert.equal(
