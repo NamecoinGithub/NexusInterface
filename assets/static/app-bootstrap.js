@@ -6,10 +6,9 @@
     scripts.push('renderer.dev.dll.js');
   }
 
-  const port = nexusEnv.PORT || 1212;
   scripts.push(
     nexusEnv.NODE_ENV === 'development'
-      ? `http://localhost:${port}/renderer.dev.js`
+      ? '/renderer.dev.js'
       : './renderer.prod.js'
   );
 

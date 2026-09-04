@@ -89,7 +89,6 @@ function getAdditionalArgument(name) {
 const isDevelopment = getAdditionalArgument('nexus-development') === '1';
 const environment = Object.freeze({
   NODE_ENV: isDevelopment ? 'development' : 'production',
-  PORT: isDevelopment ? getAdditionalArgument('nexus-renderer-port') : '',
   platform: process.platform,
   arch: process.arch,
 });

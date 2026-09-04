@@ -74,7 +74,6 @@ export function createWindow(settings) {
           : path.resolve(__dirname, 'main_preload.prod.js'),
       additionalArguments: [
         `--nexus-development=${isDevelopment ? '1' : '0'}`,
-        `--nexus-renderer-port=${isDevelopment ? port : ''}`,
       ],
       nodeIntegration: false,
       contextIsolation: true,
