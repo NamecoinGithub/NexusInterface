@@ -15,6 +15,7 @@ import {
 import { assertAdvancedCoreParams } from './ipc/contracts';
 import {
   argvUsesDataDir,
+  commandUsesDataDir,
   normalizeProcessPath,
   splitCommandParts,
 } from './coreProcessPolicy';
@@ -462,12 +463,17 @@ async function getCoreProcessState(dataDir = null, trackedPid = null) {
           (processInfo) => processInfo.pid === walletManagedCorePid
         )
       : undefined;
+  const requiresTrackedPid = !!dataDir && /\s/.test(dataDir);
   const match = dataDir
     ? trackedManagedProcess ||
       runningProcesses.find(
         (processInfo) =>
           processInfo.argv && argvUsesDataDir(processInfo.argv, dataDir)
-      )
+      ) ||
+      (!requiresTrackedPid &&
+        runningProcesses.find((processInfo) =>
+          commandUsesDataDir(processInfo.command, dataDir)
+        ))
     : runningProcesses[0];
 
   return {
@@ -476,7 +482,10 @@ async function getCoreProcessState(dataDir = null, trackedPid = null) {
     ownershipUnknown:
       !!dataDir &&
       !match &&
-      runningProcesses.some((processInfo) => !processInfo.argv),
+      runningProcesses.some(
+        (processInfo) =>
+          requiresTrackedPid || processInfo.commandKnown === false
+      ),
     trackedPidRunning:
       trackedPid !== null &&
       runningProcesses.some((processInfo) => processInfo.pid === trackedPid),

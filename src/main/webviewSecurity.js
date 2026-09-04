@@ -17,6 +17,7 @@ import {
 const authorizedEntries = new Map();
 /** @type {Map<Electron.Session, object>} */
 const pendingPoliciesBySession = new Map();
+const pendingPolicyTimeoutMs = 30000;
 
 function moduleUrlPrefix(moduleName) {
   return `${getDomain()}/modules/${encodeURIComponent(moduleName)}/`;
@@ -100,15 +101,25 @@ export function hardenModuleWebviews(mainWindow) {
         .catch((error) => {
           console.error('Failed to set module network proxy', error);
         });
-      pendingPoliciesBySession.set(guestSession, policy);
+      const cleanupTimer = setTimeout(() => {
+        const pending = pendingPoliciesBySession.get(guestSession);
+        if (pending?.cleanupTimer !== cleanupTimer) return;
+        pendingPoliciesBySession.delete(guestSession);
+        guestSession.webRequest.onBeforeRequest(null);
+        guestSession.setProxy({ mode: 'direct' }).catch(() => {});
+      }, pendingPolicyTimeoutMs);
+      cleanupTimer.unref?.();
+      pendingPoliciesBySession.set(guestSession, { policy, cleanupTimer });
     }
   );
 }
 
 app.on('web-contents-created', (_event, contents) => {
   if (contents.getType() !== 'webview') return;
-  const policy = pendingPoliciesBySession.get(contents.session);
+  const pending = pendingPoliciesBySession.get(contents.session);
   pendingPoliciesBySession.delete(contents.session);
+  if (pending) clearTimeout(pending.cleanupTimer);
+  const policy = pending?.policy;
   if (!policy?.identity) {
     contents.close();
     return;

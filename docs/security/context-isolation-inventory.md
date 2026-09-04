@@ -78,7 +78,8 @@ opens are excluded from defaults, require an explicit manifest capability,
 show a wallet-owned confirmation for every request, and are rate-limited per
 module session. Each module receives a unique session partition whose network
 policy allows only its assigned local content, rejects other requests, uses a
-blackhole proxy, and disables WebRTC.
+blackhole proxy, and requests WebRTC suppression. Packaged peer-connection and
+STUN/TURN denial remain a manual release gate.
 
 See [module-webview-isolation.md](./module-webview-isolation.md) and
 [module-webview-isolation-report.md](./module-webview-isolation-report.md).
