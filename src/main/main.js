@@ -76,7 +76,6 @@ import {
   getRendererSettings,
   getManagedPath,
   loadTheme,
-  loadSettingsFromFile,
   readAddressBook,
   saveTheme,
   updateSettingsFile,
