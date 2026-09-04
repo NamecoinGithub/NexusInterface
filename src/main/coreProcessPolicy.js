@@ -69,10 +69,18 @@ function commandUsesDataDir(command, dataDir, platform = process.platform) {
         /\s/.test(rawCommand[valueEnd])
       ) {
         let value = rawCommand.slice(valueStart, valueEnd);
-        if (match[1] && value.endsWith(match[1])) {
+        const hasClosingQuote = match[1] && value.endsWith(match[1]);
+        if (hasClosingQuote) {
           value = value.slice(0, -1);
         }
-        if (normalizeProcessPath(value, platform) === normalizedDataDir) {
+        const hasArgumentBoundary =
+          valueEnd === rawCommand.length ||
+          hasClosingQuote ||
+          /^\s*(?:[-/]|$)/.test(rawCommand.slice(valueEnd));
+        if (
+          hasArgumentBoundary &&
+          normalizeProcessPath(value, platform) === normalizedDataDir
+        ) {
           return true;
         }
       }

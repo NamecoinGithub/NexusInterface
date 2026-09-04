@@ -112,6 +112,14 @@ test('Core datadir matching handles quoted values and Windows case differences',
   );
   assert.equal(
     commandUsesDataDir(
+      'nexus -datadir=/Users/alice/Library/Application Support/Nexus Test -verbose=3',
+      '/Users/alice/Library/Application Support/Nexus',
+      'darwin'
+    ),
+    false
+  );
+  assert.equal(
+    commandUsesDataDir(
       'nexus.exe -datadir="C:\\Users\\Bob\\Nexus Data"',
       'C:\\Users\\Alice\\Nexus Data',
       'win32'
