@@ -296,6 +296,22 @@ async function confirmModuleSideEffect(guest, method, payload) {
         `User denied ${method} for this module`
       );
     }
+    try {
+      const contents = webContents.fromId(guest.webContentsId);
+      if (
+        guestsByWebContentsId.get(guest.webContentsId) !== guest ||
+        !contents ||
+        contents.isDestroyed()
+      ) {
+        throw moduleError(
+          ERROR_CODES.UNAUTHORIZED,
+          'Module guest is no longer active'
+        );
+      }
+    } catch (error) {
+      if (error?.code) throw error;
+      throw moduleError(ERROR_CODES.UNAUTHORIZED, 'Invalid module guest');
+    }
   } finally {
     pendingSideEffectPrompts.delete(guest.webContentsId);
   }

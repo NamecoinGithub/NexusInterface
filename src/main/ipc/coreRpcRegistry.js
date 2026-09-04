@@ -33,6 +33,7 @@ const SENSITIVE_PARAM_KEYS = Object.freeze([
 ]);
 
 const SENSITIVE_PARAM_KEY_SET = new Set(SENSITIVE_PARAM_KEYS);
+const MUTABLE_ASSET_RESERVED_NAMES = new Set(['pin', 'address', 'session']);
 
 // Multi-user Core installs automatically attach a session id to structured
 // calls. Every registered endpoint therefore accepts an optional session.
@@ -225,6 +226,9 @@ function validateAssetJsonField(value, index) {
     type: assertString(value.type, `json[${index}].type`, { min: 1, max: 32 }),
     mutable: assertBoolean(value.mutable, `json[${index}].mutable`),
   };
+  if (field.mutable && MUTABLE_ASSET_RESERVED_NAMES.has(field.name)) {
+    fail(`json[${index}].name is reserved for asset updates`);
+  }
   if (value.value === undefined || value.value === null) {
     fail(`json[${index}].value is required`);
   }

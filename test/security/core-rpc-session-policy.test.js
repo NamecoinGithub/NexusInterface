@@ -339,6 +339,28 @@ test('session polling resumes after an explicit selection fails', () => {
   );
 });
 
+test('stale session list responses cannot replace a newer session', () => {
+  const policy = createCoreRpcSessionPolicy();
+  const olderRequest = policy.authorize({
+    endpoint: 'sessions/list/local',
+  });
+  const newerRequest = policy.authorize({
+    endpoint: 'sessions/list/local',
+  });
+
+  policy.observe(newerRequest, [
+    { session: 'newer-session-01', accessed: 20 },
+  ]);
+  policy.observe(olderRequest, [
+    { session: 'older-session-01', accessed: 10 },
+  ]);
+
+  assert.equal(
+    policy.authorize({ endpoint: 'finance/get/balances' }).params.session,
+    'newer-session-01'
+  );
+});
+
 test('superseded selections do not block polling after the latest one fails', () => {
   const policy = createCoreRpcSessionPolicy();
   policy.authorize({

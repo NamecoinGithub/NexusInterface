@@ -9,6 +9,7 @@ const root = path.resolve(__dirname, '../..');
 const handlers = new Map();
 const openedUrls = [];
 const copiedTexts = [];
+const liveWebContents = new Map();
 let showMessageBox = async () => ({ response: 0 });
 
 const electron = {
@@ -33,8 +34,8 @@ const electron = {
     },
   },
   webContents: {
-    fromId() {
-      return null;
+    fromId(id) {
+      return liveWebContents.get(id) || null;
     },
   },
 };
@@ -88,11 +89,19 @@ function registerGuest(id) {
     ],
     legacy: false,
   });
+  let destroyed = false;
+  const sender = {
+    id,
+    isDestroyed: () => destroyed,
+    getType: () => 'webview',
+  };
+  liveWebContents.set(id, sender);
   return {
-    sender: {
-      id,
-      isDestroyed: () => false,
-      getType: () => 'webview',
+    sender,
+    destroy() {
+      destroyed = true;
+      liveWebContents.delete(id);
+      unregisterModuleGuest(id);
     },
   };
 }
@@ -179,6 +188,27 @@ test('module broker confirms side effects before executing them', async (t) => {
     payload: { url: 'https://example.com/after-denial' },
   });
   assert.equal(afterDenial.ok, true);
+  assert.deepEqual(openedUrls, [
+    'https://example.com/approved',
+    'https://example.com/after-denial',
+  ]);
+
+  const destroyedEvent = registerGuest(903);
+  showMessageBox = () =>
+    new Promise((resolve) => {
+      releasePrompt = resolve;
+    });
+  const destroyedPending = invoke(destroyedEvent, {
+    method: METHODS.UI_OPEN_EXTERNAL,
+    payload: { url: 'https://example.com/destroyed' },
+  });
+  await new Promise((resolve) => setImmediate(resolve));
+  destroyedEvent.destroy();
+  releasePrompt({ response: 1 });
+
+  const destroyedResult = await destroyedPending;
+  assert.equal(destroyedResult.ok, false);
+  assert.equal(destroyedResult.error.code, ERROR_CODES.UNAUTHORIZED);
   assert.deepEqual(openedUrls, [
     'https://example.com/approved',
     'https://example.com/after-denial',
