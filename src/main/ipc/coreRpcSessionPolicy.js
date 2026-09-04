@@ -57,10 +57,10 @@ function createCoreRpcSessionPolicy() {
           pendingSessionSelections.clear();
           pendingSessionSelections.add(latestSessionSelection);
         } else if (request.endpoint === 'sessions/terminate/local') {
-          sessionTerminationRequests.set(
-            authorizedRequest,
-            latestSessionSelection
-          );
+          sessionTerminationRequests.set(authorizedRequest, {
+            activeSession,
+            latestSessionSelection,
+          });
         }
         return authorizedRequest;
       }
@@ -91,7 +91,8 @@ function createCoreRpcSessionPolicy() {
     observe(request, result) {
       const sessionSelection = sessionSelectionRequests.get(request);
       const sessionList = sessionListRequests.get(request);
-      const terminationSelection = sessionTerminationRequests.get(request);
+      const termination = sessionTerminationRequests.get(request);
+      const terminationSelection = termination?.latestSessionSelection;
       settleSessionSelection(request);
       if (
         sessionSelection !== undefined &&
@@ -138,7 +139,10 @@ function createCoreRpcSessionPolicy() {
         }
       } else if (request.endpoint === 'sessions/terminate/local') {
         const clearsActiveSession =
-          !explicitSession || explicitSession === activeSession;
+          explicitSession
+            ? explicitSession === activeSession
+            : termination === undefined ||
+              termination.activeSession === activeSession;
         const invalidatesLatestSelection =
           (clearsActiveSession &&
             (terminationSelection === undefined ||

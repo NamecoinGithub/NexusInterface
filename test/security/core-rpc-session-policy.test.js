@@ -176,6 +176,32 @@ test('termination preserves logins authorized after logout', () => {
   );
 });
 
+test('sessionless termination does not clear a newer completed login', () => {
+  const policy = createCoreRpcSessionPolicy();
+  policy.observe(
+    {
+      endpoint: 'sessions/create/local',
+      params: { username: 'alice', password: 'secret', pin: '1234' },
+    },
+    { session: 'active-session-01' }
+  );
+  const terminationRequest = policy.authorize({
+    endpoint: 'sessions/terminate/local',
+  });
+  const createRequest = policy.authorize({
+    endpoint: 'sessions/create/local',
+    params: { username: 'bob', password: 'secret', pin: '5678' },
+  });
+
+  policy.observe(createRequest, { session: 'new-session-01' });
+  policy.observe(terminationRequest, {});
+
+  assert.equal(
+    policy.authorize({ endpoint: 'finance/get/balances' }).params.session,
+    'new-session-01'
+  );
+});
+
 test('termination invalidates newer selections of the terminated session', () => {
   const policy = createCoreRpcSessionPolicy();
   policy.observe(
