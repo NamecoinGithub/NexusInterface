@@ -859,8 +859,14 @@ export async function resyncLiteDatabase() {
   }
 
   let restartError;
+  let restartResult;
   try {
-    await startConfiguredCore();
+    restartResult = await startConfiguredCore();
+    if (!restartResult?.started && !restartResult?.apiReachable) {
+      throw new Error(
+        `Lite database resync could not restart Core (${restartResult?.reason || 'unknown reason'})`
+      );
+    }
   } catch (error) {
     restartError = error;
   }
@@ -874,7 +880,7 @@ export async function resyncLiteDatabase() {
     throw dataError;
   }
   if (restartError) throw restartError;
-  return { removed: true, restarted: true };
+  return { removed: true, restarted: !!restartResult.started };
 }
 
 /**

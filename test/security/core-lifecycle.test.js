@@ -155,6 +155,10 @@ test('all destructive Core operations use the lifecycle coordinator', () => {
     core,
     /const stopResult = await stopEmbeddedCore\(\)[\s\S]*await startConfiguredCore\(\)/
   );
+  assert.match(
+    core,
+    /!restartResult\?\.started && !restartResult\?\.apiReachable/
+  );
 });
 
 test('bootstrap fails closed until signed-manifest verification exists', async () => {
