@@ -19,6 +19,7 @@ export const settingsAtom = atom((get) => ({
 
 let timerId: ReturnType<typeof setTimeout> | undefined;
 let persistedSettings = initialUserSettings;
+const settingVersions: Partial<Record<SettingsKey, number>> = {};
 let persistenceQueue = Promise.resolve();
 let pendingPersistenceWaiters: Array<{
   resolve: () => void;
@@ -30,6 +31,7 @@ subscribeWithPrevious(userSettingsAtom, () => {
     const waiters = pendingPersistenceWaiters;
     pendingPersistenceWaiters = [];
     let failedUpdates: PartialSettings = {};
+    let failedVersions: Partial<Record<SettingsKey, number>> = {};
     persistenceQueue = persistenceQueue
       .catch(() => {})
       .then(async () => {
@@ -45,6 +47,12 @@ subscribeWithPrevious(userSettingsAtom, () => {
           if (!Object.keys(updates).length) break;
 
           failedUpdates = updates;
+          failedVersions = Object.fromEntries(
+            Object.keys(updates).map((key) => [
+              key,
+              settingVersions[key as SettingsKey] || 0,
+            ])
+          );
           await window.nexusElectron.settings.update(updates);
           persistedSettings = { ...persistedSettings, ...updates };
         } while (Object.keys(updates).length);
@@ -55,7 +63,12 @@ subscribeWithPrevious(userSettingsAtom, () => {
         let changed = false;
         Object.entries(failedUpdates).forEach(([key, value]) => {
           const settingsKey = key as SettingsKey;
-          if (currentSettings[settingsKey] !== value) return;
+          if (
+            settingVersions[settingsKey] !== failedVersions[settingsKey] ||
+            currentSettings[settingsKey] !== value
+          ) {
+            return;
+          }
           if (Object.prototype.hasOwnProperty.call(persistedSettings, key)) {
             rolledBackSettings[settingsKey] = persistedSettings[settingsKey];
           } else {
@@ -93,6 +106,7 @@ export const settingAtoms = Object.fromEntries(
           ...userSettings,
           [key]: value,
         };
+        settingVersions[key] = (settingVersions[key] || 0) + 1;
         set(userSettingsAtom, updatedUserSettings);
       }
     ),
@@ -105,6 +119,12 @@ export function updateSettings(updates: PartialSettings) {
   });
   persisted.catch(() => {});
   const userSettings = store.get(userSettingsAtom);
+  Object.entries(updates).forEach(([key, value]) => {
+    const settingsKey = key as SettingsKey;
+    if (userSettings[settingsKey] !== value) {
+      settingVersions[settingsKey] = (settingVersions[settingsKey] || 0) + 1;
+    }
+  });
   store.set(userSettingsAtom, {
     ...userSettings,
     ...updates,

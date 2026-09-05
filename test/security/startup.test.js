@@ -302,7 +302,7 @@ test('renderer settings persistence serializes and rechecks queued changes', () 
   );
   assert.match(
     settings,
-    /currentSettings\[settingsKey\] !== value[\s\S]*persistedSettings\[settingsKey\][\s\S]*delete rolledBackSettings\[settingsKey\][\s\S]*store\.set\(userSettingsAtom, rolledBackSettings\)/
+    /settingVersions\[settingsKey\] !== failedVersions\[settingsKey\][\s\S]*currentSettings\[settingsKey\] !== value[\s\S]*persistedSettings\[settingsKey\][\s\S]*delete rolledBackSettings\[settingsKey\][\s\S]*store\.set\(userSettingsAtom, rolledBackSettings\)/
   );
 });
 
