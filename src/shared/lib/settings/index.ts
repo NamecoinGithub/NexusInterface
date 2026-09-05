@@ -19,6 +19,7 @@ export const settingsAtom = atom((get) => ({
 
 let timerId: ReturnType<typeof setTimeout> | undefined;
 let persistedSettings = initialUserSettings;
+let queuedSettings = initialUserSettings;
 const settingVersions: Partial<Record<SettingsKey, number>> = {};
 let persistenceQueue = Promise.resolve();
 let pendingPersistenceWaiters: Array<{
@@ -32,11 +33,17 @@ subscribeWithPrevious(userSettingsAtom, () => {
     pendingPersistenceWaiters = [];
     const targetSettings = store.get(userSettingsAtom);
     const targetVersions = { ...settingVersions };
+    const batchUpdates = Object.fromEntries(
+      Object.entries(targetSettings).filter(
+        ([key, value]) => queuedSettings?.[key as SettingsKey] !== value
+      )
+    ) as PartialSettings;
+    queuedSettings = targetSettings;
     persistenceQueue = persistenceQueue
       .catch(() => {})
       .then(async () => {
         const updates = Object.fromEntries(
-          Object.entries(targetSettings).filter(
+          Object.entries(batchUpdates).filter(
             ([key, value]) =>
               persistedSettings?.[key as SettingsKey] !== value
           )
@@ -51,7 +58,7 @@ subscribeWithPrevious(userSettingsAtom, () => {
         const currentSettings = store.get(userSettingsAtom);
         const rolledBackSettings = { ...currentSettings };
         let changed = false;
-        Object.entries(targetSettings).forEach(([key, value]) => {
+        Object.entries(batchUpdates).forEach(([key, value]) => {
           const settingsKey = key as SettingsKey;
           if (
             settingVersions[settingsKey] !== targetVersions[settingsKey] ||

@@ -299,7 +299,7 @@ test('renderer settings persistence serializes versioned batches', () => {
   assert.match(settings, /let persistenceQueue = Promise\.resolve\(\)/);
   assert.match(
     settings,
-    /const targetSettings = store\.get\(userSettingsAtom\)[\s\S]*const targetVersions = \{ \.\.\.settingVersions \}[\s\S]*persistenceQueue = persistenceQueue[\s\S]*await window\.nexusElectron\.settings\.update\(updates\)[\s\S]*persistedSettings =[\s\S]*waiters\.forEach\(\(\{ resolve \}\) => resolve\(\)\)/
+    /const targetSettings = store\.get\(userSettingsAtom\)[\s\S]*const targetVersions = \{ \.\.\.settingVersions \}[\s\S]*Object\.entries\(targetSettings\)[\s\S]*queuedSettings[\s\S]*queuedSettings = targetSettings[\s\S]*persistenceQueue = persistenceQueue[\s\S]*Object\.entries\(batchUpdates\)[\s\S]*await window\.nexusElectron\.settings\.update\(updates\)[\s\S]*persistedSettings =[\s\S]*waiters\.forEach\(\(\{ resolve \}\) => resolve\(\)\)/
   );
   assert.match(
     settings,
