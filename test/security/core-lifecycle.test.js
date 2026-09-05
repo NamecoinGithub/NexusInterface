@@ -171,6 +171,10 @@ test('all destructive Core operations use the lifecycle coordinator', () => {
     main,
     /coreLifecycle\.run\('update-settings',[\s\S]*stopEmbeddedCore\(\)[\s\S]*updateSettingsFile\(updates\)/
   );
+  assert.match(
+    main,
+    /catch \(error\)[\s\S]*if \(stoppedPreviousCore\)[\s\S]*await startConfiguredCore\(\)[\s\S]*throw error/
+  );
   assert.match(rendererCore, /nexusElectron\.core\.stop\(\)/);
   assert.match(rendererCore, /nexusElectron\.core\.restart\(\)/);
   assert.match(
@@ -186,6 +190,14 @@ test('all destructive Core operations use the lifecycle coordinator', () => {
   assert.match(
     core,
     /const stopResult = await stopEmbeddedCore\(\)[\s\S]*await startConfiguredCore\(\)/
+  );
+  assert.match(
+    core,
+    /fs\.promises\.rename\(clientPath, quarantinedClientPath\)[\s\S]*getCoreProcessState\(settings\.coreDataDir\)[\s\S]*stopEmbeddedCore\(\)[\s\S]*fs\.promises\.rm\(quarantinedClientPath/
+  );
+  assert.doesNotMatch(
+    core,
+    /fs\.promises\.rm\(path\.join\(settings\.coreDataDir, 'client'\)/
   );
   assert.match(
     core,

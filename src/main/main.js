@@ -818,6 +818,7 @@ registerOperation(
   async (updates) => {
     return coreLifecycle.run('update-settings', async () => {
       const previousSettings = loadSettingsFromFile();
+      let stoppedPreviousCore = false;
       const coreTargetChanged = Object.keys(updates).some(
         (key) =>
           CORE_TARGET_SETTINGS.has(key) &&
@@ -830,8 +831,23 @@ registerOperation(
             'Core settings cannot change until Nexus Core shutdown is confirmed'
           );
         }
+        stoppedPreviousCore =
+          stopResult.stopped && stopResult.reason !== 'not-running';
       }
-      updateSettingsFile(updates);
+      try {
+        updateSettingsFile(updates);
+      } catch (error) {
+        if (stoppedPreviousCore) {
+          try {
+            await startConfiguredCore();
+          } catch (restartError) {
+            log.error('core.settings.rollback.restart.failed', {
+              error: restartError?.message || String(restartError),
+            });
+          }
+        }
+        throw error;
+      }
       clearCoreConfigCache();
       if (coreTargetChanged) coreRpcSessionPolicy.reset();
       return getRendererSettings();

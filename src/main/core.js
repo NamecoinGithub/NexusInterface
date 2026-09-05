@@ -1,5 +1,6 @@
 import child_process from 'child_process';
 import spawn from 'cross-spawn';
+import crypto from 'crypto';
 import log from 'electron-log';
 import fs from 'fs';
 import path from 'path';
@@ -907,14 +908,68 @@ export async function resyncLiteDatabase({ onCoreStopped } = {}) {
   }
   if (onCoreStopped) onCoreStopped();
 
+  const clientPath = path.join(settings.coreDataDir, 'client');
+  const quarantinedClientPath = path.join(
+    settings.coreDataDir,
+    `.client-resync-${process.pid}-${crypto.randomBytes(8).toString('hex')}`
+  );
   let dataError;
+  let quarantined = false;
   try {
-    await fs.promises.rm(path.join(settings.coreDataDir, 'client'), {
-      recursive: true,
-      force: true,
-    });
+    for (let attempt = 0; attempt < 2 && !quarantined; attempt += 1) {
+      try {
+        await fs.promises.rename(clientPath, quarantinedClientPath);
+        quarantined = true;
+      } catch (error) {
+        if (error?.code === 'ENOENT') break;
+        if (
+          attempt > 0 ||
+          !['EACCES', 'EBUSY', 'EPERM'].includes(error?.code)
+        ) {
+          throw error;
+        }
+        const replacementStopResult = await stopEmbeddedCore();
+        if (!replacementStopResult?.stopped) {
+          throw new Error(
+            'Lite database resync refused because replacement Core shutdown was not confirmed'
+          );
+        }
+      }
+    }
+
+    if (quarantined) {
+      const replacementState = await getCoreProcessState(settings.coreDataDir);
+      if (replacementState.ownershipUnknown && !replacementState.managedPid) {
+        throw new Error(
+          'Lite database resync refused because data directory ownership cannot be confirmed'
+        );
+      }
+      if (replacementState.managedPid) {
+        const replacementStopResult = await stopEmbeddedCore();
+        if (!replacementStopResult?.stopped) {
+          throw new Error(
+            'Lite database resync refused because replacement Core shutdown was not confirmed'
+          );
+        }
+      }
+      await fs.promises.rm(quarantinedClientPath, {
+        recursive: true,
+        force: true,
+      });
+    }
   } catch (error) {
     dataError = error;
+    if (quarantined) {
+      try {
+        await fs.promises.rename(quarantinedClientPath, clientPath);
+      } catch (restoreError) {
+        if (restoreError?.code !== 'ENOENT') {
+          log.error('core.resync.restore.failed', {
+            error: restoreError?.message || String(restoreError),
+          });
+        }
+      }
+    }
   }
 
   let restartError;

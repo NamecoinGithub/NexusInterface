@@ -300,6 +300,10 @@ test('renderer settings persistence serializes and rechecks queued changes', () 
     settings,
     /persistenceQueue = persistenceQueue[\s\S]*store\.get\(userSettingsAtom\)[\s\S]*await window\.nexusElectron\.settings\.update\(updates\)[\s\S]*persistedSettings =/
   );
+  assert.match(
+    settings,
+    /currentSettings\[settingsKey\] !== value[\s\S]*persistedSettings\[settingsKey\][\s\S]*delete rolledBackSettings\[settingsKey\][\s\S]*store\.set\(userSettingsAtom, rolledBackSettings\)/
+  );
 });
 
 test('updater GitHub release version variable is spelled correctly', () => {

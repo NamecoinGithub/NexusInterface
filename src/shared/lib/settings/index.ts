@@ -29,10 +29,11 @@ subscribeWithPrevious(userSettingsAtom, () => {
   timerId = setTimeout(async () => {
     const waiters = pendingPersistenceWaiters;
     pendingPersistenceWaiters = [];
+    let failedUpdates: PartialSettings = {};
     persistenceQueue = persistenceQueue
       .catch(() => {})
       .then(async () => {
-        let updates: PartialSettings;
+        let updates: PartialSettings = {};
         do {
           const latestSettings = store.get(userSettingsAtom);
           updates = Object.fromEntries(
@@ -43,9 +44,27 @@ subscribeWithPrevious(userSettingsAtom, () => {
           ) as PartialSettings;
           if (!Object.keys(updates).length) break;
 
+          failedUpdates = updates;
           await window.nexusElectron.settings.update(updates);
           persistedSettings = { ...persistedSettings, ...updates };
         } while (Object.keys(updates).length);
+      })
+      .catch((error) => {
+        const currentSettings = store.get(userSettingsAtom);
+        const rolledBackSettings = { ...currentSettings };
+        let changed = false;
+        Object.entries(failedUpdates).forEach(([key, value]) => {
+          const settingsKey = key as SettingsKey;
+          if (currentSettings[settingsKey] !== value) return;
+          if (Object.prototype.hasOwnProperty.call(persistedSettings, key)) {
+            rolledBackSettings[settingsKey] = persistedSettings[settingsKey];
+          } else {
+            delete rolledBackSettings[settingsKey];
+          }
+          changed = true;
+        });
+        if (changed) store.set(userSettingsAtom, rolledBackSettings);
+        throw error;
       });
     try {
       await persistenceQueue;
