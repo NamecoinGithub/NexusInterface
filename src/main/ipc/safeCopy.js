@@ -153,7 +153,7 @@ async function assertNoSymlinkComponents(rootPath, targetPath, label) {
   }
 }
 
-async function resolveOpenedPath(handle, openPath) {
+async function resolveOpenedPath(handle, openPath, allowPathFallback = true) {
   if (typeof handle.fd === 'number') {
     if (process.platform === 'linux') {
       try {
@@ -190,13 +190,28 @@ async function resolveOpenedPath(handle, openPath) {
       }
     }
   }
+  if (!allowPathFallback) {
+    throw new Error(
+      'Secure module directory installs require descriptor-relative opens on this platform; use a module archive or an app-owned trusted source'
+    );
+  }
   // Last resort: never treat this as a strong binding on its own.
   return fsp.realpath(openPath);
 }
 
-async function assertOpenedFileInsideRoot(handle, openPath, rootPath, label) {
+async function assertOpenedFileInsideRoot(
+  handle,
+  openPath,
+  rootPath,
+  label,
+  allowPathFallback = true
+) {
   const realRoot = await fsp.realpath(rootPath);
-  const openedPath = await resolveOpenedPath(handle, openPath);
+  const openedPath = await resolveOpenedPath(
+    handle,
+    openPath,
+    allowPathFallback
+  );
   assertPathInsideRoot(openedPath, realRoot, label);
 
   const stat = await handle.stat();
@@ -320,7 +335,8 @@ async function openRegularFileNoFollowFdRelative(
   filePath,
   rootPath,
   label,
-  maxBytes
+  maxBytes,
+  allowPathFallback
 ) {
   const { resolvedRoot, segments } = splitRelativeSegments(
     rootPath,
@@ -375,12 +391,14 @@ async function openRegularFileNoFollowFdRelative(
       } catch (err) {
         if (
           err?.code === 'ENOENT' &&
+          allowPathFallback &&
           process.platform !== 'linux' &&
           process.platform !== 'win32'
         ) {
           const resolvedParent = await resolveOpenedPath(
             dirHandle,
-            concreteParentPath
+            concreteParentPath,
+            allowPathFallback
           );
           const fallbackChildPath = path.join(resolvedParent, segment);
           try {
@@ -421,7 +439,8 @@ async function openRegularFileNoFollowFdRelative(
           dirHandle,
           openedPath,
           resolvedRoot,
-          label
+          label,
+          allowPathFallback
         );
         if (stat.size > maxBytes) {
           throw new Error(`${label} exceeds the size limit`);
@@ -552,7 +571,8 @@ async function readRegularFileNoFollow(
       resolvedFile,
       resolvedRoot,
       label,
-      maxBytes
+      maxBytes,
+      allowPathFallback
     );
   }
 

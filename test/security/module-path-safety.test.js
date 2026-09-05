@@ -1076,6 +1076,7 @@ test('readRegularFileNoFollow fails closed without fd-relative or path fallback'
     safeCopySource,
     /concreteChildPath = path\.join\(concreteParentPath, segment\)/
   );
+  assert.match(safeCopySource, /allowPathFallback &&\s*process\.platform/);
   assert.match(
     safeCopySource,
     /descriptor-relative opens or an app-owned trusted root/
