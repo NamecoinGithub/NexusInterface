@@ -299,11 +299,11 @@ test('renderer settings persistence serializes versioned batches', () => {
   assert.match(settings, /let persistenceQueue = Promise\.resolve\(\)/);
   assert.match(
     settings,
-    /const targetSettings = store\.get\(userSettingsAtom\)[\s\S]*const targetVersions = \{ \.\.\.settingVersions \}[\s\S]*Object\.entries\(targetSettings\)[\s\S]*queuedSettings[\s\S]*queuedSettings = targetSettings[\s\S]*persistenceQueue = persistenceQueue[\s\S]*Object\.entries\(batchUpdates\)[\s\S]*await window\.nexusElectron\.settings\.update\(updates\)[\s\S]*persistedSettings =[\s\S]*waiters\.forEach\(\(\{ resolve \}\) => resolve\(\)\)/
+    /const targetSettings = store\.get\(userSettingsAtom\)[\s\S]*const targetVersions = \{ \.\.\.settingVersions \}[\s\S]*Object\.entries\(targetSettings\)[\s\S]*queuedSettings[\s\S]*queuedSettings = targetSettings[\s\S]*if \(!Object\.keys\(batchUpdates\)\.length\) \{[\s\S]*targetAlreadyPersisted[\s\S]*persistenceQueue\.then\([\s\S]*persistenceQueue = persistenceQueue[\s\S]*Object\.entries\(batchUpdates\)[\s\S]*await window\.nexusElectron\.settings\.update\(updates\)[\s\S]*persistedSettings =[\s\S]*persistenceQueue\.then\([\s\S]*waiters\.forEach\(\(\{ resolve \}\) => resolve\(\)\)/
   );
   assert.match(
     settings,
-    /settingVersions\[settingsKey\] !== targetVersions\[settingsKey\][\s\S]*persistedSettings\[settingsKey\] === value[\s\S]*currentSettings\[settingsKey\] !== value[\s\S]*delete rolledBackSettings\[settingsKey\][\s\S]*store\.set\(userSettingsAtom, rolledBackSettings\)[\s\S]*waiters\.forEach\(\(\{ reject \}\) => reject\(error\)\)/
+    /settingVersions\[settingsKey\] !== targetVersions\[settingsKey\][\s\S]*persistedSettings\[settingsKey\] === value[\s\S]*currentSettings\[settingsKey\] !== value[\s\S]*delete rolledBackSettings\[settingsKey\][\s\S]*queuedSettings\[settingsKey\] === value[\s\S]*reconciledQueuedSettings[\s\S]*queuedSettings = reconciledQueuedSettings[\s\S]*store\.set\(userSettingsAtom, rolledBackSettings\)[\s\S]*throw error[\s\S]*waiters\.forEach\(\(\{ reject \}\) => reject\(error\)\)/
   );
   assert.doesNotMatch(settings, /do \{[\s\S]*\} while/);
 });

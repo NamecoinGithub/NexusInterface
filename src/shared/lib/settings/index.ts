@@ -39,6 +39,20 @@ subscribeWithPrevious(userSettingsAtom, () => {
       )
     ) as PartialSettings;
     queuedSettings = targetSettings;
+    if (!Object.keys(batchUpdates).length) {
+      const targetAlreadyPersisted = Object.entries(targetSettings).every(
+        ([key, value]) => persistedSettings?.[key as SettingsKey] === value
+      );
+      if (targetAlreadyPersisted) {
+        waiters.forEach(({ resolve }) => resolve());
+        return;
+      }
+      persistenceQueue.then(
+        () => waiters.forEach(({ resolve }) => resolve()),
+        (error) => waiters.forEach(({ reject }) => reject(error))
+      );
+      return;
+    }
     persistenceQueue = persistenceQueue
       .catch(() => {})
       .then(async () => {
@@ -52,11 +66,11 @@ subscribeWithPrevious(userSettingsAtom, () => {
           await window.nexusElectron.settings.update(updates);
           persistedSettings = { ...persistedSettings, ...updates };
         }
-        waiters.forEach(({ resolve }) => resolve());
       })
       .catch((error) => {
         const currentSettings = store.get(userSettingsAtom);
         const rolledBackSettings = { ...currentSettings };
+        const reconciledQueuedSettings = { ...queuedSettings };
         let changed = false;
         Object.entries(batchUpdates).forEach(([key, value]) => {
           const settingsKey = key as SettingsKey;
@@ -73,11 +87,24 @@ subscribeWithPrevious(userSettingsAtom, () => {
             delete rolledBackSettings[settingsKey];
           }
           changed = true;
+          if (queuedSettings[settingsKey] === value) {
+            if (Object.prototype.hasOwnProperty.call(persistedSettings, key)) {
+              reconciledQueuedSettings[settingsKey] =
+                persistedSettings[settingsKey];
+            } else {
+              delete reconciledQueuedSettings[settingsKey];
+            }
+          }
         });
+        queuedSettings = reconciledQueuedSettings;
         if (changed) store.set(userSettingsAtom, rolledBackSettings);
         console.error(error);
-        waiters.forEach(({ reject }) => reject(error));
+        throw error;
       });
+    persistenceQueue.then(
+      () => waiters.forEach(({ resolve }) => resolve()),
+      (error) => waiters.forEach(({ reject }) => reject(error))
+    );
   }, 0);
 });
 
