@@ -101,6 +101,11 @@ test('module asset and entry resolvers reject symlinks and realpath escapes', ()
     'the authoritative on-disk manifest must enforce the module file limit'
   );
   assert.match(
+    moduleFiles,
+    /if \(!moduleFiles\.includes\(entry\)\)[\s\S]*throw new Error/,
+    'the effective module entry must be present in the authorized file list'
+  );
+  assert.match(
     read('src', 'main', 'modules.js'),
     /nxsPackageDevSchema[\s\S]*files:\s*z\s*\.array/,
     'development manifests must declare a validated file list'

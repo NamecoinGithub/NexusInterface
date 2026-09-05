@@ -125,9 +125,12 @@ export async function validateModuleFiles(name) {
   const { root, development } = await resolveModuleRoot(name);
   const allowSymlink = development && developmentAllowsSymlinks();
   const manifest = development ? 'nxs_package.dev.json' : 'nxs_package.json';
-  const moduleFiles = validateModuleFilePaths(
-    (await readJson(path.join(root, manifest)))?.files
-  );
+  const info = await readJson(path.join(root, manifest));
+  const moduleFiles = validateModuleFilePaths(info?.files);
+  const entry = assertRelativeModulePath(info?.entry || 'index.html');
+  if (!moduleFiles.includes(entry)) {
+    throw new Error('Module entry must be included in module files');
+  }
   const realRoot = await fs.realpath(root);
   return Promise.all(
     moduleFiles.map(async (file) => {
