@@ -27,44 +27,35 @@ let pendingPersistenceWaiters: Array<{
 }> = [];
 subscribeWithPrevious(userSettingsAtom, () => {
   clearTimeout(timerId);
-  timerId = setTimeout(async () => {
+  timerId = setTimeout(() => {
     const waiters = pendingPersistenceWaiters;
     pendingPersistenceWaiters = [];
-    let failedUpdates: PartialSettings = {};
-    let failedVersions: Partial<Record<SettingsKey, number>> = {};
+    const targetSettings = store.get(userSettingsAtom);
+    const targetVersions = { ...settingVersions };
     persistenceQueue = persistenceQueue
       .catch(() => {})
       .then(async () => {
-        let updates: PartialSettings = {};
-        do {
-          const latestSettings = store.get(userSettingsAtom);
-          updates = Object.fromEntries(
-            Object.entries(latestSettings).filter(
-              ([key, value]) =>
-                persistedSettings?.[key as SettingsKey] !== value
-            )
-          ) as PartialSettings;
-          if (!Object.keys(updates).length) break;
-
-          failedUpdates = updates;
-          failedVersions = Object.fromEntries(
-            Object.keys(updates).map((key) => [
-              key,
-              settingVersions[key as SettingsKey] || 0,
-            ])
-          );
+        const updates = Object.fromEntries(
+          Object.entries(targetSettings).filter(
+            ([key, value]) =>
+              persistedSettings?.[key as SettingsKey] !== value
+          )
+        ) as PartialSettings;
+        if (Object.keys(updates).length) {
           await window.nexusElectron.settings.update(updates);
           persistedSettings = { ...persistedSettings, ...updates };
-        } while (Object.keys(updates).length);
+        }
+        waiters.forEach(({ resolve }) => resolve());
       })
       .catch((error) => {
         const currentSettings = store.get(userSettingsAtom);
         const rolledBackSettings = { ...currentSettings };
         let changed = false;
-        Object.entries(failedUpdates).forEach(([key, value]) => {
+        Object.entries(targetSettings).forEach(([key, value]) => {
           const settingsKey = key as SettingsKey;
           if (
-            settingVersions[settingsKey] !== failedVersions[settingsKey] ||
+            settingVersions[settingsKey] !== targetVersions[settingsKey] ||
+            persistedSettings[settingsKey] === value ||
             currentSettings[settingsKey] !== value
           ) {
             return;
@@ -77,16 +68,9 @@ subscribeWithPrevious(userSettingsAtom, () => {
           changed = true;
         });
         if (changed) store.set(userSettingsAtom, rolledBackSettings);
-        throw error;
+        console.error(error);
+        waiters.forEach(({ reject }) => reject(error));
       });
-    try {
-      await persistenceQueue;
-    } catch (error) {
-      console.error(error);
-      waiters.forEach(({ reject }) => reject(error));
-      return;
-    }
-    waiters.forEach(({ resolve }) => resolve());
   }, 0);
 });
 

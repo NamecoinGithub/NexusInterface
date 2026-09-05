@@ -33,11 +33,12 @@ Rejected when:
 
 Multi-user `session` handling:
 
-- every registered endpoint may include an optional `session` string
-- session values must be a single opaque id (`[A-Za-z0-9_-]{8,128}`)
+- main owns the active session used by ordinary structured RPCs
+- caller-provided sessions are stripped from ordinary RPCs and main injects its
+  active session
+- explicit session values are honored only by selected session-management
+  endpoints and must be a single opaque id (`[A-Za-z0-9_-]{8,128}`)
 - arrays/objects/prototype-polluting shapes are rejected
-- the renderer prefers the active session from the store so modules cannot
-  silently retarget another session when one is already active
 
 ## Terminal / console exception (`core-rpc:call-by-url`)
 

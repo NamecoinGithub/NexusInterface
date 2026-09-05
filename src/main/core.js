@@ -485,7 +485,8 @@ async function getCoreProcessState(dataDir = null, trackedPid = null) {
       !match &&
       runningProcesses.some(
         (processInfo) =>
-          requiresTrackedPid || processInfo.commandKnown === false
+          (!processInfo.argv && requiresTrackedPid) ||
+          processInfo.commandKnown === false
       ),
     trackedPidRunning:
       trackedPid !== null &&
@@ -705,7 +706,11 @@ export async function stopEmbeddedCore() {
 
   for (let attempt = 0; attempt < CORE_STOP_GRACE_ATTEMPTS; attempt += 1) {
     processState = await getCoreProcessState(settings.coreDataDir, managedPid);
-    if (!processState.trackedPidRunning) {
+    if (
+      !processState.trackedPidRunning &&
+      !processState.managedPid &&
+      !processState.ownershipUnknown
+    ) {
       log.info('Core Manager: Core stopped gracefully');
       return { stopped: true, reason: 'graceful' };
     }
@@ -730,7 +735,11 @@ export async function stopEmbeddedCore() {
       check += 1
     ) {
       processState = await getCoreProcessState(settings.coreDataDir, managedPid);
-      if (!processState.trackedPidRunning) {
+      if (
+        !processState.trackedPidRunning &&
+        !processState.managedPid &&
+        !processState.ownershipUnknown
+      ) {
         log.info('core.stop.confirmed', { reason: 'killed', attempt });
         return { stopped: true, reason: 'killed' };
       }

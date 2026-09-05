@@ -838,6 +838,7 @@ registerOperation(
         updateSettingsFile(updates);
       } catch (error) {
         if (stoppedPreviousCore) {
+          coreRpcSessionPolicy.reset();
           try {
             await startConfiguredCore();
           } catch (restartError) {

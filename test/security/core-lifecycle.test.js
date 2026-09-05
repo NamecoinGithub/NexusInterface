@@ -173,7 +173,7 @@ test('all destructive Core operations use the lifecycle coordinator', () => {
   );
   assert.match(
     main,
-    /catch \(error\)[\s\S]*if \(stoppedPreviousCore\)[\s\S]*await startConfiguredCore\(\)[\s\S]*throw error/
+    /catch \(error\)[\s\S]*if \(stoppedPreviousCore\)[\s\S]*coreRpcSessionPolicy\.reset\(\)[\s\S]*await startConfiguredCore\(\)[\s\S]*throw error/
   );
   assert.match(rendererCore, /nexusElectron\.core\.stop\(\)/);
   assert.match(rendererCore, /nexusElectron\.core\.restart\(\)/);
@@ -256,5 +256,17 @@ test('Windows Core discovery falls back from CIM to legacy WMI before tasklist',
     /return processState\.ownershipUnknown\s*\?\s*\{ stopped: false, reason: 'ownership-unconfirmed' \}/
   );
   assert.match(core, /trackedPidRunning/);
+  assert.match(
+    core,
+    /\(!processInfo\.argv && requiresTrackedPid\)[\s\S]*processInfo\.commandKnown === false/
+  );
+  assert.equal(
+    (
+      core.match(
+        /!processState\.trackedPidRunning &&\s*!processState\.managedPid &&\s*!processState\.ownershipUnknown/g
+      ) || []
+    ).length,
+    2
+  );
   assert.match(core, /killCorePid\(managedPid\)/);
 });

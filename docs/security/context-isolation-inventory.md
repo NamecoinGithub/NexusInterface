@@ -9,7 +9,7 @@ the compiled renderer must also pass the renderer build boundary below.
 | Main wallet window | Disabled | Enabled | Enabled | `window.nexusElectron`, exposed by `src/main/preload.js` | Complete |
 | Virtual keyboard window | Disabled | Enabled | Enabled | `src/keyboard/preload.js` | Complete |
 | Production module WebViews | Disabled | Enabled | Enabled | Isolated NEXUS v2 preload and authorized module-file origin | Complete |
-| Development module WebViews | Disabled | Enabled | Enabled | Isolated NEXUS v2 preload and authorized local module root | Complete |
+| Development module WebViews | Disabled | Enabled | Enabled | Isolated NEXUS v2 preload and module-scoped loopback origin | Complete |
 | Main-process IPC | N/A | N/A | N/A | Named channels in `src/main/ipc/contracts.js`, registered in `src/main/main.js` | Complete |
 | Renderer bundle | N/A | N/A | N/A | Browser-safe Electron bridge alias | Complete |
 

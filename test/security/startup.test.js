@@ -293,18 +293,19 @@ test('language selection persists locale once before reload', () => {
   assert.doesNotMatch(selectLanguage, /updateSettings\(\{\s*locale:/);
 });
 
-test('renderer settings persistence serializes and rechecks queued changes', () => {
+test('renderer settings persistence serializes versioned batches', () => {
   const settings = read('src', 'shared', 'lib', 'settings', 'index.ts');
 
   assert.match(settings, /let persistenceQueue = Promise\.resolve\(\)/);
   assert.match(
     settings,
-    /persistenceQueue = persistenceQueue[\s\S]*store\.get\(userSettingsAtom\)[\s\S]*await window\.nexusElectron\.settings\.update\(updates\)[\s\S]*persistedSettings =/
+    /const targetSettings = store\.get\(userSettingsAtom\)[\s\S]*const targetVersions = \{ \.\.\.settingVersions \}[\s\S]*persistenceQueue = persistenceQueue[\s\S]*await window\.nexusElectron\.settings\.update\(updates\)[\s\S]*persistedSettings =[\s\S]*waiters\.forEach\(\(\{ resolve \}\) => resolve\(\)\)/
   );
   assert.match(
     settings,
-    /settingVersions\[settingsKey\] !== failedVersions\[settingsKey\][\s\S]*currentSettings\[settingsKey\] !== value[\s\S]*persistedSettings\[settingsKey\][\s\S]*delete rolledBackSettings\[settingsKey\][\s\S]*store\.set\(userSettingsAtom, rolledBackSettings\)/
+    /settingVersions\[settingsKey\] !== targetVersions\[settingsKey\][\s\S]*persistedSettings\[settingsKey\] === value[\s\S]*currentSettings\[settingsKey\] !== value[\s\S]*delete rolledBackSettings\[settingsKey\][\s\S]*store\.set\(userSettingsAtom, rolledBackSettings\)[\s\S]*waiters\.forEach\(\(\{ reject \}\) => reject\(error\)\)/
   );
+  assert.doesNotMatch(settings, /do \{[\s\S]*\} while/);
 });
 
 test('updater GitHub release version variable is spelled correctly', () => {
