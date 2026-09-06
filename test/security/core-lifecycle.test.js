@@ -266,7 +266,15 @@ test('Windows Core discovery falls back from CIM to legacy WMI before tasklist',
         /!processState\.trackedPidRunning &&\s*!processState\.managedPid &&\s*!processState\.ownershipUnknown/g
       ) || []
     ).length,
-    2
+    3
+  );
+  assert.match(
+    core,
+    /for \(let attempt = 1; attempt <= CORE_KILL_RETRIES; attempt \+= 1\) \{[\s\S]*getCoreProcessState\(settings\.coreDataDir, managedPid\)[\s\S]*killCorePid\(managedPid\)/
+  );
+  assert.match(
+    core,
+    /if \(processState\.managedPid !== managedPid\)[\s\S]*managedPid = processState\.managedPid/
   );
   assert.match(core, /killCorePid\(managedPid\)/);
 });

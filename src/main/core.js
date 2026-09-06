@@ -691,7 +691,7 @@ export async function stopEmbeddedCore() {
       ? { stopped: false, reason: 'ownership-unconfirmed' }
       : { stopped: true, reason: 'not-running' };
   }
-  const managedPid = processState.managedPid;
+  let managedPid = processState.managedPid;
 
   try {
     // Keep quit-path latency bounded; force-kill handles a stuck Core.
@@ -720,6 +720,47 @@ export async function stopEmbeddedCore() {
   }
 
   for (let attempt = 1; attempt <= CORE_KILL_RETRIES; attempt += 1) {
+    // Revalidate before every signal: the captured PID can exit during the
+    // grace wait (or a prior kill attempt) and be reused by an unrelated
+    // process before we reach this retry.
+    processState = await getCoreProcessState(settings.coreDataDir, managedPid);
+    if (
+      !processState.trackedPidRunning &&
+      !processState.managedPid &&
+      !processState.ownershipUnknown
+    ) {
+      log.info('core.stop.confirmed', {
+        reason: attempt === 1 ? 'graceful' : 'killed',
+        attempt,
+      });
+      return {
+        stopped: true,
+        reason: attempt === 1 ? 'graceful' : 'killed',
+      };
+    }
+    if (processState.managedPid !== managedPid) {
+      if (!processState.managedPid) {
+        if (processState.ownershipUnknown) {
+          log.error('core.stop.unconfirmed', {
+            attempts: attempt,
+            reason: 'ownership-unconfirmed',
+          });
+          return { stopped: false, reason: 'ownership-unconfirmed' };
+        }
+        // Original PID is gone; a same-number Core binary with another
+        // datadir must not be signaled as if it were still ours.
+        log.info('core.stop.confirmed', {
+          reason: attempt === 1 ? 'graceful' : 'killed',
+          attempt,
+        });
+        return {
+          stopped: true,
+          reason: attempt === 1 ? 'graceful' : 'killed',
+        };
+      }
+      managedPid = processState.managedPid;
+    }
+
     try {
       await killCorePid(managedPid);
     } catch (error) {
@@ -737,6 +778,14 @@ export async function stopEmbeddedCore() {
       processState = await getCoreProcessState(settings.coreDataDir, managedPid);
       if (
         !processState.trackedPidRunning &&
+        !processState.managedPid &&
+        !processState.ownershipUnknown
+      ) {
+        log.info('core.stop.confirmed', { reason: 'killed', attempt });
+        return { stopped: true, reason: 'killed' };
+      }
+      if (
+        processState.managedPid !== managedPid &&
         !processState.managedPid &&
         !processState.ownershipUnknown
       ) {
