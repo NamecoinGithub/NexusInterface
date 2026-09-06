@@ -7,7 +7,7 @@ import styled from '@emotion/styled';
 import Form from 'components/Form';
 import { showNotification } from 'lib/ui';
 import { confirm } from 'lib/dialog';
-import { stopCore, startCore, restartCore } from 'lib/core';
+import { startCore, restartCore } from 'lib/core';
 import { coreInfoQuery } from 'lib/coreInfo';
 import {
   updateSettings,
@@ -171,7 +171,6 @@ async function turnOnRemoteCore(restartForm: () => void) {
   if (confirmed) {
     restartForm();
     try {
-      await stopCore();
       await updateSettings({ manualDaemon: true });
       coreInfoQuery.refetch();
     } catch (error) {
@@ -215,7 +214,13 @@ export default function SettingsCore() {
             showNotification(__('Core settings saved'), 'success');
             if (!manualDaemon && restartCoreOnSave) {
               showNotification(__('Restarting Core...'));
-              restartCore();
+              restartCore().catch((error) => {
+                showNotification(
+                  (error as Error)?.message ||
+                    __('Unable to restart Nexus Core'),
+                  'error'
+                );
+              });
             }
           },
           errorMessage: __('Error saving settings'),

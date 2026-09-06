@@ -185,8 +185,9 @@ test('embedded Core start always supplies API auth and probes already-running Co
   );
   assert.match(
     coreSettings,
-    /submit:\s*async[\s\S]*await updateSettings\(updates\)[\s\S]*onSuccess:[\s\S]*restartCore\(\)/
+    /submit:\s*async[\s\S]*await updateSettings\(updates\)[\s\S]*onSuccess:[\s\S]*restartCore\(\)\.catch/
   );
+  assert.doesNotMatch(coreSettings, /await stopCore\(\)/);
   assert.doesNotMatch(coreSettings, /window\.nexusElectron\.settings\.update/);
   assert.match(
     embeddedCoreSettings,

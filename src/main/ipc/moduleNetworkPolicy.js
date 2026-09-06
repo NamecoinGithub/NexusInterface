@@ -43,7 +43,7 @@ function getModuleProxyConfig(policy, fileServerDomain) {
   return {
     mode: 'fixed_servers',
     proxyRules: 'http=127.0.0.1:9;https=127.0.0.1:9',
-    proxyBypassRules: bypassRules.join(';'),
+    proxyBypassRules: bypassRules.join(','),
   };
 }
 

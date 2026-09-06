@@ -57,12 +57,11 @@ test('module proxy blackholes external traffic and bypasses only production asse
     domain
   );
   assert.match(production.proxyRules, /127\.0\.0\.1:9/);
-  assert.match(production.proxyBypassRules, /<-loopback>/);
-  assert.match(production.proxyBypassRules, /127\.0\.0\.1:43123/);
+  assert.equal(production.proxyBypassRules, '<-loopback>,127.0.0.1:43123');
 
   const development = getModuleProxyConfig(
     { moduleName: 'demo', development: true },
     domain
   );
-  assert.match(development.proxyBypassRules, /127\.0\.0\.1:43123/);
+  assert.equal(development.proxyBypassRules, '<-loopback>,127.0.0.1:43123');
 });
