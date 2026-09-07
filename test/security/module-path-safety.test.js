@@ -116,6 +116,12 @@ test('module asset and entry resolvers reject symlinks and realpath escapes', ()
     'authorized files must return the same canonical root as their real paths'
   );
   assert.match(
+    fileServer,
+    /await readRegularFileNoFollow\(asset\.absolutePath,[\s\S]*root:\s*asset\.root/,
+    'module files must be opened without following links at request time'
+  );
+  assert.doesNotMatch(fileServer, /res\.sendFile\(/);
+  assert.match(
     moduleFiles,
     /Module root must not be a symlink/,
     'installed module roots must reject directory symlinks'

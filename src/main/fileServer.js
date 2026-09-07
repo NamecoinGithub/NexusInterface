@@ -9,6 +9,7 @@ import log from 'electron-log';
 
 import { modulesDir } from './paths';
 import { assertRelativeModulePath, assertSafeModuleName } from './ipc/contracts';
+import { readRegularFileNoFollow } from './ipc/safeCopy';
 
 const server = express();
 let port = null;
@@ -18,7 +19,7 @@ let port = null;
  * moduleName -> Map(relativePath -> absolute real path)
  * Request handling never joins user path segments into filesystem paths.
  */
-/** @type {Map<string, Map<string, string>>} */
+/** @type {Map<string, Map<string, { absolutePath: string, root: string, allowPathFallback: boolean }>>} */
 const authorizedAssets = new Map();
 
 const SECURITY_HEADERS = {
@@ -82,7 +83,7 @@ function resolveAssetAbsolute(moduleName, relativeFile, resolvedFile) {
   return realFile;
 }
 
-server.get('/modules/:moduleName/*', (req, res) => {
+server.get('/modules/:moduleName/*', async (req, res) => {
   // Rate-limit this filesystem-serving route before any work.
   if (isRateLimited(req)) {
     setSecurityHeaders(res);
@@ -112,14 +113,21 @@ server.get('/modules/:moduleName/*', (req, res) => {
   }
 
   // Lookup only — absolute path was authorized when the module was prepared.
-  const absolute = assets.get(relative);
-  if (!absolute) {
+  const asset = assets.get(relative);
+  if (!asset) {
     return res.status(404).end('Not found');
   }
 
-  return res.sendFile(absolute, (error) => {
-    if (error && !res.headersSent) res.status(404).end('Not found');
-  });
+  try {
+    const content = await readRegularFileNoFollow(asset.absolutePath, {
+      root: asset.root,
+      label: relative,
+      allowPathFallback: asset.allowPathFallback,
+    });
+    return res.type(relative).send(content);
+  } catch {
+    return res.status(404).end('Not found');
+  }
 });
 
 // Loopback-only: module assets must never be reachable from the LAN/WAN.
@@ -137,17 +145,21 @@ export function getDomain() {
  * Computes and stores absolute real paths up front so request handlers never
  * build filesystem paths from request input.
  * @param {string} moduleName validated module name
- * @param {{ path: string, absolutePath: string, root: string }[]} files
+ * @param {{ path: string, absolutePath: string, root: string, allowPathFallback?: boolean }[]} files
  */
 export function serveModuleFiles(moduleName, files) {
   const safeModuleName = assertSafeModuleName(moduleName);
-  /** @type {Map<string, string>} */
+  /** @type {Map<string, { absolutePath: string, root: string, allowPathFallback: boolean }>} */
   const next = new Map();
 
   for (const file of files || []) {
     const relative = normalizeRelativeFile(file.path);
     const absolute = resolveAssetAbsolute(safeModuleName, relative, file);
-    next.set(relative, absolute);
+    next.set(relative, {
+      absolutePath: absolute,
+      root: file.root,
+      allowPathFallback: Boolean(file.allowPathFallback),
+    });
   }
 
   authorizedAssets.set(safeModuleName, next);

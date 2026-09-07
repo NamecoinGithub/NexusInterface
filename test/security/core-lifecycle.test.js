@@ -266,7 +266,7 @@ test('Windows Core discovery falls back from CIM to legacy WMI before tasklist',
         /!processState\.trackedPidRunning &&\s*!processState\.managedPid &&\s*!processState\.ownershipUnknown/g
       ) || []
     ).length,
-    3
+    5
   );
   assert.match(
     core,
@@ -277,4 +277,8 @@ test('Windows Core discovery falls back from CIM to legacy WMI before tasklist',
     /if \(processState\.managedPid !== managedPid\)[\s\S]*managedPid = processState\.managedPid/
   );
   assert.match(core, /killCorePid\(managedPid\)/);
+  assert.match(
+    core,
+    /export async function killCoreProcess\(\)[\s\S]*CORE_KILL_CONFIRM_ATTEMPTS[\s\S]*getCoreProcessState\(settings\.coreDataDir, managedPid\)[\s\S]*core\.kill\.confirmed/
+  );
 });

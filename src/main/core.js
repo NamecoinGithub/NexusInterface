@@ -1076,14 +1076,60 @@ async function killCorePid(corePID) {
 
 export async function killCoreProcess() {
   const settings = loadSettingsFromFile();
-  const corePID = await getCorePID({ dataDir: settings.coreDataDir });
-  if (!corePID) {
+  let processState = await getCoreProcessState(settings.coreDataDir);
+  if (!processState.managedPid) {
     log.info(
       'Core Manager: No wallet-managed Nexus Core process found to kill'
     );
     return false;
   }
-  return killCorePid(corePID);
+  let managedPid = processState.managedPid;
+
+  for (let attempt = 1; attempt <= CORE_KILL_RETRIES; attempt += 1) {
+    processState = await getCoreProcessState(settings.coreDataDir, managedPid);
+    if (
+      !processState.trackedPidRunning &&
+      !processState.managedPid &&
+      !processState.ownershipUnknown
+    ) {
+      return true;
+    }
+    if (processState.managedPid !== managedPid) {
+      if (!processState.managedPid) return false;
+      managedPid = processState.managedPid;
+    }
+
+    try {
+      await killCorePid(managedPid);
+    } catch (error) {
+      log.warn('core.kill.failed', {
+        attempt,
+        error: error?.message || String(error),
+      });
+    }
+
+    for (
+      let check = 0;
+      check < CORE_KILL_CONFIRM_ATTEMPTS;
+      check += 1
+    ) {
+      processState = await getCoreProcessState(settings.coreDataDir, managedPid);
+      if (
+        !processState.trackedPidRunning &&
+        !processState.managedPid &&
+        !processState.ownershipUnknown
+      ) {
+        log.info('core.kill.confirmed', { attempt });
+        return true;
+      }
+      await new Promise((resolve) =>
+        setTimeout(resolve, CORE_KILL_CONFIRM_DELAY_MS)
+      );
+    }
+  }
+
+  log.error('core.kill.unconfirmed', { attempts: CORE_KILL_RETRIES });
+  return false;
 }
 
 /**

@@ -135,7 +135,12 @@ export async function validateModuleFiles(name) {
   return Promise.all(
     moduleFiles.map(async (file) => {
       const absolutePath = await resolveModuleFile(root, file, { allowSymlink });
-      return { path: file, absolutePath, root: realRoot };
+      return {
+        path: file,
+        absolutePath,
+        root: realRoot,
+        allowPathFallback: !development,
+      };
     })
   );
 }
