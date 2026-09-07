@@ -281,4 +281,8 @@ test('Windows Core discovery falls back from CIM to legacy WMI before tasklist',
     core,
     /export async function killCoreProcess\(\)[\s\S]*CORE_KILL_CONFIRM_ATTEMPTS[\s\S]*getCoreProcessState\(settings\.coreDataDir, managedPid\)[\s\S]*core\.kill\.confirmed/
   );
+  assert.match(
+    core,
+    /if \(!\(await killCoreProcess\(\)\)\) \{\s*throw new Error\('Nexus Core termination could not be confirmed'\)/
+  );
 });

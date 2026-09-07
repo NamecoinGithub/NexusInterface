@@ -121,6 +121,11 @@ test('module asset and entry resolvers reject symlinks and realpath escapes', ()
     'module files must be opened without following links at request time'
   );
   assert.doesNotMatch(fileServer, /res\.sendFile\(/);
+  assert.match(fileServer, /MAX_CONCURRENT_ASSET_READS/);
+  assert.match(
+    fileServer,
+    /activeAssetReads \+= 1[\s\S]*activeAssetReads -= 1[\s\S]*res\.once\('finish', releaseAssetRead\)/
+  );
   assert.match(
     moduleFiles,
     /Module root must not be a symlink/,

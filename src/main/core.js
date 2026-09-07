@@ -886,7 +886,9 @@ export async function startConfiguredCore() {
       error: probe.error,
       pid: managedPid,
     });
-    await killCoreProcess();
+    if (!(await killCoreProcess())) {
+      throw new Error('Nexus Core termination could not be confirmed');
+    }
     await new Promise((resolve) =>
       setTimeout(resolve, CORE_PORT_RELEASE_DELAY_MS)
     );

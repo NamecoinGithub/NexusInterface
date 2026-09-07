@@ -33,6 +33,8 @@ const SECURITY_HEADERS = {
 
 const RATE_LIMIT_WINDOW_MS = 1000;
 const RATE_LIMIT_MAX = 120;
+const MAX_CONCURRENT_ASSET_READS = 1;
+let activeAssetReads = 0;
 /** @type {Map<string, { count: number, resetAt: number }>} */
 const rateBuckets = new Map();
 
@@ -117,7 +119,19 @@ server.get('/modules/:moduleName/*', async (req, res) => {
   if (!asset) {
     return res.status(404).end('Not found');
   }
+  if (activeAssetReads >= MAX_CONCURRENT_ASSET_READS) {
+    return res.status(503).end('Module file server busy');
+  }
 
+  activeAssetReads += 1;
+  let released = false;
+  const releaseAssetRead = () => {
+    if (released) return;
+    released = true;
+    activeAssetReads -= 1;
+  };
+  res.once('finish', releaseAssetRead);
+  res.once('close', releaseAssetRead);
   try {
     const content = await readRegularFileNoFollow(asset.absolutePath, {
       root: asset.root,
@@ -126,6 +140,7 @@ server.get('/modules/:moduleName/*', async (req, res) => {
     });
     return res.type(relative).send(content);
   } catch {
+    releaseAssetRead();
     return res.status(404).end('Not found');
   }
 });
