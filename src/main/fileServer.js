@@ -157,7 +157,7 @@ server.get('/modules/:moduleName/*', async (req, res) => {
       release();
       return;
     }
-    return res.type(relative).send(content);
+    return res.type(path.basename(relative)).send(content);
   } catch {
     readDone = true;
     if (responseDone) {

@@ -138,6 +138,7 @@ test('module asset and entry resolvers reject symlinks and realpath escapes', ()
     /if \(released \|\| !readDone \|\| !responseDone\) return/
   );
   assert.match(fileServer, /res\.once\('finish', finishResponse\)/);
+  assert.match(fileServer, /res\.type\(path\.basename\(relative\)\)\.send\(content\)/);
   assert.match(
     safeCopy,
     /matchesTrustedPathIdentity[\s\S]*process\.platform !== 'win32'[\s\S]*actual\.ino !== expected\.ino/

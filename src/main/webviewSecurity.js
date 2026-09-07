@@ -84,7 +84,12 @@ export function hardenModuleWebviews(mainWindow) {
       webPreferences.partition = partition;
       const guestSession = session.fromPartition(partition);
       const fileServerDomain = getDomain();
-      const pending = { policy, cleanupTimer: null };
+      const pending = {
+        policy,
+        cleanupTimer: null,
+        contents: null,
+        proxyReady: false,
+      };
       guestSession.webRequest.onBeforeRequest(
         { urls: ['<all_urls>'] },
         (details, callback) => {
@@ -97,20 +102,43 @@ export function hardenModuleWebviews(mainWindow) {
           });
         }
       );
-      const cleanupTimer = setTimeout(() => {
+      const cleanupPending = () => {
         const currentPending = pendingPoliciesBySession.get(guestSession);
-        if (currentPending !== pending) return;
+        if (currentPending !== pending) return false;
         pendingPoliciesBySession.delete(guestSession);
         guestSession.webRequest.onBeforeRequest(null);
         guestSession.setProxy({ mode: 'direct' }).catch(() => {});
+        return true;
+      };
+      const closePendingContents = () => {
+        const guestContents = pending.contents;
+        if (!guestContents || guestContents.isDestroyed()) return;
+        unregisterModuleGuest(guestContents.id);
+        try {
+          guestContents.close();
+        } catch {
+          // ignore
+        }
+      };
+      const cleanupTimer = setTimeout(() => {
+        if (!cleanupPending()) return;
+        closePendingContents();
       }, pendingPolicyTimeoutMs);
       pending.cleanupTimer = cleanupTimer;
       cleanupTimer.unref?.();
       pendingPoliciesBySession.set(guestSession, pending);
       guestSession
         .setProxy(getModuleProxyConfig(policy, fileServerDomain))
+        .then(() => {
+          pending.proxyReady = true;
+          if (pending.contents) {
+            pendingPoliciesBySession.delete(guestSession);
+          }
+        })
         .catch((error) => {
           console.error('Failed to set module network proxy', error);
+          if (!cleanupPending()) return;
+          closePendingContents();
         });
     }
   );
@@ -119,8 +147,13 @@ export function hardenModuleWebviews(mainWindow) {
 app.on('web-contents-created', (_event, contents) => {
   if (contents.getType() !== 'webview') return;
   const pending = pendingPoliciesBySession.get(contents.session);
-  pendingPoliciesBySession.delete(contents.session);
   if (pending) clearTimeout(pending.cleanupTimer);
+  if (pending) {
+    pending.contents = contents;
+    if (pending.proxyReady) {
+      pendingPoliciesBySession.delete(contents.session);
+    }
+  }
   const policy = pending?.policy;
   if (!policy?.identity) {
     contents.close();

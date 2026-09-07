@@ -203,6 +203,10 @@ test('module webview hardening enforces isolation preferences', () => {
     security,
     /pendingPoliciesBySession\.set\(guestSession,\s*pending\)[\s\S]*guestSession\s*\n?\s*\.setProxy/
   );
+  assert.match(
+    security,
+    /Failed to set module network proxy[\s\S]*closePendingContents/
+  );
   assert.doesNotMatch(security, /pendingPolicies\.shift\(/);
   assert.doesNotMatch(security, /pendingPolicies\.push\(/);
   assert.match(broker, /dialog\.showMessageBox/);
