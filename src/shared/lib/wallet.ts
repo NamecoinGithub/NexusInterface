@@ -39,17 +39,17 @@ export const closeWallet = async (beforeExit?: () => void) => {
   const { manualDaemon, manualDaemonLogOutOnClose } = store.get(settingsAtom);
   store.set(walletClosingAtom, true);
 
-  if (!manualDaemon) {
-    // Main-process app.exit/quit stops the embedded Core (graceful API stop
-    // then force-kill). Doing it only there avoids a double 10s wait and still
-    // works when the renderer can no longer reach the Core API.
-    store.set(coreInfoPausedAtom, true);
-  } else if (manualDaemonLogOutOnClose) {
-    await logOut(); //TODO: Ask for pin/session
-  }
-
-  beforeExit?.();
   try {
+    if (!manualDaemon) {
+      // Main-process app.exit/quit stops the embedded Core (graceful API stop
+      // then force-kill). Doing it only there avoids a double 10s wait and still
+      // works when the renderer can no longer reach the Core API.
+      store.set(coreInfoPausedAtom, true);
+    } else if (manualDaemonLogOutOnClose) {
+      await logOut(); //TODO: Ask for pin/session
+    }
+
+    beforeExit?.();
     await window.nexusElectron.app.exit();
   } catch (error) {
     store.set(walletClosingAtom, false);

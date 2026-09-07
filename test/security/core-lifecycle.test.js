@@ -195,6 +195,10 @@ test('all destructive Core operations use the lifecycle coordinator', () => {
     core,
     /fs\.promises\.rename\(clientPath, quarantinedClientPath\)[\s\S]*getCoreProcessState\(settings\.coreDataDir\)[\s\S]*stopEmbeddedCore\(\)[\s\S]*fs\.promises\.rm\(quarantinedClientPath/
   );
+  assert.match(
+    core,
+    /rollbackSafe = false;\s*await fs\.promises\.rm\(quarantinedClientPath[\s\S]*if \(rollbackSafe\)/
+  );
   assert.doesNotMatch(
     core,
     /fs\.promises\.rm\(path\.join\(settings\.coreDataDir, 'client'\)/

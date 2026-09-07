@@ -468,9 +468,9 @@ async function openRegularFileNoFollowFdRelative(
 }
 
 /**
- * Path-based fallback for app-owned trees on platforms without descriptor-
- * relative opens. It verifies the opened handle against pre-open metadata and
- * rechecks the path after reading so replacement attempts fail closed.
+ * Identity-checked path fallback for platforms without descriptor-relative
+ * opens. It verifies the opened handle against pre-open metadata and rechecks
+ * the path after reading so replacement attempts fail closed.
  */
 async function readRegularFileFromTrustedRoot(
   filePath,
@@ -553,8 +553,8 @@ async function readRegularFileFromTrustedRoot(
  * symlinks. Used to safely read source files during module installation.
  *
  * On platforms without descriptor-relative no-follow opens (notably Windows),
- * mutable roots fail closed. Callers may opt into the identity-checked path
- * fallback only for app-owned trees.
+ * mutable roots fail closed unless callers explicitly opt into the
+ * identity-checked path fallback.
  */
 async function readRegularFileNoFollow(
   filePath,
@@ -586,7 +586,7 @@ async function readRegularFileNoFollow(
   // Windows and other platforms without openat-style fd paths cannot bind
   // intermediate components to directory handles. Refuse path-based reads of
   // mutable sources unless the caller explicitly opts into the identity-checked
-  // fallback for an app-owned tree.
+  // path fallback.
   if (!allowPathFallback) {
     throw new Error(
       `${label} secure module file reads require descriptor-relative opens or an app-owned trusted root`

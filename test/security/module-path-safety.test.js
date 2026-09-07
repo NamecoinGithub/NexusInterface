@@ -84,8 +84,8 @@ test('module asset and entry resolvers reject symlinks and realpath escapes', ()
   assert.match(fileAssets, /data:image\/png;base64/);
   assert.match(
     fileAssets,
-    /allowPathFallback:\s*!development/,
-    'development module roots must not enable the Windows path fallback'
+    /allowPathFallback:\s*true/,
+    'development module icons must use the identity-checked Windows path fallback'
   );
   assert.match(moduleFiles, /resolveModuleFile/);
   assert.match(moduleFiles, /allowSymlink/);
@@ -114,6 +114,11 @@ test('module asset and entry resolvers reject symlinks and realpath escapes', ()
     moduleFiles,
     /root:\s*realRoot/,
     'authorized files must return the same canonical root as their real paths'
+  );
+  assert.match(
+    moduleFiles,
+    /allowPathFallback:\s*true/,
+    'development module files must use the identity-checked Windows path fallback'
   );
   assert.match(
     fileServer,

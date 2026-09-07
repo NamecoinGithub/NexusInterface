@@ -985,11 +985,13 @@ export async function resyncLiteDatabase({ onCoreStopped } = {}) {
   );
   let dataError;
   let quarantined = false;
+  let rollbackSafe = false;
   try {
     for (let attempt = 0; attempt < 2 && !quarantined; attempt += 1) {
       try {
         await fs.promises.rename(clientPath, quarantinedClientPath);
         quarantined = true;
+        rollbackSafe = true;
       } catch (error) {
         if (error?.code === 'ENOENT') break;
         if (
@@ -1022,6 +1024,7 @@ export async function resyncLiteDatabase({ onCoreStopped } = {}) {
           );
         }
       }
+      rollbackSafe = false;
       await fs.promises.rm(quarantinedClientPath, {
         recursive: true,
         force: true,
@@ -1029,7 +1032,7 @@ export async function resyncLiteDatabase({ onCoreStopped } = {}) {
     }
   } catch (error) {
     dataError = error;
-    if (quarantined) {
+    if (rollbackSafe) {
       try {
         await fs.promises.rename(quarantinedClientPath, clientPath);
       } catch (restoreError) {
