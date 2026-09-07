@@ -169,8 +169,7 @@ function createCoreRpcSessionPolicy() {
         const clearsActiveSession =
           explicitSession
             ? explicitSession === activeSession
-            : termination === undefined ||
-              termination.activeSession === activeSession;
+            : termination?.activeSession === activeSession;
         const invalidatesLatestSelection =
           (clearsActiveSession &&
             (terminationSelection === undefined ||

@@ -274,6 +274,24 @@ test('sessionless termination does not clear a newer completed login', () => {
   );
 });
 
+test('untracked sessionless termination does not clear the active session', () => {
+  const policy = createCoreRpcSessionPolicy();
+  policy.observe(
+    {
+      endpoint: 'sessions/create/local',
+      params: { username: 'alice', password: 'secret', pin: '1234' },
+    },
+    { session: 'active-session-01' }
+  );
+
+  policy.observe({ endpoint: 'sessions/terminate/local' }, {});
+
+  assert.equal(
+    policy.authorize({ endpoint: 'finance/get/balances' }).params.session,
+    'active-session-01'
+  );
+});
+
 test('termination invalidates newer selections of the terminated session', () => {
   const policy = createCoreRpcSessionPolicy();
   policy.observe(

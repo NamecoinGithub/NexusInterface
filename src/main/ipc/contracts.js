@@ -240,6 +240,7 @@ const ALLOWED_SETTINGS_FIELDS = new Set([
   'dontAskToStartStaking',
   'lastCheckForUpdates',
 ]);
+const MAX_SETTINGS_UPDATE_BYTES = 64 * 1024;
 
 function fail(message) {
   throw new TypeError(message);
@@ -454,6 +455,12 @@ function validateSettingsUpdate(value) {
   const entries = Object.entries(updates);
   if (!entries.length || entries.length > ALLOWED_SETTINGS_FIELDS.size) {
     fail('Settings update contains an invalid number of fields');
+  }
+  if (
+    Buffer.byteLength(JSON.stringify(updates), 'utf8') >
+    MAX_SETTINGS_UPDATE_BYTES
+  ) {
+    fail('Settings update exceeds the maximum payload size');
   }
   const validated = {};
   for (const [key, fieldValue] of entries) {

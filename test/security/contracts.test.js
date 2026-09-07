@@ -182,6 +182,13 @@ test('settings updates reject dangerous Core overrides and relative paths', () =
     embeddedCoreApiPortSSL: '9337',
   };
   assert.deepEqual(validateSettingsUpdate(coreSettingsBatch), coreSettingsBatch);
+  assert.throws(
+    () =>
+      validateSettingsUpdate({
+        disabledModules: Array.from({ length: 100 }, () => 'x'.repeat(1024)),
+      }),
+    TypeError
+  );
 
   for (const updates of [
     { coreDataDir: 'relative/path' },
