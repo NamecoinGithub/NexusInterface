@@ -1110,7 +1110,11 @@ export async function killCoreProcess() {
       return true;
     }
     if (processState.managedPid !== managedPid) {
-      if (!processState.managedPid) return false;
+      if (!processState.managedPid) {
+        return (
+          !processState.trackedPidRunning && !processState.ownershipUnknown
+        );
+      }
       managedPid = processState.managedPid;
     }
 

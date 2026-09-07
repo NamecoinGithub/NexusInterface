@@ -21,6 +21,7 @@ function isSessionSelectionRequest(request) {
 
 function createCoreRpcSessionPolicy() {
   let activeSession = null;
+  let multiuser = false;
   let latestSessionSelection = 0;
   let latestSessionSelectionTarget = null;
   let latestSessionList = 0;
@@ -37,6 +38,7 @@ function createCoreRpcSessionPolicy() {
   return {
     reset() {
       activeSession = null;
+      multiuser = false;
       latestSessionSelection += 1;
       latestSessionSelectionTarget = null;
       latestSessionList += 1;
@@ -76,7 +78,10 @@ function createCoreRpcSessionPolicy() {
       if (params) delete params.session;
       const authorizedRequest = {
         ...request,
-        params: activeSession ? { session: activeSession, ...params } : params,
+        params:
+          multiuser && activeSession
+            ? { session: activeSession, ...params }
+            : params,
       };
       if (isSessionSelectionRequest(authorizedRequest)) {
         latestSessionSelection += 1;
@@ -104,6 +109,9 @@ function createCoreRpcSessionPolicy() {
       const termination = sessionTerminationRequests.get(request);
       const terminationSelection = termination?.latestSessionSelection;
       settleSessionSelection(request);
+      if (request.endpoint === 'system/get/info') {
+        multiuser = result?.multiuser === true;
+      }
       if (
         sessionSelection !== undefined &&
         sessionSelection !== latestSessionSelection

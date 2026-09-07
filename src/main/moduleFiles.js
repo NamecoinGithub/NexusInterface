@@ -139,7 +139,7 @@ export async function validateModuleFiles(name) {
         path: file,
         absolutePath,
         root: realRoot,
-        allowPathFallback: true,
+        allowPathFallback: !development || process.platform !== 'win32',
       };
     })
   );

@@ -58,7 +58,7 @@ async function readModuleAssetBytes(moduleName, relativePath, { maxBytes }) {
       max: 1024,
     })
   );
-  const { root: moduleRoot } = await resolveModuleRoot(name);
+  const { root: moduleRoot, development } = await resolveModuleRoot(name);
   const resolvedPath = path.resolve(moduleRoot, assetPath);
   if (
     resolvedPath !== moduleRoot &&
@@ -87,7 +87,7 @@ async function readModuleAssetBytes(moduleName, relativePath, { maxBytes }) {
     root: moduleRoot,
     label: 'Module icon',
     maxBytes,
-    allowPathFallback: true,
+    allowPathFallback: !development || process.platform !== 'win32',
   });
 }
 

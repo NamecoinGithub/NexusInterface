@@ -124,7 +124,7 @@ function assertFiniteNumber(value, name, { min, max, integer = false } = {}) {
   return normalizedValue;
 }
 
-function validateUint64(value, name) {
+function validateUint64(value, name, { min = 0 } = {}) {
   if (
     typeof value !== 'string' &&
     (typeof value !== 'number' || !Number.isSafeInteger(value))
@@ -132,7 +132,11 @@ function validateUint64(value, name) {
     fail(`${name} must be an unsigned 64-bit integer`);
   }
   const decimal = String(value);
-  if (!/^\d+$/.test(decimal) || BigInt(decimal) > MAX_UINT64) {
+  if (
+    !/^\d+$/.test(decimal) ||
+    BigInt(decimal) < BigInt(min) ||
+    BigInt(decimal) > MAX_UINT64
+  ) {
     fail(`${name} must be an unsigned 64-bit integer`);
   }
   return value;
@@ -292,7 +296,7 @@ function validateField(value, name, schema) {
     case 'integer':
       return assertFiniteNumber(value, name, { ...schema, integer: true });
     case 'uint64':
-      return validateUint64(value, name);
+      return validateUint64(value, name, schema);
     case 'queryLimit':
       return assertFiniteNumber(value, name, {
         integer: true,
@@ -468,7 +472,7 @@ const CORE_RPC_ENDPOINT_REGISTRY = Object.freeze({
     pin: { type: 'pin' },
     name: { type: 'name', optional: true },
     data: { type: 'primitive', optional: true, max: 4096 },
-    supply: { type: 'integer', min: 1 },
+    supply: { type: 'uint64', min: 1 },
     decimals: { type: 'integer', min: 0, max: 8 },
   }),
   'finance/get/stakeinfo': defineEndpoint(),

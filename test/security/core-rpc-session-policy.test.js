@@ -4,8 +4,31 @@ const assert = require('node:assert/strict');
 const test = require('node:test');
 
 const {
-  createCoreRpcSessionPolicy,
+  createCoreRpcSessionPolicy: createPolicy,
 } = require('../../src/main/ipc/coreRpcSessionPolicy');
+
+function createCoreRpcSessionPolicy() {
+  const policy = createPolicy();
+  policy.observe({ endpoint: 'system/get/info' }, { multiuser: true });
+  return policy;
+}
+
+test('ordinary Core RPC calls remain sessionless in single-user mode', () => {
+  const policy = createPolicy();
+  policy.observe(
+    {
+      endpoint: 'sessions/create/local',
+      params: { username: 'alice', password: 'secret', pin: '1234' },
+    },
+    { session: 'active-session-01' }
+  );
+  policy.observe({ endpoint: 'system/get/info' }, { multiuser: false });
+
+  assert.deepEqual(policy.authorize({ endpoint: 'finance/get/balances' }), {
+    endpoint: 'finance/get/balances',
+    params: undefined,
+  });
+});
 
 test('ordinary Core RPC calls use only the main-owned active session', () => {
   const policy = createCoreRpcSessionPolicy();

@@ -391,7 +391,7 @@ test('happy-path structured requests still validate', () => {
   );
 });
 
-test('bounded numeric strings from form controls are normalized', () => {
+test('bounded numeric strings are normalized without rounding uint64 values', () => {
   assert.deepEqual(
     validateCoreRpcRequest({
       endpoint: 'finance/create/token',
@@ -401,7 +401,30 @@ test('bounded numeric strings from form controls are normalized', () => {
         decimals: '2',
       },
     }).params,
-    { pin: '1234', supply: 1000, decimals: 2 }
+    { pin: '1234', supply: '1000', decimals: 2 }
+  );
+  assert.equal(
+    validateCoreRpcRequest({
+      endpoint: 'finance/create/token',
+      params: {
+        pin: '1234',
+        supply: '18446744073709551615',
+        decimals: 2,
+      },
+    }).params.supply,
+    '18446744073709551615'
+  );
+  assert.throws(
+    () =>
+      validateCoreRpcRequest({
+        endpoint: 'finance/create/token',
+        params: {
+          pin: '1234',
+          supply: '18446744073709551616',
+          decimals: 2,
+        },
+      }),
+    /unsigned 64-bit integer/
   );
   for (const supply of [0, '0', 1000.5, '1000.5']) {
     assert.throws(
