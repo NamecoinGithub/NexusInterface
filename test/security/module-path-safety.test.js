@@ -123,7 +123,11 @@ test('module asset and entry resolvers reject symlinks and realpath escapes', ()
   assert.doesNotMatch(fileServer, /res\.sendFile\(/);
   assert.match(fileServer, /MAX_MODULE_ASSET_BYTES/);
   assert.match(fileServer, /MAX_CONCURRENT_ASSET_READS/);
-  assert.match(fileServer, /res\.once\('finish', release\)/);
+  assert.match(
+    fileServer,
+    /if \(released \|\| !readDone \|\| !responseDone\) return/
+  );
+  assert.match(fileServer, /res\.once\('finish', finishResponse\)/);
   assert.match(
     safeCopy,
     /const opened = await handle\.stat\(\)[\s\S]*opened\.ino !== before\.ino/

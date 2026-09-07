@@ -126,13 +126,19 @@ server.get('/modules/:moduleName/*', async (req, res) => {
 
   activeAssetReads += 1;
   let released = false;
+  let readDone = false;
+  let responseDone = false;
   const release = () => {
-    if (released) return;
+    if (released || !readDone || !responseDone) return;
     released = true;
     activeAssetReads -= 1;
   };
-  res.once('finish', release);
-  res.once('close', release);
+  const finishResponse = () => {
+    responseDone = true;
+    release();
+  };
+  res.once('finish', finishResponse);
+  res.once('close', finishResponse);
   try {
     const content = await readRegularFileNoFollow(asset.absolutePath, {
       root: asset.root,
@@ -140,8 +146,18 @@ server.get('/modules/:moduleName/*', async (req, res) => {
       maxBytes: MAX_MODULE_ASSET_BYTES,
       allowPathFallback: asset.allowPathFallback,
     });
+    readDone = true;
+    if (responseDone) {
+      release();
+      return;
+    }
     return res.type(relative).send(content);
   } catch {
+    readDone = true;
+    if (responseDone) {
+      release();
+      return;
+    }
     release();
     return res.status(404).end('Not found');
   }
