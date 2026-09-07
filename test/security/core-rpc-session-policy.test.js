@@ -9,7 +9,8 @@ const {
 
 function createCoreRpcSessionPolicy() {
   const policy = createPolicy();
-  policy.observe({ endpoint: 'system/get/info' }, { multiuser: true });
+  const infoRequest = policy.authorize({ endpoint: 'system/get/info' });
+  policy.observe(infoRequest, { multiuser: true });
   return policy;
 }
 
@@ -22,7 +23,27 @@ test('ordinary Core RPC calls remain sessionless in single-user mode', () => {
     },
     { session: 'active-session-01' }
   );
-  policy.observe({ endpoint: 'system/get/info' }, { multiuser: false });
+  const infoRequest = policy.authorize({ endpoint: 'system/get/info' });
+  policy.observe(infoRequest, { multiuser: false });
+
+  assert.deepEqual(policy.authorize({ endpoint: 'finance/get/balances' }), {
+    endpoint: 'finance/get/balances',
+    params: undefined,
+  });
+});
+
+test('Core reset ignores stale multi-user mode responses', () => {
+  const policy = createPolicy();
+  const staleInfoRequest = policy.authorize({ endpoint: 'system/get/info' });
+  policy.reset();
+  policy.observe(staleInfoRequest, { multiuser: true });
+  policy.observe(
+    {
+      endpoint: 'sessions/create/local',
+      params: { username: 'alice', password: 'secret', pin: '1234' },
+    },
+    { session: 'stale-session-01' }
+  );
 
   assert.deepEqual(policy.authorize({ endpoint: 'finance/get/balances' }), {
     endpoint: 'finance/get/balances',

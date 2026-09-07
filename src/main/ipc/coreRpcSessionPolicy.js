@@ -26,10 +26,12 @@ function createCoreRpcSessionPolicy() {
   let latestSessionSelectionTarget = null;
   let latestSessionList = 0;
   let sessionRevision = 0;
+  let coreGeneration = 0;
   const sessionSelectionRequests = new WeakMap();
   const pendingSessionSelections = new Set();
   const sessionListRequests = new WeakMap();
   const sessionTerminationRequests = new WeakMap();
+  const coreInfoRequests = new WeakMap();
 
   function settleSessionSelection(request) {
     pendingSessionSelections.delete(sessionSelectionRequests.get(request));
@@ -43,6 +45,7 @@ function createCoreRpcSessionPolicy() {
       latestSessionSelectionTarget = null;
       latestSessionList += 1;
       sessionRevision += 1;
+      coreGeneration += 1;
       pendingSessionSelections.clear();
     },
 
@@ -83,6 +86,9 @@ function createCoreRpcSessionPolicy() {
             ? { session: activeSession, ...params }
             : params,
       };
+      if (request.endpoint === 'system/get/info') {
+        coreInfoRequests.set(authorizedRequest, coreGeneration);
+      }
       if (isSessionSelectionRequest(authorizedRequest)) {
         latestSessionSelection += 1;
         sessionSelectionRequests.set(authorizedRequest, latestSessionSelection);
@@ -109,7 +115,10 @@ function createCoreRpcSessionPolicy() {
       const termination = sessionTerminationRequests.get(request);
       const terminationSelection = termination?.latestSessionSelection;
       settleSessionSelection(request);
-      if (request.endpoint === 'system/get/info') {
+      if (
+        request.endpoint === 'system/get/info' &&
+        coreInfoRequests.get(request) === coreGeneration
+      ) {
         multiuser = result?.multiuser === true;
       }
       if (
