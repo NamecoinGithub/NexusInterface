@@ -33,7 +33,8 @@ const SECURITY_HEADERS = {
 
 const RATE_LIMIT_WINDOW_MS = 1000;
 const RATE_LIMIT_MAX = 120;
-const MAX_CONCURRENT_ASSET_READS = 1;
+const MAX_MODULE_ASSET_BYTES = 16 * 1024 * 1024;
+const MAX_CONCURRENT_ASSET_READS = 8;
 let activeAssetReads = 0;
 /** @type {Map<string, { count: number, resetAt: number }>} */
 const rateBuckets = new Map();
@@ -125,22 +126,23 @@ server.get('/modules/:moduleName/*', async (req, res) => {
 
   activeAssetReads += 1;
   let released = false;
-  const releaseAssetRead = () => {
+  const release = () => {
     if (released) return;
     released = true;
     activeAssetReads -= 1;
   };
-  res.once('finish', releaseAssetRead);
-  res.once('close', releaseAssetRead);
+  res.once('finish', release);
+  res.once('close', release);
   try {
     const content = await readRegularFileNoFollow(asset.absolutePath, {
       root: asset.root,
       label: relative,
+      maxBytes: MAX_MODULE_ASSET_BYTES,
       allowPathFallback: asset.allowPathFallback,
     });
     return res.type(relative).send(content);
   } catch {
-    releaseAssetRead();
+    release();
     return res.status(404).end('Not found');
   }
 });

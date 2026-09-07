@@ -887,7 +887,17 @@ export async function startConfiguredCore() {
       pid: managedPid,
     });
     if (!(await killCoreProcess())) {
-      throw new Error('Nexus Core termination could not be confirmed');
+      const finalState = await getCoreProcessState(
+        settings.coreDataDir,
+        managedPid
+      );
+      if (
+        finalState.trackedPidRunning ||
+        finalState.managedPid ||
+        finalState.ownershipUnknown
+      ) {
+        throw new Error('Nexus Core termination could not be confirmed');
+      }
     }
     await new Promise((resolve) =>
       setTimeout(resolve, CORE_PORT_RELEASE_DELAY_MS)

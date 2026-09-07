@@ -468,11 +468,9 @@ async function openRegularFileNoFollowFdRelative(
 }
 
 /**
- * Best-effort path-based read used only against an already app-owned tree
- * whose parents the untrusted module author cannot replace (for example an
- * archive extract under the application temp directory). Mutable user-selected
- * install sources must not use this path: platforms without fd-relative opens
- * fail closed instead.
+ * Path-based fallback for app-owned trees on platforms without descriptor-
+ * relative opens. It verifies the opened handle against pre-open metadata and
+ * rechecks the path after reading so replacement attempts fail closed.
  */
 async function readRegularFileFromTrustedRoot(
   filePath,
@@ -518,6 +516,16 @@ async function readRegularFileFromTrustedRoot(
   const handle = await fsp.open(resolvedFile, fs.constants.O_RDONLY);
   let content;
   try {
+    const opened = await handle.stat();
+    if (
+      !opened.isFile() ||
+      opened.size !== before.size ||
+      opened.mtimeMs !== before.mtimeMs ||
+      opened.ino !== before.ino ||
+      opened.dev !== before.dev
+    ) {
+      throw new Error(`${label} changed before open`);
+    }
     content = await readFileHandleBounded(handle, maxBytes, label);
   } finally {
     await handle.close();
@@ -545,9 +553,8 @@ async function readRegularFileFromTrustedRoot(
  * symlinks. Used to safely read source files during module installation.
  *
  * On platforms without descriptor-relative no-follow opens (notably Windows),
- * path-based reads of a mutable source remain TOCTOU-prone. Mutable directory
- * installs therefore fail closed; callers may only opt into the path fallback
- * for already app-owned trees (archive extracts, installed module roots).
+ * mutable roots fail closed. Callers may opt into the identity-checked path
+ * fallback only for app-owned trees.
  */
 async function readRegularFileNoFollow(
   filePath,
@@ -578,8 +585,8 @@ async function readRegularFileNoFollow(
 
   // Windows and other platforms without openat-style fd paths cannot bind
   // intermediate components to directory handles. Refuse path-based reads of
-  // mutable sources unless the caller explicitly opts into a trusted-root
-  // fallback (app-owned extract/install trees only).
+  // mutable sources unless the caller explicitly opts into the identity-checked
+  // fallback for an app-owned tree.
   if (!allowPathFallback) {
     throw new Error(
       `${label} secure module file reads require descriptor-relative opens or an app-owned trusted root`

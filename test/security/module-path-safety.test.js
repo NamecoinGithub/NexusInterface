@@ -121,10 +121,12 @@ test('module asset and entry resolvers reject symlinks and realpath escapes', ()
     'module files must be opened without following links at request time'
   );
   assert.doesNotMatch(fileServer, /res\.sendFile\(/);
+  assert.match(fileServer, /MAX_MODULE_ASSET_BYTES/);
   assert.match(fileServer, /MAX_CONCURRENT_ASSET_READS/);
+  assert.match(fileServer, /res\.once\('finish', release\)/);
   assert.match(
-    fileServer,
-    /activeAssetReads \+= 1[\s\S]*activeAssetReads -= 1[\s\S]*res\.once\('finish', releaseAssetRead\)/
+    safeCopy,
+    /const opened = await handle\.stat\(\)[\s\S]*opened\.ino !== before\.ino/
   );
   assert.match(
     moduleFiles,
