@@ -135,7 +135,7 @@ test('module asset and entry resolvers reject symlinks and realpath escapes', ()
   assert.match(fileServer, /res\.once\('finish', finishResponse\)/);
   assert.match(
     safeCopy,
-    /const opened = await handle\.stat\(\)[\s\S]*opened\.ino !== before\.ino/
+    /matchesTrustedPathIdentity[\s\S]*process\.platform !== 'win32'[\s\S]*actual\.ino !== expected\.ino/
   );
   assert.match(
     moduleFiles,

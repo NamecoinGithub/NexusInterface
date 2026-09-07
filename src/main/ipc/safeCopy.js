@@ -19,6 +19,7 @@ const DEFAULT_MAX_FILE_BYTES = 100 * 1024 * 1024;
 const STAGING_DIR_INFIX = '.installing-';
 const REPLACED_DIR_INFIX = '.replaced-';
 const READ_CHUNK_BYTES = 64 * 1024;
+const WINDOWS_STAT_TIME_TOLERANCE_MS = 2;
 const COPY_CONCURRENCY = 1;
 const publishLocks = new Map();
 /** Absolute paths of staging/backup dirs currently owned by an in-flight install. */
@@ -53,6 +54,35 @@ function assertPathInsideRoot(candidatePath, rootPath, label) {
   if (!isPathWithinDirectory(candidatePath, rootPath)) {
     throw new Error(`${label} realpath escapes module root`);
   }
+}
+
+function statTimesMatch(expected, actual) {
+  if (!Number.isFinite(expected) || !Number.isFinite(actual)) {
+    return expected === actual;
+  }
+  const tolerance =
+    process.platform === 'win32' ? WINDOWS_STAT_TIME_TOLERANCE_MS : 0;
+  return Math.abs(expected - actual) <= tolerance;
+}
+
+function matchesTrustedPathIdentity(expected, actual) {
+  if (!actual.isFile() || actual.size !== expected.size) {
+    return false;
+  }
+  if (
+    !statTimesMatch(expected.mtimeMs, actual.mtimeMs) ||
+    !statTimesMatch(expected.ctimeMs, actual.ctimeMs) ||
+    !statTimesMatch(expected.birthtimeMs, actual.birthtimeMs)
+  ) {
+    return false;
+  }
+  if (
+    process.platform !== 'win32' &&
+    (actual.ino !== expected.ino || actual.dev !== expected.dev)
+  ) {
+    return false;
+  }
+  return true;
 }
 
 function hasNoFollowOpen() {
@@ -517,13 +547,7 @@ async function readRegularFileFromTrustedRoot(
   let content;
   try {
     const opened = await handle.stat();
-    if (
-      !opened.isFile() ||
-      opened.size !== before.size ||
-      opened.mtimeMs !== before.mtimeMs ||
-      opened.ino !== before.ino ||
-      opened.dev !== before.dev
-    ) {
+    if (!matchesTrustedPathIdentity(before, opened)) {
       throw new Error(`${label} changed before open`);
     }
     content = await readFileHandleBounded(handle, maxBytes, label);
@@ -531,14 +555,7 @@ async function readRegularFileFromTrustedRoot(
     await handle.close();
   }
   const after = await fsp.lstat(resolvedFile);
-  if (
-    after.isSymbolicLink() ||
-    !after.isFile() ||
-    after.size !== before.size ||
-    after.mtimeMs !== before.mtimeMs ||
-    after.ino !== before.ino ||
-    after.dev !== before.dev
-  ) {
+  if (after.isSymbolicLink() || !matchesTrustedPathIdentity(before, after)) {
     throw new Error(`${label} changed during install`);
   }
   await assertNoSymlinkComponents(resolvedRoot, resolvedFile, label);
