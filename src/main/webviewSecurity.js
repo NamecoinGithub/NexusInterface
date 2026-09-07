@@ -84,6 +84,7 @@ export function hardenModuleWebviews(mainWindow) {
       webPreferences.partition = partition;
       const guestSession = session.fromPartition(partition);
       const fileServerDomain = getDomain();
+      const pending = { policy, cleanupTimer: null };
       guestSession.webRequest.onBeforeRequest(
         { urls: ['<all_urls>'] },
         (details, callback) => {
@@ -96,20 +97,21 @@ export function hardenModuleWebviews(mainWindow) {
           });
         }
       );
+      const cleanupTimer = setTimeout(() => {
+        const currentPending = pendingPoliciesBySession.get(guestSession);
+        if (currentPending !== pending) return;
+        pendingPoliciesBySession.delete(guestSession);
+        guestSession.webRequest.onBeforeRequest(null);
+        guestSession.setProxy({ mode: 'direct' }).catch(() => {});
+      }, pendingPolicyTimeoutMs);
+      pending.cleanupTimer = cleanupTimer;
+      cleanupTimer.unref?.();
+      pendingPoliciesBySession.set(guestSession, pending);
       guestSession
         .setProxy(getModuleProxyConfig(policy, fileServerDomain))
         .catch((error) => {
           console.error('Failed to set module network proxy', error);
         });
-      const cleanupTimer = setTimeout(() => {
-        const pending = pendingPoliciesBySession.get(guestSession);
-        if (pending?.cleanupTimer !== cleanupTimer) return;
-        pendingPoliciesBySession.delete(guestSession);
-        guestSession.webRequest.onBeforeRequest(null);
-        guestSession.setProxy({ mode: 'direct' }).catch(() => {});
-      }, pendingPolicyTimeoutMs);
-      cleanupTimer.unref?.();
-      pendingPoliciesBySession.set(guestSession, { policy, cleanupTimer });
     }
   );
 }

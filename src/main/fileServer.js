@@ -39,6 +39,14 @@ let activeAssetReads = 0;
 /** @type {Map<string, { count: number, resetAt: number }>} */
 const rateBuckets = new Map();
 
+function reserveAssetReadSlot() {
+  if (activeAssetReads >= MAX_CONCURRENT_ASSET_READS) {
+    return false;
+  }
+  activeAssetReads += 1;
+  return true;
+}
+
 function normalizeRelativeFile(file) {
   let filePath = normalize(String(file)).replace(/\\/g, '/');
   while (filePath.startsWith('/')) filePath = filePath.slice(1);
@@ -120,11 +128,9 @@ server.get('/modules/:moduleName/*', async (req, res) => {
   if (!asset) {
     return res.status(404).end('Not found');
   }
-  if (activeAssetReads >= MAX_CONCURRENT_ASSET_READS) {
+  if (!reserveAssetReadSlot()) {
     return res.status(503).end('Module file server busy');
   }
-
-  activeAssetReads += 1;
   let released = false;
   let readDone = false;
   let responseDone = false;

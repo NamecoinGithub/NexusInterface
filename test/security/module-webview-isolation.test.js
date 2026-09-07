@@ -199,6 +199,10 @@ test('module webview hardening enforces isolation preferences', () => {
   assert.match(security, /webRequest\.onBeforeRequest\(null\)/);
   assert.match(security, /session\.fromPartition/);
   assert.match(security, /webPreferences\.partition/);
+  assert.match(
+    security,
+    /pendingPoliciesBySession\.set\(guestSession,\s*pending\)[\s\S]*guestSession\s*\n?\s*\.setProxy/
+  );
   assert.doesNotMatch(security, /pendingPolicies\.shift\(/);
   assert.doesNotMatch(security, /pendingPolicies\.push\(/);
   assert.match(broker, /dialog\.showMessageBox/);

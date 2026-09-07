@@ -128,6 +128,11 @@ test('module asset and entry resolvers reject symlinks and realpath escapes', ()
   assert.doesNotMatch(fileServer, /res\.sendFile\(/);
   assert.match(fileServer, /MAX_MODULE_ASSET_BYTES/);
   assert.match(fileServer, /MAX_CONCURRENT_ASSET_READS/);
+  assert.match(fileServer, /function reserveAssetReadSlot/);
+  assert.match(
+    fileServer,
+    /if \(!reserveAssetReadSlot\(\)\)[\s\S]*Module file server busy/
+  );
   assert.match(
     fileServer,
     /if \(released \|\| !readDone \|\| !responseDone\) return/
