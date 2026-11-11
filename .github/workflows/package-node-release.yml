@@ -1,0 +1,116 @@
+name: Package NODE5 release candidates
+
+on:
+  push:
+    branches:
+      - copilot/node-release-artifacts
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  package:
+    name: Package node ${{ matrix.platform }} x64
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: linux
+            runner: ubuntu-latest
+            run: '42939332297'
+            artifact: linux-core
+          - platform: macos
+            runner: macos-15-intel
+            run: '42939332209'
+            artifact: macos-core
+          - platform: windows
+            runner: windows-latest
+            run: '42939332226'
+            artifact: windows-static-core
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Check out node source
+        uses: actions/checkout@v4
+        with:
+          repository: NamecoinGithub/LLL-TAO
+          ref: 124ea75875fb12373869ce4f95c8cd09334bb558
+          path: node-source
+      - name: Download freshly built core
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ matrix.artifact }}
+          run-id: ${{ matrix.run }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          path: node-binary
+      - name: Test Unix node startup and API
+        if: matrix.platform != 'windows'
+        shell: bash
+        env:
+          PLATFORM: ${{ matrix.platform }}
+        run: |
+          set -euo pipefail
+          if [ "$PLATFORM" = linux ]; then binary=node-binary/nexus-linux-x64; else binary=node-binary/nexus-darwin-x64; fi
+          chmod +x "$binary"
+          mkdir -p "$RUNNER_TEMP/nexus-smoke"
+          "$binary" "-datadir=$RUNNER_TEMP/nexus-smoke" -private=1 -listen=0 \
+            -manager=0 -nodns=1 -apiauth=0 -apiport=18483 > "$RUNNER_TEMP/nexus-smoke.log" 2>&1 &
+          pid=$!
+          trap 'kill "$pid" 2>/dev/null || true; wait "$pid" 2>/dev/null || true' EXIT
+          for i in {1..90}; do
+            if curl --noproxy '*' -fsS http://127.0.0.1:18483/system/get/info > "$RUNNER_TEMP/response.json" 2>/dev/null; then
+              python -c 'import json,sys; v=json.load(open(sys.argv[1]))["result"]["version"]; print(v); assert "5.1.7-rc6 build 1" in v' "$RUNNER_TEMP/response.json"
+              exit 0
+            fi
+            if ! kill -0 "$pid" 2>/dev/null; then break; fi
+            sleep 1
+          done
+          cat "$RUNNER_TEMP/nexus-smoke.log"
+          exit 1
+      - name: Test Windows node startup and API
+        if: matrix.platform == 'windows'
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $data = Join-Path $env:RUNNER_TEMP 'nexus-smoke'
+          New-Item -ItemType Directory -Force $data | Out-Null
+          $out = Join-Path $env:RUNNER_TEMP 'nexus-stdout.log'
+          $err = Join-Path $env:RUNNER_TEMP 'nexus-stderr.log'
+          $process = Start-Process -FilePath (Join-Path $env:GITHUB_WORKSPACE 'node-binary\nexus-win32-x64.exe') `
+            -ArgumentList @("-datadir=`"$data`"", '-private=1', '-listen=0', '-manager=0',
+              '-nodns=1', '-apiauth=0', '-apiport=18483') `
+            -RedirectStandardOutput $out -RedirectStandardError $err -PassThru
+          try {
+            for ($i = 0; $i -lt 90; $i++) {
+              if ($process.HasExited) { break }
+              try {
+                $response = Invoke-RestMethod -Uri 'http://127.0.0.1:18483/system/get/info'
+                if ($response.result.version -notlike '*5.1.7-rc6 build 1*') {
+                  throw "Unexpected core version: $($response.result.version)"
+                }
+                Write-Output $response.result.version
+                exit 0
+              } catch [System.Net.Http.HttpRequestException] {
+                Start-Sleep -Seconds 1
+              }
+            }
+            Get-Content $out
+            Get-Content $err
+            throw 'Core did not start its API'
+          } finally {
+            if (-not $process.HasExited) { Stop-Process -Id $process.Id -Force }
+          }
+      - name: Create and verify release archive
+        run: python .github/package-node-release.py ${{ matrix.platform }} ${{ matrix.run }}
+      - name: Upload node release archive
+        uses: actions/upload-artifact@v4
+        with:
+          name: nexus-node-5.1.7-rc6-build1-${{ matrix.platform }}-x86_64
+          path: dist/
+          if-no-files-found: error
+          retention-days: 14
