@@ -3,27 +3,23 @@ Embedded Nexus cores - third-party notices and source
 These binaries include Berkeley DB 5.3, OpenSSL, and GCC runtime components.
 See the adjacent license files for their copyright notices and license terms.
 
-Nexus core version: 5.1.7-rc6 build 1
+Nexus core version: 5.1.7-rc6 build 2
 SHA-256:
-  Linux x64:   487c71439b3485bdf6aaf1ac4284559f4b1655152f8cc7392ef751515edf9003
-  macOS x64:   660e8658c0e441bf178e04dbb0d290a1fecc68a57a2e9f2d2cc91477eeaf3514
-  Windows x64: 6004e90d0b2f679c0045b66fd7e9d764f35a38c0d5d1e19a65a0e5dd17026f9e
+  Linux x64:   91068670f27163bcfebf5f657494faa3deb8dcfd9f9761a02793687830d337a5
+  macOS x64:   5a9bb288936bb26d048e464e0ac59f24302d90c4560a44a3add965fcb6510ae6
+  Windows x64: 60e11cbb2e0cd2c01e785f35cf2e3e6b512b84c447ae72c2eb92111c84758228
 
-The Nexus core source used for the Linux and Windows binaries is:
-https://github.com/NamecoinGithub/LLL-TAO/tree/54726c85d1c1a0a12f95212a18e1c72a8fe88ece
+The Nexus core source used for all three binaries is:
+https://github.com/NamecoinGithub/LLL-TAO/tree/f747d6d311403bac3ee6f580c8555353048231c7
 
-The macOS binary uses:
-https://github.com/NamecoinGithub/LLL-TAO/tree/04eb09340bb20852c081b84fdb9c7b2e3de4a7d2
-
-The only difference between those revisions is the macOS deployment-target
-build option. The Interface build workflows and Linux build script contain
+The Interface build workflows and Linux build script contain
 the commands and patches used to build the binaries:
-https://github.com/NamecoinGithub/NexusInterface/tree/Merging/.github
+https://github.com/NamecoinGithub/NexusInterface/tree/5d5eac0db782c634e0b94507ba2b3c82e1dceb64/.github
 
 Dependency source:
 - Berkeley DB 5.3.28: https://download.oracle.com/berkeley-db/db-5.3.28.tar.gz
 - OpenSSL 3.5.9: https://github.com/openssl/openssl/releases/tag/openssl-3.5.9
-- OpenSSL 3.6.5: https://github.com/openssl/openssl/releases/tag/openssl-3.6.5
+- OpenSSL (Windows version recorded in the build log): https://github.com/openssl/openssl
 - OpenSSL Windows packaging: https://github.com/msys2/MINGW-packages/tree/master/mingw-w64-openssl
 - GCC runtime (Linux devtoolset-10): https://vault.centos.org/7.9.2009/sclo/Source/rh/
 - GCC runtime (Windows MSYS2 package): https://github.com/msys2/MINGW-packages/tree/master/mingw-w64-gcc
@@ -33,3 +29,6 @@ Dependency source:
 
 The corresponding Windows dependency package versions and the Linux container
 image digest are recorded in the associated build workflow logs.
+Linux: https://github.com/NamecoinGithub/NexusInterface/actions/runs/43374618648
+macOS: https://github.com/NamecoinGithub/NexusInterface/actions/runs/43374618913
+Windows: https://github.com/NamecoinGithub/NexusInterface/actions/runs/43374618594

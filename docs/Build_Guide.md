@@ -69,11 +69,9 @@ publishing a release.
   - macOS x64: `assets/darwin/cores/nexus-darwin-x64`
   - Windows x64: `assets/win32/cores/nexus-win32-x64.exe`
 - The wallet starts whichever bundled binary matches the current platform and architecture.
-- The embedded x64 cores are based on LLL-TAO NODE5 5.1.7-rc6 build 1.
-  Linux and Windows use core revision `54726c85d1c1a0a12f95212a18e1c72a8fe88ece`;
-  macOS uses `04eb09340bb20852c081b84fdb9c7b2e3de4a7d2`, which adds a
-  configurable macOS deployment target. The macOS core targets 10.13 or
-  later. Older macOS releases have not been verified.
+- The embedded x64 cores are based on LLL-TAO NODE5 5.1.7-rc6 build 2,
+  revision `f747d6d311403bac3ee6f580c8555353048231c7`. The macOS core
+  targets 10.13 or later. Older macOS releases have not been verified.
 - Back up wallet and core data before upgrading. In particular, test existing
   Windows legacy wallets before rollout: the embedded Windows build uses
   Berkeley DB 5.3, and compatibility with data created by other Berkeley DB

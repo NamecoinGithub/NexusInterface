@@ -1,4 +1,12 @@
-# 3.2.3-beta.1 (unreleased)
+# 3.2.3-beta.2 (2026.11.13)
+
+This prerelease is for continued testing, not a production release.
+
+- Update the embedded Linux, macOS, and Windows x64 nodes to LLL-TAO
+  5.1.7-rc6 build 2.
+- Fix security and settings regressions in the wallet interface.
+
+# 3.2.3-beta.1 (2026.11.11)
 
 This prerelease is for continued testing, not a production release.
 
