@@ -35,7 +35,6 @@ jobs:
             git
             make
             mingw-w64-x86_64-toolchain
-            mingw-w64-x86_64-openssl
             mingw-w64-x86_64-zlib
       - name: Build Berkeley DB
         run: |
@@ -50,12 +49,25 @@ jobs:
             --disable-shared --enable-static --disable-replication
           make -j2
           make install
+      - name: Build OpenSSL
+        run: |
+          set -euxo pipefail
+          temp="$(cygpath -u "$RUNNER_TEMP")"
+          cd "$temp"
+          curl -fsSL -o openssl.tar.gz https://github.com/openssl/openssl/releases/download/openssl-3.5.9/openssl-3.5.9.tar.gz
+          echo '603f5602e2eef00d77fbd429d34dcd5822bb301757a1bc9cdb24c670f1eb859a  openssl.tar.gz' | sha256sum -c
+          tar -xf openssl.tar.gz
+          cd openssl-3.5.9
+          MSYS2_ARG_CONV_EXCL="--prefix=" perl ./Configure mingw64 no-shared --prefix="$temp/ssl" --libdir=lib
+          make -j2
+          make install_sw
       - name: Build core
         run: |
           set -euxo pipefail
+          ssl="$(cygpath -u "$RUNNER_TEMP")/ssl"
           make -f makefile.cli -j2 \
-            OPENSSL_LIB_PATH=/mingw64/lib \
-            OPENSSL_INCLUDE_PATH=/mingw64/include \
+            OPENSSL_LIB_PATH="$ssl/lib" \
+            OPENSSL_INCLUDE_PATH="$ssl/include" \
             BDB_LIB_PATH=/mingw64/lib \
             BDB_INCLUDE_PATH=/mingw64/include
           mkdir -p core
