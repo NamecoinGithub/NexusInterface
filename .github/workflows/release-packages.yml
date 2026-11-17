@@ -26,7 +26,7 @@ jobs:
             artifact: macos-core
           - platform: windows
             runner: windows-latest
-            run: '44012021123'
+            run: '44015957572'
             artifact: windows-static-core
     steps:
       - uses: actions/checkout@v4

@@ -46,7 +46,7 @@ def main(platform, run):
             f"Source: https://github.com/NamecoinGithub/LLL-TAO/tree/{SOURCE}\n"
             f"Build workflow: https://github.com/NamecoinGithub/NexusInterface/actions/runs/{run}\n"
             "Linux/macOS build scripts: https://github.com/NamecoinGithub/NexusInterface/tree/8f3c5f74be52b87efd2a299ad32c638d87729a81/.github\n"
-            "Windows build script: https://github.com/NamecoinGithub/NexusInterface/blob/565f5c9fbe5cf8f4980b963ca7e29cfb31ed2f41/.github/workflows/build-embedded-core-windows.yml\n"
+            "Windows build script: https://github.com/NamecoinGithub/NexusInterface/blob/d9e8be581309eed23b465023c98b15d54f2fc949/.github/workflows/build-embedded-core-windows.yml\n"
             "Berkeley DB 5.3.28: https://download.oracle.com/berkeley-db/db-5.3.28.tar.gz\n"
             "OpenSSL 3.5.9: https://github.com/openssl/openssl/releases/tag/openssl-3.5.9\n"
             "GCC (Linux devtoolset-10): https://vault.centos.org/7.9.2009/sclo/Source/rh/\n"
