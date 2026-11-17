@@ -39,13 +39,14 @@ jobs:
       - name: Build Berkeley DB
         run: |
           set -euxo pipefail
-          cd "$(cygpath -u "$RUNNER_TEMP")"
+          temp="$(cygpath -u "$RUNNER_TEMP")"
+          cd "$temp"
           curl -fsSL -o db.tar.gz https://download.oracle.com/berkeley-db/db-5.3.28.tar.gz
           echo 'e0a992d740709892e81f9d93f06daf305cf73fb81b545afe72478043172c3628  db.tar.gz' | sha256sum -c
           tar -xf db.tar.gz
           sed -i 's/__atomic_compare_exchange/__atomic_compare_exchange_db/g' db-5.3.28/src/dbinc/atomic.h
           cd db-5.3.28/build_unix
-          CFLAGS='-O2 -std=gnu11' ../dist/configure --prefix=/mingw64 --enable-mingw --enable-cxx \
+          CFLAGS='-O2 -std=gnu11' ../dist/configure --prefix="$temp/bdb" --enable-mingw --enable-cxx \
             --disable-shared --enable-static --disable-replication
           make -j2
           make install
@@ -64,16 +65,20 @@ jobs:
       - name: Build core
         run: |
           set -euxo pipefail
-          ssl="$(cygpath -u "$RUNNER_TEMP")/ssl"
+          temp="$(cygpath -u "$RUNNER_TEMP")"
+          ssl="$temp/ssl"
+          db="$temp/bdb"
           make -f makefile.cli -j2 \
             OPENSSL_LIB_PATH="$ssl/lib" \
             OPENSSL_INCLUDE_PATH="$ssl/include" \
-            BDB_LIB_PATH=/mingw64/lib \
-            BDB_INCLUDE_PATH=/mingw64/include
+            BDB_LIB_PATH="$db/lib" \
+            BDB_INCLUDE_PATH="$db/include" \
+            LIBS="$db/lib/libdb_cxx.a $ssl/lib/libssl.a $ssl/lib/libcrypto.a -lkernel32 -luser32 -lgdi32 -lcomdlg32 -lwinspool -lwinmm -lshell32 -lcomctl32 -lole32 -loleaut32 -luuid -lrpcrt4 -ladvapi32 -lws2_32 -lshlwapi -lcrypt32 -liphlpapi -lbcrypt"
           mkdir -p core
           cp release/nexus.exe core/nexus-win32-x64.exe
+          strings core/nexus-win32-x64.exe | grep -F 'OpenSSL 3.5.9'
           objdump -p core/nexus-win32-x64.exe | grep 'DLL Name'
-          if objdump -p core/nexus-win32-x64.exe | grep -iE 'DLL Name: (libdb|libgcc|libstdc|libwinpthread)'; then
+          if objdump -p core/nexus-win32-x64.exe | grep -iE 'DLL Name: (libdb|libssl|libcrypto|libgcc|libstdc|libwinpthread)'; then
             echo 'Unexpected non-system DLL dependency' >&2
             exit 1
           fi
