@@ -1,0 +1,31 @@
+name: Test NODE5 mining readiness
+
+on:
+  push:
+    branches:
+      - release/package-node-5.1.7-rc6-build3
+    paths:
+      - .github/workflows/test-node-mining-readiness.yml
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - name: Check out node source
+        uses: actions/checkout@v4
+        with:
+          repository: NamecoinGithub/LLL-TAO
+          ref: 2a3c58e8e90a7c7bad52aa8d59cc25f3c626af1b
+      - name: Install build dependencies
+        run: sudo bash contrib/devtools/install-build-deps.sh
+      - name: Build unit tests
+        run: make -f makefile.cli UNIT_TESTS=1 -j2
+      - name: Test mining readiness
+        run: |
+          export HOME="$RUNNER_TEMP/nexus-test-home"
+          mkdir -p "$HOME"
+          timeout 300 ./nexus '[mining-readiness]'
