@@ -1,4 +1,4 @@
-Nexus LLL-TAO Node 5.1.7-rc6 build 3 (x86_64)
+Nexus LLL-TAO Node 5.1.7-rc6 build 4 (x86_64)
 
 This is a release candidate, not a production-ready release. Back up wallet
 and node data before testing or upgrading. Compatibility of existing Windows

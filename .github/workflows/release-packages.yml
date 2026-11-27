@@ -18,15 +18,15 @@ jobs:
         include:
           - platform: linux
             runner: ubuntu-latest
-            run: '44010126262'
+            run: '45917742607'
             artifact: linux-core
           - platform: macos
             runner: macos-15-intel
-            run: '44010126853'
+            run: '45917742563'
             artifact: macos-core
           - platform: windows
             runner: windows-latest
-            run: '44015957572'
+            run: '45917742568'
             artifact: windows-static-core
     steps:
       - uses: actions/checkout@v4
@@ -37,7 +37,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: NamecoinGithub/LLL-TAO
-          ref: 2a3c58e8e90a7c7bad52aa8d59cc25f3c626af1b
+          ref: 9ac000957b34151f77a3cc12be80ea2ad77bbd90
           path: node-source
       - name: Download freshly built core
         uses: actions/download-artifact@v4
@@ -62,7 +62,7 @@ jobs:
           trap 'kill "$pid" 2>/dev/null || true; wait "$pid" 2>/dev/null || true' EXIT
           for i in {1..90}; do
             if curl --noproxy '*' -fsS http://127.0.0.1:18483/system/get/info > "$RUNNER_TEMP/response.json" 2>/dev/null; then
-              python -c 'import json,sys; v=json.load(open(sys.argv[1]))["result"]["version"]; print(v); assert "5.1.7-rc6 build 3" in v' "$RUNNER_TEMP/response.json"
+              python -c 'import json,sys; v=json.load(open(sys.argv[1]))["result"]["version"]; print(v); assert "5.1.7-rc6 build 4" in v' "$RUNNER_TEMP/response.json"
               exit 0
             fi
             if ! kill -0 "$pid" 2>/dev/null; then break; fi
@@ -88,7 +88,7 @@ jobs:
               if ($process.HasExited) { break }
               try {
                 $response = Invoke-RestMethod -Uri 'http://127.0.0.1:18483/system/get/info'
-                if ($response.result.version -notlike '*5.1.7-rc6 build 3*') {
+                if ($response.result.version -notlike '*5.1.7-rc6 build 4*') {
                   throw "Unexpected core version: $($response.result.version)"
                 }
                 Write-Output $response.result.version
@@ -108,7 +108,7 @@ jobs:
       - name: Upload node release archive
         uses: actions/upload-artifact@v4
         with:
-          name: nexus-node-5.1.7-rc6-build3-${{ matrix.platform }}-x86_64
+          name: nexus-node-5.1.7-rc6-build4-${{ matrix.platform }}-x86_64
           path: dist/
           if-no-files-found: error
           retention-days: 14

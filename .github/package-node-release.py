@@ -9,7 +9,7 @@ import zipfile
 
 
 ROOT = Path(__file__).resolve().parent.parent
-SOURCE = "2a3c58e8e90a7c7bad52aa8d59cc25f3c626af1b"
+SOURCE = "9ac000957b34151f77a3cc12be80ea2ad77bbd90"
 CONFIG = {
     "linux": ("nexus-linux-x64", "nexus", ".tar.gz"),
     "macos": ("nexus-darwin-x64", "nexus", ".tar.gz"),
@@ -24,7 +24,7 @@ def digest(path):
 
 def main(platform, run):
     input_name, executable, extension = CONFIG[platform]
-    name = f"nexus-node-5.1.7-rc6-build3-{platform}-x86_64"
+    name = f"nexus-node-5.1.7-rc6-build4-{platform}-x86_64"
     dist = ROOT / "dist"
     dist.mkdir(exist_ok=True)
     with tempfile.TemporaryDirectory() as temp:
@@ -41,12 +41,11 @@ def main(platform, run):
             if file.name != "embedded-cores.txt":
                 shutil.copyfile(file, licenses / file.name)
         (stage / "BUILD-INFO.txt").write_text(
-            "Nexus LLL-TAO 5.1.7-rc6 build 3\n"
+            "Nexus LLL-TAO 5.1.7-rc6 build 4\n"
             f"Platform: {platform} x86_64\n"
             f"Source: https://github.com/NamecoinGithub/LLL-TAO/tree/{SOURCE}\n"
             f"Build workflow: https://github.com/NamecoinGithub/NexusInterface/actions/runs/{run}\n"
-            "Linux/macOS build scripts: https://github.com/NamecoinGithub/NexusInterface/tree/8f3c5f74be52b87efd2a299ad32c638d87729a81/.github\n"
-            "Windows build script: https://github.com/NamecoinGithub/NexusInterface/blob/d9e8be581309eed23b465023c98b15d54f2fc949/.github/workflows/build-embedded-core-windows.yml\n"
+            "Build scripts: https://github.com/NamecoinGithub/NexusInterface/tree/35845a51f4d47fdd559255356ad0f9fa0db9aaa5/.github\n"
             "Berkeley DB 5.3.28: https://download.oracle.com/berkeley-db/db-5.3.28.tar.gz\n"
             "OpenSSL 3.5.9: https://github.com/openssl/openssl/releases/tag/openssl-3.5.9\n"
             "GCC (Linux devtoolset-10): https://vault.centos.org/7.9.2009/sclo/Source/rh/\n"
